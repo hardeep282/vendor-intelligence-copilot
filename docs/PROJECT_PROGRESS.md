@@ -53,8 +53,9 @@ instead of 3 temperatures x 5 runs. Full writeup: `docs/adr/005-llm-provider.md`
 |---|---|---|---|
 | Tests passing | 33 | 59 | `uv run pytest -q`; +12 for `copilot.llm` (client+pricing), +12 for prompts + `InsightService` |
 | Golden questions | 40 (27 dev, 10 test, 3 adversarial) | 40 | golden v2 (+6 trap questions) is step 6, not yet built |
-| Execution accuracy, grounding, leakage rate | n/a | TBD | needs steps 3-6 and a real run with your dev key |
+| Execution accuracy, grounding, leakage rate | n/a | TBD | needs steps 4-6 (text-to-SQL + golden v2); not an `InsightService` metric |
 | LLM client: retries, repair loop, caching, no-temperature guard | n/a | Tested | against a fake SDK, no API key used (`tests/test_llm_client.py`) |
+| First real LLM call (`InsightService`, DIAGEO, viewer role) | n/a | $0.01127, 7.31s, 1 attempt, 0 repairs | run on your machine, 14 Oct; caught and fixed a `max_tokens` truncation bug (see BUILD_LOG) |
 
 ## Decisions
 
@@ -64,9 +65,10 @@ direct Anthropic API, not Bedrock, for now -- and the temperature/effort correct
 
 ## Costs to date
 
-AWS $0, domain $0, LLM $0 (no LLM API calls made from this session -- step 1's tests use a fake
-client; real calls run on your machine with your dev key). Expected once Day 2 resources exist:
-about $22 per month on AWS (Mumbai).
+AWS $0, domain $0, LLM ~$0.01 (one real call, 14 Oct, on your machine with your dev key --
+`InsightService` on DIAGEO, after fixing a `max_tokens` bug that had been doubling the cost via
+unnecessary repair-loop retries). Expected once Day 2 resources exist: about $22 per month on
+AWS (Mumbai).
 
 ## Live URLs
 

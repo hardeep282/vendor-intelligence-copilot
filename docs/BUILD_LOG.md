@@ -159,3 +159,13 @@ The insight itself was well-grounded on the first full read: every number in the
 traced to a field in `key_metrics_cited`, and `risk_flags` (dead stock, excise leakage,
 loss-making SKUs) matched what the leakage figures actually showed -- no invented numbers, no
 generic risk language.
+
+**Confirmed fixed:** same call re-run after pulling the `max_tokens: 1200` fix and restarting
+the Python process (prompts are `@cache`d per-process, so the edited YAML needs a fresh
+interpreter to take effect) -- `repair=0 attempt=1`, clean single call, `cost=$0.01127`,
+`latency=7.31s`. First clean baseline numbers for the DIAGEO vendor-insight call.
+
+| Run | max_tokens | Attempts | Repair | Cost | Latency |
+|---|---|---|---|---|---|
+| Before fix | 700 | 2 (truncated, then repaired) | 1 | not captured | not captured |
+| After fix | 1200 | 1 | 0 | $0.01127 | 7.31s |
