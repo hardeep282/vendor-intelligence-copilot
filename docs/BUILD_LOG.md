@@ -141,3 +141,21 @@ fake Anthropic stream used in `test_llm_client.py`, and unknown vendor never rea
 **Open:** steps 4-9 of Day 3 (text-to-SQL schema linking + layered sqlglot validator +
 `policies/sql_rules.yaml`, golden v2 as a LangSmith dataset, question→SQL pair generator, the
 effort lab, the tokenization lab).
+
+### First real LLM call (14 Oct, your machine, your dev key)
+
+`InsightService.vendor_insight("DIAGEO NORTH AMERICA INC", role="viewer")` -- the first live
+Anthropic call this project has made. Caught a real bug on the first try: `max_tokens: 700` in
+`prompts/vendor_insight/v1.yaml` was too small for the full `VendorInsight` payload (18 cited
+fields + narrative + 3 risk flags), so the model's JSON got cut off mid-string
+(`EOF while parsing a string at ... column 1504`). `LLMClient.structured()`'s repair loop caught
+it and retried successfully -- so the call still returned a valid, well-grounded insight -- but
+at 2x the cost and latency of one clean call. Fixed by raising `max_tokens` to 1200 in the same
+file (not a new version: this is a capacity correction, not a change to the prompt's behaviour,
+tone or output shape -- the rule in `copilot.llm.prompts`'s docstring about versioning is for the
+latter). Tests unaffected (none assert `max_tokens`, by design).
+
+The insight itself was well-grounded on the first full read: every number in the narrative
+traced to a field in `key_metrics_cited`, and `risk_flags` (dead stock, excise leakage,
+loss-making SKUs) matched what the leakage figures actually showed -- no invented numbers, no
+generic risk language.

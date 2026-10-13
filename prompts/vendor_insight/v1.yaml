@@ -11,7 +11,7 @@
 name: vendor_insight
 version: 1
 model: claude-sonnet-5
-max_tokens: 700
+max_tokens: 1200
 effort: medium
 cache_system: true
 
