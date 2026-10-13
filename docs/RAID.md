@@ -9,3 +9,5 @@
 | R5 | Issue | Low | Master prompt facts disagreed with the repo. | Fixed in ADR-000. | Claude | Closed |
 | R6 | Issue | Medium | `output_monthly_demand` revenue sums to $452.06M but vendor views to $451.62M (a $0.44M, 0.1% gap between two source tables). | Agents must not mix the two sources in one answer without saying so; investigate lineage in the analytics project. | Hardeep | Open |
 | R7 | Issue | Low | Public vendor names appear in the golden set and snapshot. | Kept private until R1 is resolved; vendor names are already in the public README. | Claude | Open |
+| R8 | Risk | High | AWS Free plan ends about 25 Dec 2026 (76 days left on 10 Oct); the account closes unless upgraded. | Upgrade to the Paid plan before creating EC2 (Day 2 guide, step 1). | Hardeep | Open |
+| R9 | Issue | Low | The Docker image cannot be built in the build workspace (registry access blocked). | CI builds and smoke-tests the image on every push; you can also build locally with Docker Desktop. | Claude | Mitigated |

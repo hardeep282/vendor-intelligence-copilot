@@ -15,3 +15,15 @@ All commands run in PowerShell from `C:\Projects\vendor-intelligence-copilot` wi
 | 7 | Build the snapshot (needs your local workbook) | `uv run python scripts/build_snapshot.py "C:\Projects\Vendor_Performance_Analysis\Excel Analysis\Vendor_Summary.xlsx"` | Runs the builder with the workbook path as its one argument | 11 table names with row counts |
 | 8 | Build the golden set | `uv run python scripts/build_golden_set.py` | Executes every golden SQL against the snapshot and writes the JSONL | JSON summary: 40 questions |
 | 9 | All checks at once | `.\tasks.ps1 check` | Runs lint, typecheck and test through the task runner | All three pass |
+
+## Day 2
+
+| # | What this step does | Command | What each part does | Expected result |
+|---|---|---|---|---|
+| 1 | Run the API locally with auto-reload | `uv run uvicorn copilot.api.main:app --reload` | `uvicorn` serves the ASGI app `app` in module `copilot.api.main`; `--reload` restarts on code changes | "Uvicorn running on http://127.0.0.1:8000" |
+| 2 | Call the health endpoint | `curl.exe http://127.0.0.1:8000/health` | `curl.exe` is the real curl on Windows (plain `curl` is a PowerShell alias) | `{"status":"ok"}` |
+| 3 | Build the image locally | `docker build -f docker/api.Dockerfile --build-arg GIT_SHA=local -t copilot-api .` | `-f` picks the Dockerfile; `--build-arg` fills `ARG GIT_SHA`; `-t` names the image; `.` is the build context | "naming to docker.io/library/copilot-api" |
+| 4 | Run the image | `docker run --rm -p 8000:8000 copilot-api` | `--rm` deletes the container on exit; `-p host:container` publishes the port | `/health` answers on port 8000 |
+| 5 | Scan for secrets before pushing | `uv run pre-commit run gitleaks --all-files` | Runs just the gitleaks hook on every tracked file | "Detect hardcoded secrets...Passed" |
+
+AWS commands for Day 2 are in the Day 2 guide; they run in AWS CloudShell.

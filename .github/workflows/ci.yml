@@ -1,0 +1,136 @@
+# Purpose : quality gate on every push and PR; build + deploy on main.
+# Jobs    : checks (lint, types, tests) | secret-scan (gitleaks, full history) | image (build the
+#           Docker image and smoke-test it) | deploy (main only, once AWS repo variables exist).
+# Deploy  : GitHub OIDC -> IAM role (no long-lived AWS keys) -> push to ECR -> SSM Run Command
+#           runs infra/server/deploy.sh on EC2 -> public smoke test of /health and /version.
+name: ci
+
+on:
+  push:
+    branches: ["**"]
+  pull_request:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  UV_VERSION: "0.11.32"
+  GITLEAKS_VERSION: "8.30.1"
+
+jobs:
+  checks:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v7
+      - uses: astral-sh/setup-uv@v10.3.0
+        with:
+          version: ${{ env.UV_VERSION }}
+      - name: Install locked dependencies
+        run: uv sync --frozen
+      - name: Lint
+        run: uv run ruff check .
+      - name: Format check
+        run: uv run ruff format --check .
+      - name: Type check
+        run: uv run mypy
+      - name: Tests
+        run: uv run pytest -q
+
+  secret-scan:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0 # scan the whole history, not just the last commit
+      - name: gitleaks
+        run: |
+          curl -sSfL -o gitleaks.tgz \
+            "https://github.com/gitleaks/gitleaks/releases/download/v${GITLEAKS_VERSION}/gitleaks_${GITLEAKS_VERSION}_linux_x64.tar.gz"
+          tar -xzf gitleaks.tgz gitleaks
+          ./gitleaks git . --redact --verbose
+
+  image:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v7
+      - uses: docker/setup-buildx-action@v4
+      - name: Build image
+        uses: docker/build-push-action@v7
+        with:
+          context: .
+          file: docker/api.Dockerfile
+          build-args: GIT_SHA=${{ github.sha }}
+          tags: copilot-api:ci
+          load: true
+          push: false
+      - name: Smoke test the image
+        run: |
+          docker run -d --name api -p 8000:8000 copilot-api:ci
+          for _ in $(seq 1 20); do curl -fsS http://127.0.0.1:8000/health && break; sleep 1; done
+          curl -fsS http://127.0.0.1:8000/version | grep -q "${GITHUB_SHA}"
+          docker inspect --format '{{.Config.User}}' api | grep -q app # must not run as root
+
+  deploy:
+    needs: [checks, secret-scan, image]
+    if: github.ref == 'refs/heads/main' && github.event_name == 'push' && vars.AWS_ROLE_ARN != ''
+    runs-on: ubuntu-24.04
+    # No `environment:` here: environments in private repos need a paid GitHub plan. The AWS
+    # trust policy instead accepts only tokens issued for the main branch of this repo.
+    permissions:
+      contents: read
+      id-token: write # lets GitHub issue the OIDC token that AWS trusts
+    env:
+      AWS_REGION: ${{ vars.AWS_REGION }}
+      INSTANCE_ID: ${{ vars.EC2_INSTANCE_ID }}
+    steps:
+      - uses: actions/checkout@v7
+      - uses: aws-actions/configure-aws-credentials@v6
+        with:
+          role-to-assume: ${{ vars.AWS_ROLE_ARN }}
+          aws-region: ${{ vars.AWS_REGION }}
+      - id: ecr
+        uses: aws-actions/amazon-ecr-login@v2
+      - uses: docker/setup-buildx-action@v4
+      - name: Build and push to ECR
+        uses: docker/build-push-action@v7
+        with:
+          context: .
+          file: docker/api.Dockerfile
+          build-args: GIT_SHA=${{ github.sha }}
+          tags: ${{ steps.ecr.outputs.registry }}/${{ vars.ECR_REPOSITORY }}:${{ github.sha }}
+          push: true
+      - name: Deploy to EC2 via SSM
+        env:
+          IMAGE: ${{ steps.ecr.outputs.registry }}/${{ vars.ECR_REPOSITORY }}:${{ github.sha }}
+        run: |
+          COMPOSE_B64=$(base64 -w0 infra/server/compose.yaml)
+          DEPLOY_B64=$(base64 -w0 infra/server/deploy.sh)
+          PARAMS=$(jq -n --arg c "$COMPOSE_B64" --arg d "$DEPLOY_B64" --arg i "$IMAGE" --arg r "$AWS_REGION" '{commands: [
+            "set -eu",
+            "mkdir -p /opt/copilot",
+            ("echo " + $c + " | base64 -d > /opt/copilot/compose.yaml"),
+            ("echo " + $d + " | base64 -d > /opt/copilot/deploy.sh"),
+            "chmod 700 /opt/copilot/deploy.sh",
+            ("/opt/copilot/deploy.sh " + $i + " " + $r)
+          ]}')
+          CMD_ID=$(aws ssm send-command --instance-ids "$INSTANCE_ID" \
+            --document-name AWS-RunShellScript --comment "deploy ${GITHUB_SHA::7}" \
+            --parameters "$PARAMS" --query Command.CommandId --output text)
+          echo "SSM command $CMD_ID"
+          # Poll for up to 10 minutes (the built-in waiter gives up after about 100 s).
+          for _ in $(seq 1 120); do
+            STATUS=$(aws ssm get-command-invocation --command-id "$CMD_ID" --instance-id "$INSTANCE_ID" \
+              --query Status --output text 2>/dev/null || echo Pending)
+            case "$STATUS" in Pending|InProgress|Delayed) sleep 5 ;; *) break ;; esac
+          done
+          aws ssm get-command-invocation --command-id "$CMD_ID" --instance-id "$INSTANCE_ID" \
+            --query '[StandardOutputContent, StandardErrorContent]' --output text
+          test "$STATUS" = "Success"
+      - name: Public smoke test
+        run: |
+          curl -fsS --retry 10 --retry-delay 5 --retry-all-errors "${{ vars.PUBLIC_BASE_URL }}/health" | grep -q '"status":"ok"'
+          curl -fsS "${{ vars.PUBLIC_BASE_URL }}/version" | grep -q "${GITHUB_SHA}"

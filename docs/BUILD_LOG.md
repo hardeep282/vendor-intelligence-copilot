@@ -17,3 +17,32 @@
 **Costs:** $0.
 
 **Open:** accounts checklist (domain, AWS, LangSmith); push the repo; resolve RAID R1.
+
+## 2026-10-13 · Day 2 · Production skeleton (code side)
+
+**Covered:** FastAPI `/health` and `/version`; SSM secrets loader; multi-stage non-root Dockerfile;
+compose stack; EC2 bootstrap; deploy script with health-checked rollback; GitHub Actions CI (lint,
+types, tests, gitleaks, image smoke test) and an OIDC-based deploy job; IAM policies; sprint v2
+additions to Day 1 (gitleaks pre-commit, dev/prod key policy).
+
+**Decisions:** ADR-003 (EC2 t3.small + Compose + host nginx/Certbot), ADR-004 (SSM secrets, OIDC CI,
+branch-scoped trust instead of GitHub Environments). Landing page moved to Day 10.
+
+**Mistakes and fixes:**
+- Starlette warned that `httpx` with its TestClient is deprecated; switched the dev dependency to `httpx2`.
+- A test set environment variables directly, which would have leaked into later tests; it now uses
+  `monkeypatch.setenv` first so pytest restores the environment.
+- shellcheck flagged unused loop variables in the workflow (`i`); renamed to `_`.
+- First draft trusted the GitHub `production` environment; changed to the `main` branch because
+  environments in private repos depend on the GitHub plan.
+- The Docker image could not be built in the build workspace (registries blocked). Verified instead by
+  installing with `--frozen --no-dev` in a clean folder and serving both endpoints; the real image is
+  built and smoke-tested by the CI `image` job on every push.
+
+**Metrics:** 22 tests pass; ruff, mypy, actionlint, shellcheck and gitleaks clean.
+
+**Costs (expected, Mumbai, 24/7):** t3.small $0.0224/h ≈ $16.35; public IPv4 $0.005/h ≈ $3.65;
+gp3 20 GB × $0.0912 ≈ $1.82; Route 53 zone $0.50; ECR storage ≈ $0.03 → about $22.35 per month.
+EC2 and EBS rates are from a third-party price list (aws-pricing.com); IPv4, Route 53 and ECR from AWS pages.
+
+**Open:** AWS resources, GitHub variables, domain and HTTPS (all on the Day 2 guide).

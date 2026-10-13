@@ -37,6 +37,13 @@ class Settings(BaseSettings):
     # Spend control: a global daily cap in USD enforced by the input gate (Day 7).
     daily_spend_cap_usd: float = Field(default=5.0, gt=0)
 
+    # Build metadata: the Git commit baked into the image by CI (shown by /version).
+    git_sha: str = "dev"
+
+    # AWS. In prod, secrets live in SSM Parameter Store under `ssm_prefix` (ADR-004).
+    aws_region: str = "ap-south-1"
+    ssm_prefix: str = "/vendor-copilot/prod"
+
     # Data layer.
     snapshot_dir: Path = REPO_ROOT / "data" / "snapshot"
     # Minimum aggregation threshold: no figure may be built from fewer than k SKUs.

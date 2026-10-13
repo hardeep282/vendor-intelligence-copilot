@@ -5,12 +5,15 @@ description = "Agentic commercial decision-support system for a beverage distrib
 readme = "README.md"
 requires-python = ">=3.12"
 dependencies = [
+    "boto3>=1.43.112",
     "duckdb",
+    "fastapi>=0.143.0",
     "pandas",
     "pyarrow",
     "pydantic",
     "pydantic-settings",
     "pyyaml",
+    "uvicorn[standard]>=0.54.0",
 ]
 
 [dependency-groups]
@@ -22,6 +25,8 @@ dev = [
     "openpyxl",
     "types-PyYAML",
     "pandas-stubs",
+    "boto3-stubs[ssm]>=1.43.112",
+    "httpx2>=2.13.1",
 ]
 
 [build-system]

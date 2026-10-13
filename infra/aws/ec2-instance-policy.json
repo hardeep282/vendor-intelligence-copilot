@@ -1,0 +1,23 @@
+{
+  "Version": "2012-10-17",
+  "Statement": [
+    {
+      "Sid": "ReadProdParametersOnly",
+      "Effect": "Allow",
+      "Action": ["ssm:GetParametersByPath", "ssm:GetParameter", "ssm:GetParameters"],
+      "Resource": [
+        "arn:aws:ssm:REGION:ACCOUNT_ID:parameter/vendor-copilot/prod",
+        "arn:aws:ssm:REGION:ACCOUNT_ID:parameter/vendor-copilot/prod/*"
+      ]
+    },
+    {
+      "Sid": "DecryptSecureStringsViaSsmOnly",
+      "Effect": "Allow",
+      "Action": "kms:Decrypt",
+      "Resource": "*",
+      "Condition": {
+        "StringEquals": { "kms:ViaService": "ssm.REGION.amazonaws.com" }
+      }
+    }
+  ]
+}

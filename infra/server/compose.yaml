@@ -1,0 +1,24 @@
+# Purpose : the container stack on the EC2 host. Copied to /opt/copilot by the deploy job.
+# Inputs  : API_IMAGE (full ECR image URI) and AWS_REGION, both set by deploy.sh.
+# Nginx and Certbot run on the host, not in Docker, so Certbot can edit the nginx config.
+services:
+  api:
+    image: ${API_IMAGE:?API_IMAGE must be set}
+    restart: unless-stopped
+    environment:
+      APP_ENV: prod
+      AWS_REGION: ${AWS_REGION:?AWS_REGION must be set}
+      AWS_DEFAULT_REGION: ${AWS_REGION}
+      SSM_PREFIX: /vendor-copilot/prod
+    ports:
+      - "127.0.0.1:8000:8000" # only nginx on the same host can reach the API
+    read_only: true
+    tmpfs:
+      - /tmp
+    security_opt:
+      - no-new-privileges:true
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
