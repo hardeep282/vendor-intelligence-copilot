@@ -1,14 +1,14 @@
 # Project Progress: Vendor Intelligence Copilot
 
-Last updated: Tue 13 Oct 2026 (Day 2 of the 10-day sprint, sprint plan v2)
+Last updated: Wed 14 Oct 2026 (Day 3 of the 10-day sprint, sprint plan v3, in progress)
 
 ## Sprint status
 
 | Day | Theme | Status |
 |---|---|---|
-| 1 | Foundations, data, golden set | Build done; repo pushed to GitHub (14 Oct). Waiting on you: AWS hardening, keys |
+| 1 | Foundations, data, golden set | Build done; repo pushed to GitHub (14 Oct) |
 | 2 | Production skeleton live | Code done and tested. Waiting on you: AWS resources, domain, GitHub variables |
-| 3 | LLM service, text-to-SQL, temperature and tokenization labs | Not started |
+| 3 | LLM service, text-to-SQL, effort and tokenization labs | In progress: step 1 of 9 done (LLM client wrapper) |
 | 4 | RAG and advanced RAG | Not started |
 | 5 | ML tools for the agents | Not started |
 | 6 | Multi-agent system in LangGraph | Not started |
@@ -17,36 +17,56 @@ Last updated: Tue 13 Oct 2026 (Day 2 of the 10-day sprint, sprint plan v2)
 | 9 | Fine-tuning benchmark and MCP (MCP never cut) | Not started |
 | 10 | Package and launch the job campaign | Not started |
 
-## Day 2 checklist
+## Day 3 checklist (sprint doc v2/v3 D3)
 
-| Item | Status |
-|---|---|
-| FastAPI `/health` and `/version` with tests (dev and prod start-up paths) | Done |
-| Multi-stage Dockerfile, non-root user, `.dockerignore` | Written; built and smoke-tested by the CI `image` job |
-| Server bootstrap (`user-data.sh`), compose stack, deploy script with automatic rollback | Done, shellcheck clean |
-| GitHub Actions: lint, types, tests, gitleaks, image build, gated deploy via OIDC + ECR + SSM | Done, actionlint clean |
-| Prod secrets read from SSM at start-up; IAM policies for instance and deploy role | Done |
-| gitleaks in pre-commit and CI; dev/prod key policy | Done |
-| EC2, Elastic IP, ECR, IAM, SSM parameters created | Waiting on you |
-| Domain + HTTPS on `api.vendor.<domain>` | Waiting on you |
-| Landing page | Moved to Day 10 (case-study page); not on the never-cut list |
+| # | Item | Status |
+|---|---|---|
+| 1 | LLM client wrapper (retries, timeouts, caching, `@traceable`, TTFT/latency/tokens/cost) | **Done** |
+| 2 | Prompts as versioned YAML; Pydantic outputs with forced tool call and repair retry | Not started (structured-output + repair loop exists in the client now; prompt YAML files are next) |
+| 3 | Refactor `vendor_insights.py` into `InsightService` | Not started |
+| 4 | Text-to-SQL: schema linking, business rules, 3 retrieved golden examples | Not started |
+| 5 | Layered sqlglot validator + `policies/sql_rules.yaml` | Not started |
+| 6 | Golden v2 as a LangSmith dataset + evaluators | Not started |
+| 7 | Question->SQL pair generator | Not started (cut-first item; may move to Day 9 regardless) |
+| 8 | Temperature lab | **Changed to an effort lab** -- see correction below. Not started |
+| 9 | Tokenization lab | Not started |
+
+### Correction found during step 1 (ADR-005)
+
+Anthropic's current model generation (the one this project uses -- Sonnet 5, Haiku 5.5, Opus
+5.5) **does not accept `temperature`, `top_p` or `top_k` in the Messages API**: confirmed against
+the installed SDK (`anthropic==1.13.0`, which has no such parameters on `messages.stream`/
+`.create`) and against Anthropic's own Sonnet 5.5 migration guide ("a non-default value now
+returns a 400 error... Remove them"). The nearest per-call lever this generation exposes is
+`output_config.effort` (`low`/`medium`/`high`/`xhigh`/`max`), which is not a temperature
+substitute (it trades reasoning depth for latency/cost, not output diversity at fixed sampling).
+
+`copilot.llm.client.LLMClient` was built accordingly: `complete()`/`structured()` take an
+optional `effort: Literal["low","medium","high","xhigh","max"] | None`, never `temperature`.
+Step 8 of today's plan is now an **effort lab**: same question, same metrics (execution
+accuracy, grounding, output diversity, latency, cost), `effort` swept across its five values
+instead of 3 temperatures x 5 runs. Full writeup: `docs/adr/005-llm-provider.md`.
 
 ## Results
 
 | Metric | Baseline | Current | Notes |
 |---|---|---|---|
-| Tests passing | 0 | 33 | `uv run pytest -q` (laptop and cloud) |
-| Golden questions | 0 | 40 (27 dev, 10 test, 3 adversarial) | hash in `evals/datasets/golden_v1.manifest.json` |
-| Execution accuracy, grounding, leakage rate | n/a | TBD (Day 3) | |
+| Tests passing | 33 | 47 | `uv run pytest -q`; +14 for `copilot.llm` (12 client, 4 pricing minus overlap) |
+| Golden questions | 40 (27 dev, 10 test, 3 adversarial) | 40 | golden v2 (+6 trap questions) is step 6, not yet built |
+| Execution accuracy, grounding, leakage rate | n/a | TBD | needs steps 3-6 and a real run with your dev key |
+| LLM client: retries, repair loop, caching, no-temperature guard | n/a | Tested | against a fake SDK, no API key used (`tests/test_llm_client.py`) |
 
 ## Decisions
 
-ADR-000 prompt corrections · ADR-001 separate repo (confirmed by you on 13 Oct) · ADR-002 licence-safe
-snapshot · ADR-003 EC2 + Compose runtime · ADR-004 secrets in SSM, OIDC for CI.
+ADR-000 prompt corrections · ADR-001 separate repo · ADR-002 licence-safe snapshot ·
+ADR-003 EC2 + Compose runtime · ADR-004 secrets in SSM, OIDC for CI · **ADR-005 (new, 14 Oct):
+direct Anthropic API, not Bedrock, for now -- and the temperature/effort correction above.**
 
 ## Costs to date
 
-AWS $0, domain $0, LLM $0. Expected once Day 2 resources exist: about $22 per month on AWS (Mumbai).
+AWS $0, domain $0, LLM $0 (no LLM API calls made from this session -- step 1's tests use a fake
+client; real calls run on your machine with your dev key). Expected once Day 2 resources exist:
+about $22 per month on AWS (Mumbai).
 
 ## Live URLs
 
@@ -54,5 +74,8 @@ None yet. Target: `https://api.vendor.<domain>/health`.
 
 ## Next step
 
-You: unpack and push the repo, create the AWS resources from the Day 2 guide, set the GitHub
-variables, buy the domain. Me: Day 3 (LLM service, text-to-SQL, temperature and tokenization labs).
+Me: Day 3 steps 2-9 (prompts as YAML, `InsightService`, text-to-SQL + layered validator, golden
+v2, the effort lab, the tokenization lab). You: run the effort lab and tokenization lab scripts
+on your machine with your dev `ANTHROPIC_API_KEY` once they exist (keys never go in chat; you
+paste back the printed results) -- also still open: AWS resources, domain, GitHub variables from
+Day 2.

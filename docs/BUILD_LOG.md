@@ -63,3 +63,50 @@ and the Day 7 red-team cases in `docs/specs/text_to_sql_safety.md`.
   INSTALL and SET, all now refused by the engine.
 
 **Metrics:** 33 tests pass (11 new attack tests).
+
+## 2026-10-14 · Day 3 step 1 -- LLM client wrapper
+
+**Covered:** `copilot.llm` package: pricing table (`pricing.py`), typed call results
+(`types.py`), and `LLMClient` (`client.py`) with retries+backoff, timeouts, prompt caching,
+`@traceable`, per-call TTFT/latency/token/cost logging, and a native structured-output path
+(`output_format=<PydanticModel>`) with a one-repair self-correction loop.
+
+**Decisions:** ADR-005 (direct Anthropic API, not Bedrock, for now).
+
+**Correction found and carried forward (checked against the installed SDK, anthropic==1.13.0,
+and Anthropic's Sonnet 5.5 migration guide, both 14 Oct 2026):** `temperature`, `top_p` and
+`top_k` are not accepted by this model generation's Messages API at all -- a non-default value
+returns HTTP 400. `LLMClient.complete`/`.structured` take `effort` instead
+(`output_config.effort`: low/medium/high/xhigh/max). **This changes B1 step 8 for later today:**
+the sprint's "temperature lab" becomes an **effort lab** (same metrics, `effort` swept instead
+of `temperature`) -- flagged to the user before building it, not discovered after a 400.
+Full reasoning in `docs/adr/005-llm-provider.md`.
+
+**Mistakes and fixes:**
+- A stray, untracked `data/snapshot/snapshot.duckdb` was present in the fresh clone (pre-dates
+  this session; not something `git clone` could have produced from a git-ignored path). Deleted
+  it before building, since `copilot.data.store.connect()` silently reuses a stale `.duckdb` and
+  its `lock_configuration=true` then blocks the exact `SET` calls meant to protect a *fresh* one
+  -- that was the actual cause of 13 test failures before the real snapshot was built.
+- First draft of the retry loop closed over the `for repair_attempt in ...:` loop variable from
+  inside a nested function (ruff B023): fixed with default-argument capture
+  (`def _call(_repair: int = repair_attempt)`), which also reads correctly under tenacity's retry
+  wrapper since defaults bind once, at definition time.
+- `mypy --strict` flagged the tenacity-decorated inner `_call` as "untyped decorator"; traceable
+  needed no such ignore once `self` was dropped from its typed surface -- only `@_retrying()`
+  needed `# type: ignore[untyped-decorator]`.
+
+**Tests added:** `tests/test_llm_client.py` (12 cases against a hand-written fake Anthropic
+streaming client in `tests/fakes/anthropic_fakes.py` -- no network, no API key) and
+`tests/test_llm_pricing.py` (4 cases). Covers: happy path metrics, prompt-caching block,
+the no-temperature regression guard, `effort` wiring, retry-then-succeed, give-up-after-4,
+no-retry-on-400, structured happy path, one successful repair, and give-up-after-repairs.
+
+**Metrics:** 47 tests pass (was 33); ruff, mypy --strict, ruff format all clean.
+
+**Dependencies added:** `anthropic>=0.75.0`, `langsmith>=0.3.0`, `sqlglot>=27.0.0`,
+`tenacity>=9.0.0`, `tiktoken>=0.9.0` (sqlglot/tiktoken are ahead of this step; added together
+so Day 3's later steps don't need a second `uv sync`).
+
+**Open:** steps 2-9 of Day 3 (prompts as YAML, InsightService, text-to-SQL + validator, golden
+v2, pair generator, effort lab, tokenization lab) -- not started yet this session.

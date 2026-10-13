@@ -40,3 +40,17 @@ AWS commands for Day 2 are in the Day 2 guide; they run in AWS CloudShell.
 | 6 | Apply the rules to tracked files | `git add .gitattributes` then `git add --renormalize .` | `--renormalize` re-processes tracked files only | `A  .gitattributes` |
 | 7 | Connect and push | `git remote add origin https://github.com/hardeep282/vendor-intelligence-copilot.git` then `git push -u origin main` | `-u` sets the upstream for later `git push`/`git pull` | `branch 'main' set up to track 'origin/main'` |
 | 8 | Get changes pushed by Claude | `git pull` | Fetches and merges `origin/main` | `Fast-forward` |
+
+## Day 3 (step 1: LLM client wrapper)
+
+| # | What this step does | Command | What each part does | Expected result |
+|---|---|---|---|---|
+| 1 | Add Day 3 dependencies to the lockfile | `uv add anthropic langsmith sqlglot tenacity tiktoken` (done here by editing `pyproject.toml` then `uv sync --all-groups`) | Resolves and locks new packages against the pinned Python 3.12 | `uv.lock` updated, venv has the new packages |
+| 2 | Rebuild the licence-safe snapshot | `uv run python scripts/build_snapshot.py "<path to Vendor_Summary.xlsx>"` | Runs the builder against the workbook; licence guard checks every table before writing Parquet | 11 table names with row counts, no `LicenceViolation` |
+| 3 | Run every check | `uv run ruff check . && uv run mypy && uv run pytest -q` | lint, strict type-check, tests, in that order (cheapest first) | "All checks passed!" / "Success" / "47 passed" |
+| 4 | Format (check only, no rewrite) | `uv run ruff format --check .` | Verifies formatting without changing files | "N files already formatted" |
+
+No AWS, Anthropic or LangSmith key was used for any of the above -- step 1's tests run entirely
+against a fake SDK (`tests/fakes/anthropic_fakes.py`). Commands that need a real `ANTHROPIC_API_KEY`
+(the effort lab, the tokenization lab, the first InsightService run against the golden set) are
+still to come later in Day 3 and run on your machine with your dev key, per `docs/HANDOFF.md`.

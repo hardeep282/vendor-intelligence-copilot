@@ -5,14 +5,19 @@ description = "Agentic commercial decision-support system for a beverage distrib
 readme = "README.md"
 requires-python = ">=3.12"
 dependencies = [
+    "anthropic>=0.75.0",
     "boto3>=1.43.112",
     "duckdb",
     "fastapi>=0.143.0",
+    "langsmith>=0.3.0",
     "pandas",
     "pyarrow",
     "pydantic",
     "pydantic-settings",
     "pyyaml",
+    "sqlglot>=27.0.0",
+    "tenacity>=9.0.0",
+    "tiktoken>=0.9.0",
     "uvicorn[standard]>=0.54.0",
 ]
 
