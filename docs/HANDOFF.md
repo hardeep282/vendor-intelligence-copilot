@@ -4,8 +4,8 @@ Written: Tue 13 Oct 2026. Paste this whole file into the new chat together with 
 
 ## Attach to the new chat (in this order)
 
-1. `AI_GenAI_Agentic_Engineer_Master_Build_Prompt_v2_4.md` (the master prompt; v2.4 replaces v2.3, see Corrections below)
-2. `Job_Ready_Sprint_10_Days (1).md` (sprint plan v2: tokenization lab, temperature lab, API keys, MCP never cut)
+1. `AI_GenAI_Agentic_Engineer_Master_Build_Prompt_v2_7.md` (the master prompt; v2.7 = your v2.6 + the corrections below)
+2. `Job_Ready_Sprint_10_Days_v3.md` (sprint plan v3: v2 + layered text-to-SQL validator on Day 3, 8 SQL red-team cases on Day 7)
 3. This file
 
 ## First message for the new chat
@@ -43,7 +43,10 @@ Written: Tue 13 Oct 2026. Paste this whole file into the new chat together with 
   deploy on `main` via GitHub OIDC → ECR → SSM Run Command (runs only once the AWS repo variables exist).
 - **IAM:** `infra/aws/*.json` (instance role reads only `/vendor-copilot/prod/*`; deploy role limited to one ECR repo,
   one instance, branch `main`).
-- **Checks:** 22 tests pass; ruff, mypy, actionlint, shellcheck, gitleaks clean.
+- **SQL safety layer 0:** `copilot.data.store.connect` opens a read-only `snapshot.duckdb` with file/network access off and
+  configuration locked; 11 attack tests (file reads, ATTACH, COPY, INSTALL, writes) pass. Spec for layers 1–4:
+  `docs/specs/text_to_sql_safety.md`.
+- **Checks:** 33 tests pass; ruff, mypy, actionlint, shellcheck, gitleaks clean.
 
 ## Canonical metrics (from the snapshot, tested)
 
@@ -102,6 +105,10 @@ gp3 20 GB $1.82, Route 53 $0.50, ECR cents), plus the domain yearly.
   intervention dummies in a dynamic regression, a post-break training window, or scenario forecasts. This applies to
   the airline project and to the vendor forecast tool (A2/Day 5).
 
+- Text-to-SQL (from an external review, checked against the data): valid SQL can be wrong. `AVG(BlendedMarginPct)` = 5.31%
+  vs 28.72% ratio of sums; a fan-out join inflates freight from $1.64M to $19.68M; `SalesYear = 2025` returns 0 rows.
+  Day 3 builds layers 1–4 of the spec and golden v2 (+6 trap questions); Day 7 adds 8 SQL red-team cases.
+
 ## Cuts and moves
 
 Landing page → Day 10 (case-study page).
@@ -131,4 +138,10 @@ cost logging) · prompts as versioned YAML · Pydantic outputs with forced tool 
 schema linking, business rules, 3 retrieved golden examples, sqlglot allowlist, bounded self-correction ·
 golden set as a LangSmith dataset with execution-accuracy and numeric-grounding evaluators · execution-verified
 question→SQL pair generator (cut first → Day 9) · temperature lab (3 temperatures × 5 runs) · tokenization lab
-(provider counter, tiktoken, a Hugging Face tokenizer; cost per 1,000 requests) · ADR-005 LLM provider.
+(provider counter, tiktoken, a Hugging Face tokenizer; cost per 1,000 requests) · ADR-005 LLM provider ·
+layered SQL validator and `policies/sql_rules.yaml` per `docs/specs/text_to_sql_safety.md` · golden v2.
+
+## Alternative start
+
+Your `Next_Chat_Continuation_Prompt.md` template works too: put v2.7 in Part 1, this file in Part 2,
+`docs/PROJECT_PROGRESS.md` in Part 3, and "Resume at: Day 3, step 1".

@@ -46,3 +46,20 @@ gp3 20 GB × $0.0912 ≈ $1.82; Route 53 zone $0.50; ECR storage ≈ $0.03 → a
 EC2 and EBS rates are from a third-party price list (aws-pricing.com); IPv4, Route 53 and ECR from AWS pages.
 
 **Open:** AWS resources, GitHub variables, domain and HTTPS (all on the Day 2 guide).
+
+## 2026-10-13 · Review fixes before Day 3
+
+**Covered:** external review of the text-to-SQL plan; master prompt corrections (v2.7); DuckDB hardening.
+
+**Decisions:** layer 0 of SQL safety built now, because it is data-layer work and cheap: the snapshot is served from
+a read-only `snapshot.duckdb` with `enable_external_access=false` and `lock_configuration=true`. Spec for layers 1–4
+and the Day 7 red-team cases in `docs/specs/text_to_sql_safety.md`.
+
+**Review points checked against the data:**
+- Freight: `SUM` across vendor-level freight is correct ($1.64M); the real trap is a fan-out join ($19.68M).
+- Margins: `AVG(BlendedMarginPct)` = 5.31% vs ratio of sums 28.72% (all rows).
+- Coverage: `SalesYear = 2025` returns 0 rows.
+- Injection: a `system_users` table does not exist; the real DuckDB surface is table functions, ATTACH, COPY,
+  INSTALL and SET, all now refused by the engine.
+
+**Metrics:** 33 tests pass (11 new attack tests).
