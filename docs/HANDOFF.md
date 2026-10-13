@@ -4,7 +4,7 @@ Written: Tue 13 Oct 2026. Paste this whole file into the new chat together with 
 
 ## Attach to the new chat (in this order)
 
-1. `AI_GenAI_Agentic_Engineer_Master_Build_Prompt_v2_3.md` (the master prompt)
+1. `AI_GenAI_Agentic_Engineer_Master_Build_Prompt_v2_4.md` (the master prompt; v2.4 replaces v2.3, see Corrections below)
 2. `Job_Ready_Sprint_10_Days (1).md` (sprint plan v2: tokenization lab, temperature lab, API keys, MCP never cut)
 3. This file
 
@@ -90,6 +90,17 @@ $451.62M (0.1% gap). R8 High: AWS Free plan ends about 25 Dec 2026; upgrade. R9 
 
 $0 spent. Expected after the server exists: about $22.35 per month in Mumbai (t3.small $16.35, IPv4 $3.65,
 gp3 20 GB $1.82, Route 53 $0.50, ECR cents), plus the domain yearly.
+
+## Corrections made on 13 Oct (carry forward)
+
+- Master prompt v2.4: Section 2 facts fixed (no XGBoost yet, ETS 9.84% is in-sample, real `vw_*` names, Power BI 4 pages).
+- vLLM runs only on a temporary GPU (Colab/RunPod) for benchmarks; anything served on CPU (laptop or EC2) is a GGUF
+  model through llama.cpp or Ollama. vLLM does have a basic CPU backend, but it is not this project's path. The 2 GiB
+  t3.small API host cannot also serve a model; a CPU-served model needs its own right-sized instance and an ADR.
+- Forecasting language for interviews: a classical model (ETS) cannot "model" a black-swan break. Use backtest errors
+  and formal tests (Chow at a known date, Bai-Perron or CUSUM when unknown) to show the break, then handle it with
+  intervention dummies in a dynamic regression, a post-break training window, or scenario forecasts. This applies to
+  the airline project and to the vendor forecast tool (A2/Day 5).
 
 ## Cuts and moves
 
