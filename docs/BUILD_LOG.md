@@ -110,3 +110,34 @@ so Day 3's later steps don't need a second `uv sync`).
 
 **Open:** steps 2-9 of Day 3 (prompts as YAML, InsightService, text-to-SQL + validator, golden
 v2, pair generator, effort lab, tokenization lab) -- not started yet this session.
+
+### Day 3, step 2-3: prompts as versioned YAML; `InsightService` (14 Oct, same session continued)
+
+**Covered:**
+- `prompts/<name>/v<N>.yaml` on disk, `copilot.llm.prompts.load_prompt()` to read and validate
+  one (model id, `max_tokens`, `effort`, `cache_system`, system/user text all in the file, not
+  in Python). `Prompt.render_system()/.render_user()` do plain `str.format()` substitution.
+  A behaviour change is a new version file, not an edit to an existing one, so eval history
+  stays attached to the version that produced it. First prompt written: `vendor_insight/v1.yaml`.
+- `copilot.insights.service.InsightService` -- the refactor target named in ADR-000 item 5
+  (legacy `vendor_insights.py`, hardcoded `claude-opus-4-5`). `vendor_insight()` joins the three
+  `internal`-class source tables (`vendor_revenue_summary`, `vendor_tiering`,
+  `vendor_profit_leakage`) by vendor name, masks any field whose row fails the caller's
+  k-threshold (`disclosure.yaml`'s `MeetsMinK`) as `{"withheld": ...}` rather than dropping it
+  silently, and calls `LLMClient.structured()` with a forced `VendorInsight` Pydantic model
+  (`headline`, `narrative`, `key_metrics_cited`, `risk_flags`) so every number in the output
+  traces to a named input field. Unknown vendor raises `VendorNotFoundError` before any LLM call.
+- Model id is now entirely config (the prompt YAML's `model:` field) -- no model string appears
+  in `copilot.insights.service` at all, closing out ADR-000 item 5.
+
+**Tests added:** `tests/test_prompts.py` (6 cases: load latest/explicit version, missing
+name/version, system/user substitution) and `tests/test_insight_service.py` (6 cases: full data
+for an ungated role, withheld-below-k for a gated role, below-k still shown to an ungated role,
+unknown vendor raises, a full `vendor_insight()` call against an in-memory DuckDB + the same
+fake Anthropic stream used in `test_llm_client.py`, and unknown vendor never reaching the LLM).
+
+**Metrics:** 59 tests pass (was 47); ruff, mypy (29 source files), ruff format all clean.
+
+**Open:** steps 4-9 of Day 3 (text-to-SQL schema linking + layered sqlglot validator +
+`policies/sql_rules.yaml`, golden v2 as a LangSmith dataset, question→SQL pair generator, the
+effort lab, the tokenization lab).

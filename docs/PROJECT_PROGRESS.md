@@ -8,7 +8,7 @@ Last updated: Wed 14 Oct 2026 (Day 3 of the 10-day sprint, sprint plan v3, in pr
 |---|---|---|
 | 1 | Foundations, data, golden set | Build done; repo pushed to GitHub (14 Oct) |
 | 2 | Production skeleton live | Code done and tested. Waiting on you: AWS resources, domain, GitHub variables |
-| 3 | LLM service, text-to-SQL, effort and tokenization labs | In progress: step 1 of 9 done (LLM client wrapper) |
+| 3 | LLM service, text-to-SQL, effort and tokenization labs | In progress: steps 1-3 of 9 done |
 | 4 | RAG and advanced RAG | Not started |
 | 5 | ML tools for the agents | Not started |
 | 6 | Multi-agent system in LangGraph | Not started |
@@ -22,8 +22,8 @@ Last updated: Wed 14 Oct 2026 (Day 3 of the 10-day sprint, sprint plan v3, in pr
 | # | Item | Status |
 |---|---|---|
 | 1 | LLM client wrapper (retries, timeouts, caching, `@traceable`, TTFT/latency/tokens/cost) | **Done** |
-| 2 | Prompts as versioned YAML; Pydantic outputs with forced tool call and repair retry | Not started (structured-output + repair loop exists in the client now; prompt YAML files are next) |
-| 3 | Refactor `vendor_insights.py` into `InsightService` | Not started |
+| 2 | Prompts as versioned YAML; Pydantic outputs with forced tool call and repair retry | **Done** (`copilot.llm.prompts`, `prompts/vendor_insight/v1.yaml`; repair loop was already in the client) |
+| 3 | Refactor `vendor_insights.py` into `InsightService` | **Done** (`copilot.insights.service.InsightService`; model id now lives only in the prompt YAML) |
 | 4 | Text-to-SQL: schema linking, business rules, 3 retrieved golden examples | Not started |
 | 5 | Layered sqlglot validator + `policies/sql_rules.yaml` | Not started |
 | 6 | Golden v2 as a LangSmith dataset + evaluators | Not started |
@@ -51,7 +51,7 @@ instead of 3 temperatures x 5 runs. Full writeup: `docs/adr/005-llm-provider.md`
 
 | Metric | Baseline | Current | Notes |
 |---|---|---|---|
-| Tests passing | 33 | 47 | `uv run pytest -q`; +14 for `copilot.llm` (12 client, 4 pricing minus overlap) |
+| Tests passing | 33 | 59 | `uv run pytest -q`; +12 for `copilot.llm` (client+pricing), +12 for prompts + `InsightService` |
 | Golden questions | 40 (27 dev, 10 test, 3 adversarial) | 40 | golden v2 (+6 trap questions) is step 6, not yet built |
 | Execution accuracy, grounding, leakage rate | n/a | TBD | needs steps 3-6 and a real run with your dev key |
 | LLM client: retries, repair loop, caching, no-temperature guard | n/a | Tested | against a fake SDK, no API key used (`tests/test_llm_client.py`) |
@@ -74,8 +74,9 @@ None yet. Target: `https://api.vendor.<domain>/health`.
 
 ## Next step
 
-Me: Day 3 steps 2-9 (prompts as YAML, `InsightService`, text-to-SQL + layered validator, golden
-v2, the effort lab, the tokenization lab). You: run the effort lab and tokenization lab scripts
-on your machine with your dev `ANTHROPIC_API_KEY` once they exist (keys never go in chat; you
-paste back the printed results) -- also still open: AWS resources, domain, GitHub variables from
-Day 2.
+Me: Day 3 steps 4-9 (text-to-SQL schema linking + layered sqlglot validator +
+`policies/sql_rules.yaml`, golden v2 as a LangSmith dataset, question→SQL pair generator, the
+effort lab, the tokenization lab). You: confirmed `ANTHROPIC_API_KEY` and `LANGSMITH_API_KEY`
+both load from `.env` (14 Oct) -- next you'll run the effort lab and tokenization lab scripts on
+your machine once they exist (keys never go in chat; you paste back the printed results) -- also
+still open: AWS resources, domain, GitHub variables from Day 2.
