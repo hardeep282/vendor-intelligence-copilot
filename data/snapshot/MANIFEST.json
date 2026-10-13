@@ -1,0 +1,194 @@
+{
+  "min_k": 5,
+  "tables": {
+    "vendor_revenue_summary": {
+      "rows": 126,
+      "columns": [
+        "VendorName",
+        "NumberOfSKUs",
+        "TotalRevenue",
+        "TotalGrossProfit",
+        "AvgMarginPct",
+        "TotalPurchaseCost",
+        "RevenueSharePct",
+        "BlendedMarginPct",
+        "MeetsMinK"
+      ],
+      "sha256": "74a728468620372e876432d486bcb2a904e6771aa436e92267fcecc9b797a5d9"
+    },
+    "vendor_tiering": {
+      "rows": 126,
+      "columns": [
+        "VendorName",
+        "TotalRevenue",
+        "TotalProfit",
+        "AvgMargin",
+        "AvgTurnover",
+        "SKUCount",
+        "RevenueTier",
+        "TierLabel",
+        "RevenueSharePct",
+        "BlendedMargin",
+        "MeetsMinK"
+      ],
+      "sha256": "31be5ee6903f3b404dbc1f1db426fcf12b4825dae932ac026fe50bce09c2f91f"
+    },
+    "vendor_pareto": {
+      "rows": 126,
+      "columns": [
+        "VendorName",
+        "SKUCount",
+        "TotalRevenue",
+        "TotalProfit",
+        "AvgMargin",
+        "RevenueRank",
+        "RevenueSharePct",
+        "CumulativeRevenue",
+        "CumulativeRevenuePct",
+        "ParetoBand",
+        "VendorCriticality",
+        "BlendedMargin",
+        "MeetsMinK"
+      ],
+      "sha256": "5dfd9c31856794b60bd011da9124ae5af4bbf85551d3dc1e4a3a22431dc25b88"
+    },
+    "vendor_profit_leakage": {
+      "rows": 126,
+      "columns": [
+        "VendorName",
+        "VendorNumber",
+        "TotalRevenue",
+        "TotalGrossProfit",
+        "TotalCOGS",
+        "TotalSKUs",
+        "LossMakingSKUs",
+        "DeadStockSKUs",
+        "ExciseLeakage",
+        "ExciseLeakagePct",
+        "FreightLeakage",
+        "FreightLeakagePct",
+        "LossMakingLeakage",
+        "LossMakingLeakagePct",
+        "DeadStockRevenue",
+        "DeadStockRevenuePct",
+        "DeadStockSKUsPct",
+        "LossMakingSKUsPct",
+        "TotalLeakageAmount",
+        "TotalLeakagePct",
+        "PotentialProfit",
+        "PotentialMarginPct",
+        "LeakageSeverity",
+        "NetProfitAfterAllCosts",
+        "NetMarginAfterAllCostsPct",
+        "ControllableLeakage",
+        "ControllableLeakagePct",
+        "NonControllableCost",
+        "ControllableLeakageSeverity",
+        "MeetsMinK"
+      ],
+      "sha256": "9da61e272e96ef53cd1ecf72e429dce02deec921842406ab8a275b36643ed211"
+    },
+    "vendor_rankings": {
+      "rows": 126,
+      "columns": [
+        "VendorName",
+        "TotalRevenue",
+        "TotalProfit",
+        "AvgMargin",
+        "AvgTurnover",
+        "SKUCount",
+        "RevenueRank",
+        "MarginRank",
+        "TurnoverRank",
+        "CompositePerformanceScore",
+        "BlendedMargin",
+        "IsMicroVendor",
+        "MeetsMinK"
+      ],
+      "sha256": "4d747dcd5eba77c81310867196eb84ae95abbe3722bb70c5b90a8798a67d9d9e"
+    },
+    "vendor_logistics_cost": {
+      "rows": 126,
+      "columns": [
+        "VendorName",
+        "VendorNumber",
+        "TotalRevenue",
+        "TotalCOGS",
+        "TotalExciseTax",
+        "TotalFreight",
+        "COGSRatioPct",
+        "FreightPctOfRevenue",
+        "ExcisePctOfRevenue",
+        "NetMarginAfterAllCostsPct",
+        "TotalCostBurdenPct",
+        "TotalSKUs",
+        "MeetsMinK"
+      ],
+      "sha256": "b68f9a15204577a9b593d24046daffc9444ae0cc1804a6a07753bd8271943175"
+    },
+    "vendor_full_cost": {
+      "rows": 126,
+      "columns": [
+        "VendorName",
+        "NumberOfSKUs",
+        "TotalRevenue",
+        "TotalCOGS",
+        "TotalFreight",
+        "TotalExciseTax",
+        "TotalGrossProfit",
+        "FreightSafe",
+        "COGSRatioPct",
+        "FreightBurdenPct",
+        "ExciseBurdenPct",
+        "TotalAllCosts",
+        "NetProfitAfterAllCosts",
+        "NetMarginPct",
+        "PerformanceVsAverage",
+        "MeetsMinK"
+      ],
+      "sha256": "968eff230af84cbdf6674676505d18a157b00d8e9f9b513efb80f2f20018764e"
+    },
+    "vendor_monthly_demand": {
+      "rows": 1400,
+      "columns": [
+        "VendorName",
+        "SalesYear",
+        "SalesMonth",
+        "MonthlyDemand",
+        "MonthlyRevenue",
+        "ActiveSKUs",
+        "MeetsMinK"
+      ],
+      "sha256": "0530ee057f1e754f594446861aa101ea7254de2a7acccb0b037182a4dd8cf767"
+    },
+    "portfolio_monthly_demand": {
+      "rows": 12,
+      "columns": [
+        "SalesYear",
+        "SalesMonth",
+        "MonthlyDemand",
+        "MonthlyRevenue",
+        "ActiveSKUs"
+      ],
+      "sha256": "0c3c5c816071c292dc632b27eab24742d87ba135a26e8a8776989e1e8ebf49b5"
+    },
+    "vendor_health_mix": {
+      "rows": 399,
+      "columns": [
+        "VendorName",
+        "HealthStatus",
+        "SKUs"
+      ],
+      "sha256": "3224c3a2d2cfffb7a57f8758fe28e6d7b0a95fe9888a9aa5ff54b0d416dbb69e"
+    },
+    "portfolio_health_mix": {
+      "rows": 5,
+      "columns": [
+        "HealthStatus",
+        "SKUs",
+        "SharePct"
+      ],
+      "sha256": "dfe0a5dd8375421470c7932664a77d3c1f79aa33890b22e9c31fd8ceea12d02a"
+    }
+  }
+}

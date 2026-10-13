@@ -1,0 +1,26 @@
+# Python
+.venv/
+__pycache__/
+*.pyc
+.mypy_cache/
+.ruff_cache/
+.pytest_cache/
+*.egg-info/
+
+# Secrets and local config
+.env
+*.pem
+
+# LICENCE RULE: purchased-data derivatives never enter Git.
+# The snapshot is rebuilt locally by scripts/build_snapshot.py; only its manifest is tracked.
+data/snapshot/*.parquet
+data/snapshot/*.duckdb
+data/private/
+*.xlsx
+*.csv
+
+# Tooling
+.ipynb_checkpoints/
+.vscode/
+.idea/
+.DS_Store

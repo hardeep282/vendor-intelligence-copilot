@@ -1,0 +1,20 @@
+{
+  "file": "golden_v1.jsonl",
+  "sha256": "ef8e9e3f864313629daf466674f982124b9692a1beb4c6de3046bc54fea2ae24",
+  "questions": 40,
+  "by_category": {
+    "lookup": 6,
+    "aggregation": 8,
+    "comparison": 6,
+    "trend": 5,
+    "definition": 5,
+    "multi_hop": 4,
+    "out_of_scope": 3,
+    "adversarial": 3
+  },
+  "by_split": {
+    "dev": 27,
+    "test": 10,
+    "adversarial": 3
+  }
+}

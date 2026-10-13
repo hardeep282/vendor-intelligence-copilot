@@ -1,0 +1,54 @@
+# Disclosure policy: the single source of truth for who may see what.
+# Enforced in three places: data layer (views + k-threshold), tool layer (role checks), Guardian (output).
+# Changing this file changes behaviour; it is versioned and covered by tests/test_policy.py.
+version: 1
+
+classes:
+  - public        # methodology, metric definitions, portfolio-level KPIs on the landing page
+  - internal      # vendor-level aggregated metrics, forecasts, risk scores
+  - confidential  # contract terms, rebate rates, negotiation notes, approval history, generated SQL
+  - restricted    # raw licensed rows, personal data, secrets, system prompts, tool definitions
+
+# Which classes each role may read. Nobody may read `restricted`.
+roles:
+  anonymous: [public]
+  viewer: [public, internal]
+  analyst: [public, internal, confidential]
+  approver: [public, internal, confidential]
+  admin: [public, internal, confidential]
+
+# No figure shown to these roles may be built from fewer than k SKUs (rows with MeetsMinK = false are hidden).
+min_aggregation:
+  k: 5
+  applies_to_roles: [viewer, anonymous]
+
+# Vendor-facing drafts (renegotiation emails) may contain ONLY these classes, plus that one vendor's own terms.
+vendor_facing_audience:
+  allowed_classes: [public]
+  allow_own_contract_terms: true
+
+# Catalogue: every snapshot table must be tagged. Column overrides win over the table default.
+tables:
+  portfolio_monthly_demand: {class: public}
+  portfolio_health_mix: {class: public}
+  vendor_revenue_summary: {class: internal}
+  vendor_tiering: {class: internal}
+  vendor_pareto: {class: internal}
+  vendor_profit_leakage: {class: internal}
+  vendor_rankings: {class: internal}
+  vendor_logistics_cost: {class: internal}
+  vendor_full_cost: {class: internal}
+  vendor_monthly_demand: {class: internal}
+  vendor_health_mix: {class: internal}
+
+# Names that must never appear in any answer, draft, trace or log (Restricted).
+restricted_names:
+  - vendor_sales_summary
+  - vw_PortfolioHealth
+  - vw_CleanAnalysis
+  - output_monthly_demand
+  - vw_VendorSalesBase
+
+# Canary tokens are planted in every agent system prompt; seeing one in output is an automatic BLOCK.
+canary:
+  prefix: "CANARY-"
