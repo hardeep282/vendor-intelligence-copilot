@@ -27,3 +27,16 @@ All commands run in PowerShell from `C:\Projects\vendor-intelligence-copilot` wi
 | 5 | Scan for secrets before pushing | `uv run pre-commit run gitleaks --all-files` | Runs just the gitleaks hook on every tracked file | "Detect hardcoded secrets...Passed" |
 
 AWS commands for Day 2 are in the Day 2 guide; they run in AWS CloudShell.
+
+## Laptop setup and first push (13–14 Oct)
+
+| # | What this step does | Command | What each part does | Expected result |
+|---|---|---|---|---|
+| 1 | Install uv | `winget install --id astral-sh.uv -e` | Windows package manager; `--id` exact package; `-e` exact match | uv installed (open a new terminal) |
+| 2 | Ignore the Linux executable bit | `git config core.fileMode false` | Repo-level setting; permission changes stop counting as edits | `git status` clean |
+| 3 | Remove a leftover repo-level identity | `git config --unset user.name` / `git config --unset user.email` | Deletes the repo setting so your global identity applies | No output |
+| 4 | Re-author all commits (only before the first push) | `git rebase --root --exec "git commit --amend --reset-author --no-edit"` | Replays every commit and amends each with your identity | "Successfully rebased" |
+| 5 | Force Linux line endings | `Set-Content -Path .gitattributes -Encoding ascii -Value "* text=auto","*.sh text eol=lf",...` | ASCII avoids PowerShell 5's BOM; one string per line | File with 5 rules |
+| 6 | Apply the rules to tracked files | `git add .gitattributes` then `git add --renormalize .` | `--renormalize` re-processes tracked files only | `A  .gitattributes` |
+| 7 | Connect and push | `git remote add origin https://github.com/hardeep282/vendor-intelligence-copilot.git` then `git push -u origin main` | `-u` sets the upstream for later `git push`/`git pull` | `branch 'main' set up to track 'origin/main'` |
+| 8 | Get changes pushed by Claude | `git pull` | Fetches and merges `origin/main` | `Fast-forward` |

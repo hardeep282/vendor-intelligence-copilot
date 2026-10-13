@@ -28,3 +28,26 @@ Format: symptom, root cause, the commands that fixed it, how to prevent it.
 
 - **Cause:** public IPv4 addresses cost $0.005/h whether attached or idle.
 - **Fix:** release it: `aws ec2 release-address --allocation-id <alloc-id>`.
+
+## `uv` is not recognized (Windows PowerShell)
+
+- **Cause:** uv was not installed on the laptop.
+- **Fix:** `winget install --id astral-sh.uv -e`, then open a **new** PowerShell window (PATH is read at start-up) and check `uv --version`.
+
+## `git rebase` refuses: "You have unstaged changes" with 0 lines changed
+
+- **Cause:** the repo was created on Linux, where shell scripts carry an executable bit; Windows has no such bit, so Git
+  reported a mode change on `deploy.sh` and `user-data.sh`.
+- **Fix:** `git config core.fileMode false` (this repo only), then `git status --short` is empty.
+
+## "LF will be replaced by CRLF" on shell scripts
+
+- **Cause:** Git on Windows converts line endings; a script with CRLF fails on Linux (`/bin/bash^M: bad interpreter`).
+- **Fix:** `.gitattributes` forcing `eol=lf` for `*.sh`, `*.yml`, `*.yaml`, `*.Dockerfile`; then
+  `git add .gitattributes` and `git add --renormalize .` (note: `--renormalize` only touches tracked files).
+
+## Commits show the wrong author after unpacking a package
+
+- **Cause:** a repo-level `user.name`/`user.email` overrides your global identity.
+- **Fix:** `git config --unset user.name`, `git config --unset user.email`, then (before the first push only)
+  `git rebase --root --exec "git commit --amend --reset-author --no-edit"`. If a typo pauses the rebase, `git rebase --abort`.

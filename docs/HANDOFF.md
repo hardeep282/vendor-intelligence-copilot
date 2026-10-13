@@ -20,7 +20,7 @@ Written: Tue 13 Oct 2026. Paste this whole file into the new chat together with 
 
 | Item | Value |
 |---|---|
-| Repo | `hardeep282/vendor-intelligence-copilot` (private; you push it from the Day 2 guide, tab 1) |
+| Repo | `hardeep282/vendor-intelligence-copilot` (private, pushed 14 Oct; attach with push access) |
 | Branch | `main` |
 | Commits | `feat: Day 1 foundations …` → `feat: Day 2 production skeleton - API, Docker, CI/CD, secrets` (+ this handoff commit) |
 | Local folder | `C:\Projects\vendor-intelligence-copilot` (unpack `vendor-intelligence-copilot-day2.tar.gz`) |
@@ -66,7 +66,7 @@ Next ADR number: 005 (LLM provider: Anthropic API vs Bedrock, Day 3).
 
 | Action | Status |
 |---|---|
-| Unpack day2 package, rewrite author, push to private GitHub repo | ☐ |
+| Unpack day2 package, rewrite author, push to private GitHub repo | ☑ (14 Oct) |
 | AWS: Paid plan, root MFA, non-root admin, budget + anomaly alerts | ☐ |
 | Server built (CloudShell), Session Manager Online | ☐ (public IP: ______) |
 | CI connected: OIDC role, 5 GitHub variables, first deploy green | ☐ |
@@ -77,6 +77,11 @@ Next ADR number: 005 (LLM provider: Anthropic API vs Bedrock, Day 3).
 Day 3 can start before the AWS and domain rows are done. It needs the repo on GitHub and your dev keys.
 
 ## How Day 3 runs (important)
+
+- **Commit identity (agreed 13 Oct):** commits made by Claude use `Hardeep Bamrah <hardeep.bamrah282@gmail.com>` as
+  author with a `Co-Authored-By: Claude` trailer. Set it with repo-level `git config` in the cloud clone only;
+  never ship a repo-level identity to the laptop.
+- Laptop repo has `core.fileMode=false` and `.gitattributes` (LF for scripts/config). uv 0.13.0 on the laptop.
 
 - Claude writes and tests code in its cloud workspace and pushes to the repo; you `git pull` in VS Code.
 - **Keys never go in chat.** Anything that calls the Anthropic API or LangSmith (baseline evals, temperature lab,

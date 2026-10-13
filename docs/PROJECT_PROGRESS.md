@@ -6,7 +6,7 @@ Last updated: Tue 13 Oct 2026 (Day 2 of the 10-day sprint, sprint plan v2)
 
 | Day | Theme | Status |
 |---|---|---|
-| 1 | Foundations, data, golden set | Build done. Waiting on you: GitHub push, AWS hardening, keys |
+| 1 | Foundations, data, golden set | Build done; repo pushed to GitHub (14 Oct). Waiting on you: AWS hardening, keys |
 | 2 | Production skeleton live | Code done and tested. Waiting on you: AWS resources, domain, GitHub variables |
 | 3 | LLM service, text-to-SQL, temperature and tokenization labs | Not started |
 | 4 | RAG and advanced RAG | Not started |
@@ -35,7 +35,7 @@ Last updated: Tue 13 Oct 2026 (Day 2 of the 10-day sprint, sprint plan v2)
 
 | Metric | Baseline | Current | Notes |
 |---|---|---|---|
-| Tests passing | 0 | 22 | `uv run pytest -q` |
+| Tests passing | 0 | 33 | `uv run pytest -q` (laptop and cloud) |
 | Golden questions | 0 | 40 (27 dev, 10 test, 3 adversarial) | hash in `evals/datasets/golden_v1.manifest.json` |
 | Execution accuracy, grounding, leakage rate | n/a | TBD (Day 3) | |
 
