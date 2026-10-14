@@ -94,3 +94,13 @@ def test_agent_name_is_restricted_to_the_five_specialist_roster() -> None:
             objective="x",
             role="analyst",
         )
+
+
+def test_budget_effort_defaults_to_none_and_accepts_a_valid_effort() -> None:
+    assert AgentBudget().effort is None
+    assert AgentBudget(effort="high").effort == "high"
+
+
+def test_budget_rejects_an_invalid_effort() -> None:
+    with pytest.raises(ValueError):
+        AgentBudget(effort="turbo")  # type: ignore[arg-type]

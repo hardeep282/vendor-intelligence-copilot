@@ -1,14 +1,17 @@
-"""Tests for the Orchestrator (Day 6 steps 3-4): typed plan, Send fan-out, join, draft,
-logged-only conflict handling, and the Verifier's grounding/citation/sufficiency check with its
-redraft loop. No network, no real API key, same convention as tests/test_model_selection_agent.py
-and tests/test_rag_corrective.py: the LLM side is FakeMessagesResource, queued in the exact order
+"""Tests for the Orchestrator (Day 6 steps 3-5): typed plan, Send fan-out, join, draft,
+logged-only conflict handling, the Verifier's grounding/citation/sufficiency check with its
+redraft loop, and per-agent budget enforcement (timeout -> failed, overage -> partial). No
+network, no real API key, same convention as tests/test_model_selection_agent.py and
+tests/test_rag_corrective.py: the LLM side is FakeMessagesResource, queued in the exact order
 the graph is expected to call it in; specialists are fake executors (step 2's own correctness is
 covered in tests/test_agent_specialists.py).
 """
 
 from __future__ import annotations
 
-from copilot.agents.contracts import AgentResult, TaskSpec
+import time
+
+from copilot.agents.contracts import AgentBudget, AgentResult, TaskSpec
 from copilot.agents.orchestrator import MAX_VERIFICATION_LOOPS, Orchestrator
 from copilot.llm.client import LLMClient
 from tests.fakes.anthropic_fakes import FakeMessagesResource, structured_response
@@ -353,3 +356,65 @@ def test_verification_that_never_passes_finalizes_unverified_after_max_loops() -
     assert result.answer == "attempt 3"  # delivered anyway, honestly flagged unverified
     # plan(1) + 3x(draft+verify) + specialist(1) = 1 + 6 + 1
     assert result.llm_calls == 8
+
+
+def test_a_specialist_that_outlives_its_latency_budget_becomes_a_failed_result() -> None:
+    def _slow(spec: TaskSpec) -> AgentResult:
+        time.sleep(0.2)
+        return AgentResult(task_id=spec.task_id, agent="data_analyst", status="ok", findings="x")
+
+    llm = _llm_with(
+        [
+            structured_response(
+                {"tasks": [{"agent": "data_analyst", "objective": "x", "constraints": {}}]}
+            ),
+            structured_response(
+                {
+                    "answer": "I could not get an answer in time.",
+                    "cited_tasks": [],
+                    "conflicts_noted": [],
+                }
+            ),
+            _PASSING_VERDICT,
+        ]
+    )
+    orch = Orchestrator(
+        llm,
+        executors={"data_analyst": _slow},
+        default_budget=AgentBudget(max_latency_s=0.01),
+    )
+
+    result = orch.answer("x?", role="analyst")
+
+    assert result.results[0].status == "failed"
+    assert "timed out" in result.results[0].gaps[0]
+
+
+def test_a_specialist_that_overruns_its_cost_budget_is_downgraded_to_partial() -> None:
+    def _expensive(spec: TaskSpec) -> AgentResult:
+        return AgentResult(
+            task_id=spec.task_id,
+            agent="data_analyst",
+            status="ok",
+            findings="x",
+            cost_usd=10.0,  # way over the default $0.05 budget
+        )
+
+    llm = _llm_with(
+        [
+            structured_response(
+                {"tasks": [{"agent": "data_analyst", "objective": "x", "constraints": {}}]}
+            ),
+            structured_response(
+                {"answer": "x, but at unusual cost", "cited_tasks": ["t0"], "conflicts_noted": []}
+            ),
+            _PASSING_VERDICT,
+        ]
+    )
+    orch = Orchestrator(llm, executors={"data_analyst": _expensive})
+
+    result = orch.answer("x?", role="analyst")
+
+    assert result.results[0].status == "partial"
+    assert "exceeded budget" in result.results[0].gaps[0]
+    assert "cost" in result.results[0].gaps[0]

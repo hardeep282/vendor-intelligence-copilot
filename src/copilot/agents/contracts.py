@@ -26,6 +26,7 @@ from typing import Literal
 from pydantic import BaseModel, Field
 
 from copilot.guardrails.policy import DataClass, Role
+from copilot.llm.client import Effort
 
 AgentName = Literal[
     "data_analyst",
@@ -39,15 +40,27 @@ AgentStatus = Literal["ok", "partial", "failed"]
 
 
 class AgentBudget(BaseModel):
-    """Per-agent resource ceiling (C3: "own step/token/cost/latency budget"). A specialist that
-    would exceed one of these returns `status="partial"` with the overage named in `gaps`,
-    rather than running unbounded.
+    """Per-agent resource ceiling (C3: "own step/token/cost/latency budget"), enforced by the
+    Orchestrator (Day 6 step 5, `copilot.agents.orchestrator._run_specialist`), not by the
+    specialist itself: a specialist whose result overran `max_cost_usd`/`max_llm_calls` gets
+    downgraded `ok` -> `partial` with the overage named in `gaps` after it returns, and
+    `max_latency_s` additionally bounds how long the Orchestrator will *wait* on it -- a
+    specialist still running past that deadline is treated as `status="failed"`, not awaited
+    indefinitely (real cancellation of arbitrary synchronous specialist code isn't possible from
+    here; the bound is on how long the Orchestrator waits, not a guarantee the specialist's own
+    thread stops).
+
+    `effort` is this generation's per-call sampling lever, substituting for the
+    `temperature` the sprint doc originally asked for -- see `copilot.llm.client`'s module
+    docstring: this Anthropic SDK/model generation has no `temperature` parameter at all.
+    `None` lets each specialist fall back to its own prompt's `effort` default.
     """
 
     max_steps: int = 1
     max_llm_calls: int = 3
     max_cost_usd: float = 0.05
     max_latency_s: float = 30.0
+    effort: Effort | None = None
 
 
 class TaskSpec(BaseModel):

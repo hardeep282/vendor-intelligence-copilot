@@ -452,21 +452,25 @@ that a free check can't tell apart from real grounding.
 
 ### `src/copilot/agents/contracts.py` *(day: 6, isNew: true)*
 `TaskSpec`/`AgentResult` -- the typed handoff contracts C3 requires so no specialist passes free
-text to another. `TaskSpec` is what the Orchestrator (step 3, not yet built) hands one specialist:
-`objective` + `constraints` (a dict, not prose, so a node reads a known key instead of
-re-parsing), a `role`, and an `AgentBudget` (steps/LLM calls/cost/latency ceiling, defaults
-1/3/$0.05/30s). `AgentResult` is what comes back: condensed `findings` (C3's <=1500-token
-target), `evidence`, a `status` of ok/partial/failed, `gaps` when partial, and -- the field the
-Guardian (Day 7) will read -- `data_classes`, filled by the specialist itself from
-`DisclosurePolicy`, never inferred downstream. `AgentResult.exceeds()` is the self-check a
-specialist runs before returning, to decide `ok` vs `partial`.
+text to another. `TaskSpec` is what the Orchestrator hands one specialist: `objective` +
+`constraints` (a dict, not prose, so a node reads a known key instead of re-parsing), a `role`,
+and an `AgentBudget` (steps/LLM calls/cost/latency ceiling, defaults 1/3/$0.05/30s, plus
+`effort`). `AgentResult` is what comes back: condensed `findings` (C3's <=1500-token target),
+`evidence`, a `status` of ok/partial/failed, `gaps` when partial, and -- the field the Guardian
+(Day 7) will read -- `data_classes`, filled by the specialist itself from `DisclosurePolicy`,
+never inferred downstream. `AgentResult.exceeds()` is the check `copilot.agents.orchestrator.
+_run_specialist` (Day 6 step 5) actually runs after a specialist returns, to decide `ok` vs
+`partial`. `AgentBudget.effort` (Day 6 step 5) is an `Effort | None` -- this generation's
+sampling lever, since `copilot.llm.client`'s module docstring already established that this
+Anthropic SDK/model generation has no `temperature` parameter at all; `None` lets a specialist
+fall back to its own prompt's `effort` default.
 **Takes in:** nothing at import time -- pure Pydantic contracts.
 **Gives out:** `TaskSpec`, `AgentResult`, `AgentBudget`, `AgentName` (the closed 5-name Literal:
 data_analyst/forecasting_risk/inventory_planning/knowledge/action), `AgentStatus`.
-**Talks to:** `copilot.guardrails.policy` (`DataClass`, `Role`). Deliberately does **not** reuse
-`TextToSqlResult`/`CorrectiveRagResult`/`ModelSelectionResult` as the envelope -- those stay each
-service's own return type; the orchestrator-not-yet-built wraps each into an `AgentResult`
-rather than those services growing orchestrator-shaped fields.
+**Talks to:** `copilot.guardrails.policy` (`DataClass`, `Role`); `copilot.llm.client` (`Effort`).
+Deliberately does **not** reuse `TextToSqlResult`/`CorrectiveRagResult`/`ModelSelectionResult`
+as the envelope -- those stay each service's own return type; the Orchestrator wraps each into
+an `AgentResult` rather than those services growing orchestrator-shaped fields.
 
 ### `src/copilot/agents/specialists.py` *(day: 6, isNew: true)*
 The five specialist nodes (C3 roster), each a plain `TaskSpec -> AgentResult` function wrapping
@@ -539,6 +543,15 @@ draft/verify loops ran (that summation moved out of `_draft`, which can now run 
 into this one-time-only node). A specialist executor that raises, or a planned agent with no
 executor registered, becomes a `status="failed"` `AgentResult` with the reason in `gaps` rather
 than crashing the whole plan.
+**Day 6 step 5: per-agent budgets, enforced.** `_run_specialist` runs the executor through a
+single-worker `ThreadPoolExecutor`, bounded by `task.budget.max_latency_s`; a specialist that
+doesn't return in time becomes `status="failed"` with a "timed out after Ns" gap instead of an
+unbounded wait (the Orchestrator stops waiting -- it can't force arbitrary sync code to actually
+stop, same honest limit every `concurrent.futures`-timeout approach has). After an `ok` result
+returns, `AgentResult.exceeds(task.budget)` is checked for real now (step 1 defined it, nothing
+called it); an overage downgrades the result to `status="partial"` with the specific cost/
+latency/llm_calls overage named in `gaps`, so a specialist that quietly blew its budget is never
+reported as if nothing happened.
 **Takes in:** an `LLMClient`, `executors: dict[AgentName, SpecialistExecutor]` -- the Day 6
 step 2 `run_*` functions, wired in by the caller (never constructed here: each needs a
 different real dependency the Orchestrator has no business reproducing) -- plus a question and

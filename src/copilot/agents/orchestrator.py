@@ -41,6 +41,17 @@ into state, mirroring `_revise`/`MAX_REVISIONS` there). If the draft fails verif
 back to `draft` with that feedback for a redraft, up to `MAX_VERIFICATION_LOOPS` times; after
 that it finalizes anyway with `verified=False` rather than looping forever -- a worse answer
 delivered honestly-flagged beats no answer at all.
+
+**Day 6 step 5: per-agent budgets, enforced.** `TaskSpec.budget` (an `AgentBudget`) was defined
+in step 1 but only ever checked by `AgentResult.exceeds()`, which nothing called -- step 5 is
+that call site. `_run_specialist` now (a) waits on the executor through a thread pool bounded by
+`budget.max_latency_s`, turning a stuck specialist into a `status="failed"` result instead of an
+unbounded hang (the Orchestrator stops *waiting*; it cannot forcibly stop arbitrary synchronous
+Python code, so a runaway specialist's thread may still be running in the background -- same
+honest limitation `concurrent.futures`-based timeouts always have), and (b) downgrades an
+otherwise-`ok` result to `partial` with the specific overage named in `gaps` when
+`AgentResult.exceeds(budget)` is true, so a specialist that quietly blew its cost/call budget
+is never reported as if nothing happened.
 """
 
 from __future__ import annotations
@@ -48,6 +59,8 @@ from __future__ import annotations
 import operator
 import time
 from collections.abc import Callable
+from concurrent.futures import ThreadPoolExecutor
+from concurrent.futures import TimeoutError as FutureTimeoutError
 from typing import Annotated, Any, TypedDict, cast
 
 from anthropic.types import MessageParam
@@ -290,7 +303,21 @@ class Orchestrator:
 
         t0 = time.monotonic()
         try:
-            result = executor(task)
+            with ThreadPoolExecutor(max_workers=1) as pool:
+                future = pool.submit(executor, task)
+                result = future.result(timeout=task.budget.max_latency_s)
+        except FutureTimeoutError:
+            result = AgentResult(
+                task_id=task.task_id,
+                agent=task.agent,
+                status="failed",
+                findings=(
+                    f"specialist exceeded its {task.budget.max_latency_s:.0f}s latency budget"
+                ),
+                gaps=[f"timed out after {task.budget.max_latency_s:.0f}s"],
+                confidence="low",
+                latency_s=time.monotonic() - t0,
+            )
         except Exception as exc:  # noqa: BLE001 -- one specialist's failure must not crash the
             # whole plan; see module docstring.
             result = AgentResult(
@@ -302,6 +329,25 @@ class Orchestrator:
                 confidence="low",
                 latency_s=time.monotonic() - t0,
             )
+        else:
+            if result.status == "ok" and result.exceeds(task.budget):
+                overages = []
+                if result.cost_usd > task.budget.max_cost_usd:
+                    overages.append(
+                        f"cost ${result.cost_usd:.4f} > ${task.budget.max_cost_usd:.4f}"
+                    )
+                if result.latency_s > task.budget.max_latency_s:
+                    overages.append(
+                        f"latency {result.latency_s:.1f}s > {task.budget.max_latency_s:.1f}s"
+                    )
+                if result.llm_calls > task.budget.max_llm_calls:
+                    overages.append(f"llm_calls {result.llm_calls} > {task.budget.max_llm_calls}")
+                result = result.model_copy(
+                    update={
+                        "status": "partial",
+                        "gaps": [*result.gaps, "exceeded budget: " + "; ".join(overages)],
+                    }
+                )
         return {"results": [result]}
 
     def _draft(self, state: _State) -> dict[str, object]:
