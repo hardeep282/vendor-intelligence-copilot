@@ -8,7 +8,7 @@ Last updated: Wed 14 Oct 2026 (Day 3 of the 10-day sprint, sprint plan v3, in pr
 |---|---|---|
 | 1 | Foundations, data, golden set | Build done; repo pushed to GitHub (14 Oct) |
 | 2 | Production skeleton live | Code done and tested. Waiting on you: AWS resources, domain, GitHub variables |
-| 3 | LLM service, text-to-SQL, effort and tokenization labs | In progress: steps 1-6 and 8 of 9 done |
+| 3 | LLM service, text-to-SQL, effort and tokenization labs | Build done: 8 of 9 steps shipped (step 7 skipped, see below) |
 | 4 | RAG and advanced RAG | Not started |
 | 5 | ML tools for the agents | Not started |
 | 6 | Multi-agent system in LangGraph | Not started |
@@ -29,7 +29,7 @@ Last updated: Wed 14 Oct 2026 (Day 3 of the 10-day sprint, sprint plan v3, in pr
 | 6 | Golden v2 as a LangSmith dataset + evaluators | **Done** (`copilot.evals.evaluators`, `copilot.evals.langsmith_sync`; actual push needs your `LANGSMITH_API_KEY` -- run `scripts/push_golden_to_langsmith.py` on your machine) |
 | 7 | Question->SQL pair generator | Not started (cut-first item; may move to Day 9 regardless) |
 | 8 | Temperature lab | **Done, as an effort lab** -- see correction below (`copilot.evals.effort_lab`; real sweep needs your `ANTHROPIC_API_KEY` -- run `scripts/run_effort_lab.py` on your machine) |
-| 9 | Tokenization lab | Not started |
+| 9 | Tokenization lab | **Done** (`copilot.evals.tokenization_lab`; real sweep needs network access beyond just your API key -- run `scripts/run_tokenization_lab.py` on your machine) |
 
 ### Correction found during step 1 (ADR-005)
 
@@ -51,13 +51,14 @@ instead of 3 temperatures x 5 runs. Full writeup: `docs/adr/005-llm-provider.md`
 
 | Metric | Baseline | Current | Notes |
 |---|---|---|---|
-| Tests passing | 33 | 140 | `uv run pytest -q`; +12 `copilot.llm`, +12 prompts + `InsightService`, +29 SQL validator, +16 schema/examples/text-to-SQL service, +22 evaluators/langsmith_sync, +10 golden v2, +4 effort lab |
+| Tests passing | 33 | 145 | `uv run pytest -q`; +12 `copilot.llm`, +12 prompts + `InsightService`, +29 SQL validator, +16 schema/examples/text-to-SQL service, +22 evaluators/langsmith_sync, +10 golden v2, +4 effort lab, +5 tokenization lab |
 | Golden questions | 40 (27 dev, 10 test, 3 adversarial) | 46 (27 dev, 16 test, 3 adversarial) | golden v2 adds the 6 text-to-SQL trap questions from the spec; v1 stays frozen at 40 for history |
 | Execution accuracy, grounding, leakage rate | n/a | evaluators built + tested; no end-to-end run yet | `copilot.evals.evaluators.execution_accuracy`/`leakage_free`, 17 tests pass; running them against real `TextToSqlService` output needs your API key, same as the effort/tokenization labs |
 | SQL validator: structural + semantic + coverage rules | n/a | 29/29 tests pass, 0 false positives on 33 real golden queries | every trap in `docs/specs/text_to_sql_safety.md`'s trap table has a BLOCK test and an ALLOW test |
 | Text-to-SQL self-correction loop | n/a | 4/4 tests pass (first-try, 1-retry, abstain, exhausted) | validator rejection fed back as the next turn; abstains after 2 retries rather than run bad SQL |
 | LLM client: retries, repair loop, caching, no-temperature guard | n/a | Tested | against a fake SDK, no API key used (`tests/test_llm_client.py`) |
 | First real LLM call (`InsightService`, DIAGEO, viewer role) | n/a | $0.01127, 7.31s, 1 attempt, 0 repairs | run on your machine, 14 Oct; caught and fixed a `max_tokens` truncation bug (see BUILD_LOG) |
+| Tokenization lab: provider vs. tiktoken vs. HF, cost/1000 req | n/a | module + 5 tests pass; no real sweep yet | `copilot.evals.tokenization_lab`; provider count is ground truth, the other two are scored by % error against it rather than assumed close -- real numbers need your machine (`scripts/run_tokenization_lab.py`), see Next step |
 
 ## Decisions
 
@@ -78,13 +79,17 @@ None yet. Target: `https://api.vendor.<domain>/health`.
 
 ## Next step
 
-Me: Day 3 step 9 (tokenization lab -- provider counter vs. tiktoken vs. a Hugging Face
-tokenizer, cost per 1,000 requests); step 7 (question->SQL pair generator) stays skipped per
-the sprint doc's own "likely cut" flag unless you want it built anyway. You: three scripts are
-now ready to run on your machine with your own keys (never in chat) --
-`scripts/push_golden_to_langsmith.py` (LangSmith dataset sync), a real `TextToSqlService` call
-(same pattern as the `InsightService` first-call test), and `scripts/run_effort_lab.py` (15
-real Anthropic calls by default, ~$0.15-0.20 going by the InsightService baseline) -- paste
-back whichever printed results you want logged here. Also still open: Docker Desktop
-install/engine status (Day 2's actual `docker build` has not run yet), and AWS resources,
-domain, GitHub variables from Day 2.
+Me: Day 3 is now fully built -- 8 of its 9 checklist items done (step 7, the question->SQL
+pair generator, stays skipped per the sprint doc's own "likely cut" flag; say so if you want
+it built anyway). Next up is Day 4 (RAG and advanced RAG) whenever you're ready to continue
+the sprint. You: four scripts are now ready to run on your machine with your own keys (never
+in chat) -- `scripts/push_golden_to_langsmith.py` (LangSmith dataset sync),
+a real `TextToSqlService` call (same pattern as the `InsightService` first-call test),
+`scripts/run_effort_lab.py` (15 real Anthropic calls by default, ~$0.15-0.20 going by the
+InsightService baseline), and `scripts/run_tokenization_lab.py` (5 token-counting calls, far
+cheaper than a completion, but needs normal internet access beyond api.anthropic.com --
+`tiktoken` and the Hugging Face tokenizer each download their vocab the first time, from
+hosts this project's own build sandbox couldn't reach) -- paste back whichever printed
+results you want logged here. Also still open: Docker Desktop install/engine status (Day 2's
+actual `docker build` has not run yet), and AWS resources, domain, GitHub variables from
+Day 2.

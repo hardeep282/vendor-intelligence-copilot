@@ -327,3 +327,47 @@ x 5 effort levels x 1 repeat = 15 calls; `--repeats` and `--questions` are both 
   `test_diversity_measures_fraction_of_distinct_sql_across_repeats` before trusting the logic.
 
 **Metrics:** 140 tests pass (+4). ruff and mypy clean.
+
+## 2026-10-14 · Day 3, step 9 (final item) · Tokenization lab
+
+**Covered:** `copilot.evals.tokenization_lab.run_tokenization_lab()` -- compares three ways
+of counting tokens on this project's own real prompts (the actual `text_to_sql` system prompt
+rendered with a real schema card and real retrieved examples for two roles, plus one real
+`vendor_insight` prompt): Anthropic's own token-counting endpoint
+(`client.messages.count_tokens(...)`, a real authenticated call that returns an exact count
+and is billed as a count request, not a completion), `tiktoken` (OpenAI's BPE encodings, a
+local/offline approximation), and a Hugging Face `tokenizers.Tokenizer` (a different local/
+offline approximation, different vocabulary again). The provider count is treated as ground
+truth and the other two are scored against it (`pct_error_vs_provider`), rather than assuming
+either approximation is close -- Anthropic has never published its own tokenizer, so there is
+no way to know how close without measuring. Every method's average token count is also run
+through the real Sonnet 5 pricing table (`copilot.llm.pricing.cost_usd`) to project a
+cost-per-1,000-requests figure, so a wrong token count's dollar impact is visible, not just
+its token-count impact.
+
+`scripts/run_tokenization_lab.py` is the real CLI. Unlike every earlier "run this yourself"
+script in this project, it needs more than just `ANTHROPIC_API_KEY`: `tiktoken` and the HF
+tokenizer both need a one-time network download of their vocab files, and
+`openaipublic.blob.core.windows.net` / `huggingface.co` were both outside this build
+sandbox's proxy allowlist when this was written (confirmed by trying -- both calls came back
+`403 Forbidden` through the sandbox's proxy, not assumed from the sandbox's general network
+notes). Both are ordinary public downloads from a machine with normal internet access, so
+this is expected to just work on yours.
+
+**Mistakes and fixes:**
+- First attempt tried to install and exercise a real Hugging Face tokenizer (`gpt2`, via the
+  lightweight `tokenizers` package rather than the much heavier `transformers`) and real
+  `tiktoken` directly in this sandbox to verify the adapters end-to-end. Both failed on the
+  vocab download (proxy `403`). Rather than mocking around that silently, the module's own
+  docstring and the script's own header now state the sandbox limitation explicitly, and the
+  test suite uses a tiny WordLevel tokenizer built in-process with the real `tokenizers`
+  library (exercises the real `.encode(text).ids` interface, no network) plus a whitespace
+  stub standing in for tiktoken -- so what's tested is this module's logic, not a repeat of
+  the already-confirmed fact that tiktoken/HF need a download.
+- `tokenizers` (for the HF adapter) was not yet a project dependency; added via
+  `uv add tokenizers` (pulls in `huggingface-hub`/`tqdm`/`hf-xet`, not the much larger
+  `transformers`/`torch` stack, since only the pure tokenizer is needed here).
+
+**Metrics:** 145 tests pass (+5 `test_tokenization_lab.py`). ruff and mypy clean across the
+whole repo. This was the last item in Day 3's checklist (step 7, the question->SQL pair
+generator, stays skipped per the sprint doc's own "likely cut" flag).
