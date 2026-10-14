@@ -88,9 +88,7 @@ def check_corpus_against_policy(docs: list[KnowledgeDoc]) -> None:
     """
     policy = load_policy()
     for doc in docs:
-        expected = sorted(
-            role for role in policy.roles if policy.can_view(role, doc.data_class)
-        )
+        expected = sorted(role for role in policy.roles if policy.can_view(role, doc.data_class))
         actual = sorted(doc.allowed_roles)
         if actual != expected:
             raise CorpusError(

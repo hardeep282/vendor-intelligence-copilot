@@ -74,3 +74,15 @@ stranded; see `docs/BUILD_LOG.md`.
 its first run downloads ~90MB from the Hugging Face Hub -- huggingface.co is outside this build
 sandbox's proxy allowlist (same wall Day 3 hit for `tiktoken`/HF tokenizer downloads), so this one
 runs on your machine, like the Day 3 effort/tokenization labs.
+
+## Day 4 (step 4: hybrid BM25 + vector retrieval, fused with RRF)
+
+| # | What this step does | Command | What each part does | Expected result |
+|---|---|---|---|---|
+| 1 | Add the BM25 dependency | `uv add rank-bm25` | Resolves and locks `rank-bm25`, a small pure-Python Okapi BM25 implementation, against pinned Python 3.12 | `uv.lock` updated; `+ rank-bm25==0.2.2` in the output |
+| 2 | Run every check | `uv run ruff check . && uv run mypy && uv run pytest -q` | lint, strict type-check, tests, in that order | "All checks passed!" / "Success" / "196 passed" |
+
+No API key or network access needed -- BM25 is pure lexical scoring over chunk text already in
+memory, and every test uses `FakeEmbedder` for the vector half, same as steps 1-3. `rank-bm25`
+ships no type stubs, so `[[tool.mypy.overrides]]` in `pyproject.toml` ignores it by name rather
+than the whole-repo `ignore_missing_imports` escape hatch.

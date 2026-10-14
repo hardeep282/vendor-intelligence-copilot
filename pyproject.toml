@@ -16,6 +16,7 @@ dependencies = [
     "pydantic",
     "pydantic-settings",
     "pyyaml",
+    "rank-bm25>=0.2.2",
     "sentence-transformers>=6.1.0",
     "sqlglot>=27.0.0",
     "tenacity>=9.0.0",
@@ -61,6 +62,12 @@ python_version = "3.12"
 strict = true
 files = ["src", "scripts"]
 plugins = ["pydantic.mypy"]
+
+[[tool.mypy.overrides]]
+# rank-bm25 ships no type stubs and no py.typed marker; its surface used here (BM25Okapi,
+# get_scores) is tiny and stable, so an untyped import is simpler than hand-rolling a stub file.
+module = "rank_bm25"
+ignore_missing_imports = true
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]

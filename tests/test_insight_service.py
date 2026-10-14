@@ -82,7 +82,8 @@ def test_gather_vendor_data_unknown_vendor_raises(con, policy) -> None:  # noqa:
 
 
 def test_vendor_insight_calls_llm_with_grounded_data_and_returns_typed_result(
-    con, policy  # noqa: ANN001
+    con,
+    policy,  # noqa: ANN001
 ) -> None:
     llm = LLMClient(api_key="sk-test-not-real")
     fake = FakeMessagesResource(

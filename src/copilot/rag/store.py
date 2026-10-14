@@ -83,9 +83,7 @@ def data_class_from_metadata(metadata: dict[str, object]) -> DataClass:
 class ChunkStore:
     """Thin wrapper over one Chroma collection of chunk embeddings."""
 
-    def __init__(
-        self, client: ClientAPI, collection_name: str = DEFAULT_COLLECTION_NAME
-    ) -> None:
+    def __init__(self, client: ClientAPI, collection_name: str = DEFAULT_COLLECTION_NAME) -> None:
         # embedding_function=None: we always supply our own vectors (via Embedder), so Chroma
         # must never fall back to its default embedding function, which would both silently
         # change what gets stored and try to download a model of its own.

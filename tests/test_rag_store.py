@@ -123,7 +123,7 @@ def test_stored_metadata_round_trips_roles_and_data_class(store: ChunkStore) -> 
     store.upsert([chunk], embedder)
 
     (query_vector,) = embedder.embed(["confidential text"])
-    (_id, _text, metadata, _distance), = store.query(query_vector, n_results=1)
+    ((_id, _text, metadata, _distance),) = store.query(query_vector, n_results=1)
 
     assert data_class_from_metadata(metadata) == "confidential"
     assert roles_from_metadata(metadata) == ("analyst", "approver", "admin")

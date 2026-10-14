@@ -516,3 +516,69 @@ local and free once its weights are downloaded.
 inside the vector query, the Corrective RAG loop in LangGraph, and the recall@5/MRR/Ragas eval
 on 20 labelled questions) still ahead. `scripts/build_rag_index.py` has not been run for real
 yet -- needs your machine, per the pattern above.
+
+## 2026-10-14 · Day 4 step 4: hybrid BM25 + vector retrieval, fused with RRF
+
+Built `copilot.rag.retrieval`: `BM25Index` (pure-Python Okapi BM25 over chunk text, via the new
+`rank-bm25` dependency, rebuilt in memory from the chunk list each time -- no incremental-update
+story needed at hundreds-of-chunks scale) + `reciprocal_rank_fusion()` (the plain RRF formula,
+`sum(1/(k+rank))` across however many rankings are passed in, default `k=60` -- the constant
+Cormack, Clarke & Buettcher (2009) used and that most hybrid-search writeups since have kept) +
+`HybridRetriever`, which runs a BM25 search and a `ChunkStore.query()` vector search over the
+same chunk list and fuses the two rankings into one.
+
+**Why fuse at all:** vector search catches paraphrase (different words, same meaning) but is
+weak on exact identifiers -- a vendor code, a clause number, a dollar figure -- because those
+tokens don't sit near each other in embedding space the way their meaning would suggest. BM25
+is the reverse: strong on exact terms, blind to paraphrase. RRF fuses *ranks*, not raw scores,
+specifically so BM25's unbounded term-frequency scores never need calibrating against Chroma's
+cosine distances -- two completely different scales that RRF never has to compare directly.
+
+**Cut from this step:** a cross-encoder reranker on the fused candidates. Real quality lever,
+but a second model to load and run per query, and this step's job was to get the fusion
+mechanics right first (BM25 index, RRF math, candidate-pool sizing) before adding a second
+stage on top. `RetrievedChunk` already carries each chunk's full text, so a reranker slots in
+later as a third stage without touching this module's contract. Logged as a cut, not an ADR --
+same posture as the embedding model and vector store (a standard default, not a build-vs-buy
+decision with real alternatives measured against it).
+
+**No permission filtering here either** -- that's step 5, which wraps `HybridRetriever` rather
+than changing it, same relationship step 4 has with `ChunkStore.query()`.
+
+Tests (12, `tests/test_rag_retrieval.py`) check: BM25 ranks more term-overlap higher and drops
+zero-overlap chunks entirely (a 0 score is "no match," not "weak match," so keeping it in the
+ranking would let RRF give it undeserved credit); the RRF formula against hand-computed values
+for a known input; that an item appearing in both rankings outranks one that's rank-1 in only
+one (the actual property RRF buys you); and, at the `HybridRetriever` level, that a chunk with
+*zero* lexical overlap with the query is still retrieved -- via the vector ranking alone --
+something BM25-only retrieval would have missed outright. `FakeEmbedder` isn't semantically
+aware (see its own docstring), so that last test controls the vector signal the only reliable
+way available: making the query text exactly equal one chunk's text, which gives it the nearest
+possible vector distance (0) regardless of lexical overlap with anything else in the corpus.
+
+Updated `docs/CODE_MAP.md` with the new `retrieval.py` entry (same commit, per the standing
+rule), corrected the `store.py` entry's now-stale forward reference to "no BM25 fusion yet,"
+and moved the "not yet started" note from "steps 4-7" to "steps 5-7."
+
+**Mistakes and fixes:**
+
+- First cut of `BM25Index` tests used identical filler text across every chunk in a
+  `n_results`-respecting test. BM25's idf term goes non-positive when a term appears in every
+  document in the corpus, and the library floors that near zero -- which this module's own
+  `score > 0` filter then (correctly) treated as "no real match" and dropped everything. Not a
+  bug in `retrieval.py` itself, just a test corpus that accidentally hit BM25's documented edge
+  case; fixed by giving each filler chunk distinct text.
+- `rank-bm25` ships no type stubs or `py.typed` marker, so `mypy --strict` flagged the import.
+  Added a scoped `[[tool.mypy.overrides]]` entry naming `rank_bm25` specifically (not a
+  repo-wide `ignore_missing_imports`), since the surface actually used (`BM25Okapi`,
+  `get_scores`) is tiny and stable.
+
+**Metrics:** 196 tests pass (+12 over the 184 after Day 4 steps 1-3). ruff and mypy (strict)
+clean across the whole repo.
+
+**Costs:** $0 -- BM25 is pure in-memory lexical scoring, no API calls; every test uses
+`FakeEmbedder` for the vector half.
+
+**Open:** steps 5-7 of Day 4 (the permission filter inside the vector query, the Corrective RAG
+loop in LangGraph, and the recall@5/MRR/Ragas eval on 20 labelled questions) still ahead.
+`scripts/build_rag_index.py` still hasn't been run for real on your machine.
