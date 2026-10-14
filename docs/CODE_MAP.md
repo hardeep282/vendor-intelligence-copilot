@@ -235,27 +235,53 @@ sandbox's proxy blocks, so the real embedding run is `scripts/build_rag_index.py
 `ChunkStore` wraps one Chroma collection (`PersistentClient`, `data/chroma/` — gitignored, same
 never-commit-derived-data rule as the Parquet snapshot). `upsert()` is keyed by each chunk's
 `content_hash`, not its `chunk_id`, so a full corpus rebuild skips every chunk whose text hasn't
-actually changed. `query()` is plain vector search with no permission filter — `copilot.rag.retrieval.HybridRetriever`
-(step 4) and the step 5 permission filter both wrap this rather than changing it.
-**Takes in:** `list[Chunk]` + an `Embedder` (for `upsert`); a query vector (for `query`).
+actually changed. `query()` is plain vector search, now with an optional `where` metadata filter
+(Day 4 step 5: `copilot.rag.permissions.PermissionedRetriever` passes
+`{"data_class": {"$in": [...]}}` so ineligible chunks are excluded inside the ANN search itself,
+not dropped from an already-fixed-size result afterwards — `None`, the default, is what
+`copilot.rag.retrieval.HybridRetriever` (step 4) still uses, unrestricted).
+**Takes in:** `list[Chunk]` + an `Embedder` (for `upsert`); a query vector + optional `where`
+filter (for `query`).
 **Gives out:** an `UpsertReport` (embedded vs. already-current counts); nearest-chunk tuples.
 **Talks to:** `copilot.rag.embeddings` for vectors; `copilot.guardrails.policy`'s `DataClass`/`Role`
-types for the metadata it stores and reads back.
+types for the metadata it stores and reads back; `copilot.rag.retrieval` and
+`copilot.rag.permissions` both call `query()`.
 
 ### `src/copilot/rag/retrieval.py`
 `BM25Index` (lexical, in-memory, rebuilt from the chunk list each time — no incremental-update
 story at this corpus size) + `reciprocal_rank_fusion()` (plain RRF: `sum(1/(k+rank))` across
-rankings, default `k=60`) + `HybridRetriever`, which runs both a BM25 search and a
-`ChunkStore.query()` vector search over the same chunk list and fuses their rankings. Reranker
-is this step's cut item (see `docs/PROJECT_PROGRESS.md`) — `RetrievedChunk` already carries the
-full chunk text, so one can be added later as a third stage without changing this module's
-contract. No permission filtering here — step 5 wraps this.
+rankings, default `k=60`) + `fuse_rankings()` (turns two ID rankings into the final
+`RetrievedChunk` list — shared with `copilot.rag.permissions.PermissionedRetriever`, step 5, so
+both classes assemble results identically) + `HybridRetriever`, which runs both a BM25 search
+and a `ChunkStore.query()` vector search over the same chunk list and fuses their rankings via
+`fuse_rankings()`. Reranker is this step's cut item (see `docs/PROJECT_PROGRESS.md`) —
+`RetrievedChunk` already carries the full chunk text, so one can be added later as a third stage
+without changing this module's contract. No permission filtering here — step 5 wraps this.
 **Takes in:** `list[Chunk]` (to index for BM25 and to resolve IDs back to chunks), a `ChunkStore`,
 an `Embedder`, and a query string at retrieve time.
 **Gives out:** `list[RetrievedChunk]` — each with the matched `Chunk`, its fused RRF score, and
 its rank in each underlying ranking (`None` if it didn't appear in that one).
 **Talks to:** `copilot.rag.chunking` for `Chunk`; `copilot.rag.store` for vector search;
-`copilot.rag.embeddings` to embed the query text.
+`copilot.rag.embeddings` to embed the query text; `copilot.rag.permissions` reuses
+`fuse_rankings()`/`BM25Index`/`RetrievedChunk`.
+
+### `src/copilot/rag/permissions.py`
+`PermissionedRetriever` — role-aware counterpart to `HybridRetriever`: same RRF fusion (shares
+`retrieval.fuse_rankings`), but every chunk either ranking can return is first scoped to what
+the given role may see. Authority is the live `DisclosurePolicy.can_view(role, data_class)`,
+re-derived every call — never the chunk's own `allowed_roles` field, even though
+`copilot.rag.corpus.check_corpus_against_policy` already checks the two agree at ingest time.
+The filter runs *inside* the vector query (a Chroma `where={"data_class": {"$in": [...]}}`
+pushed into `ChunkStore.query()`), not as a post-hoc drop after a fixed-size result set — the
+latter would silently return fewer than `n_results` whenever permissions trim the field. BM25
+has no per-call filter to push into, so the same principle is enforced one layer up: the
+role-scoped BM25 index is built from only the visible chunks in the first place.
+**Takes in:** `list[Chunk]`, a `ChunkStore`, an `Embedder`, a `DisclosurePolicy`; a query string
++ `Role` at retrieve time.
+**Gives out:** `list[RetrievedChunk]`, same shape as `HybridRetriever`'s.
+**Talks to:** `copilot.rag.retrieval` for `BM25Index`/`fuse_rankings`/`RetrievedChunk`;
+`copilot.rag.store` (its `where`-filtered `query()`); `copilot.guardrails.policy` for
+`DisclosurePolicy`/`Role`/`DataClass`.
 
 ### `scripts/build_rag_index.py`
 Loads the corpus, checks it against the live disclosure policy, chunks it, embeds with the real
@@ -270,8 +296,7 @@ vs. already up to date.
 `src/copilot/ml/`, `src/copilot/agents/`, `src/copilot/dl/`, `src/copilot/mcp/`, `src/copilot/nlp/`,
 `src/copilot/extract/`, `src/copilot/observability/`, `src/copilot/ui/` — folders exist with an
 `__init__.py` so imports work later; no real code yet. (`src/copilot/rag/` has moved to the section
-above, steps 5–7 still ahead: the permission filter inside the vector query, the Corrective RAG
-loop, and the recall/MRR/Ragas eval.)
+above, steps 6–7 still ahead: the Corrective RAG loop and the recall/MRR/Ragas eval.)
 
 ---
 

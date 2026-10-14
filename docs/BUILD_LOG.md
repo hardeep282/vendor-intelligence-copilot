@@ -582,3 +582,66 @@ clean across the whole repo.
 **Open:** steps 5-7 of Day 4 (the permission filter inside the vector query, the Corrective RAG
 loop in LangGraph, and the recall@5/MRR/Ragas eval on 20 labelled questions) still ahead.
 `scripts/build_rag_index.py` still hasn't been run for real on your machine.
+
+## 2026-10-14 · Day 4 step 5: permission filter inside the vector query
+
+Built `copilot.rag.permissions.PermissionedRetriever` -- role-aware counterpart to
+`HybridRetriever`, same RRF fusion mechanics, but every chunk either underlying ranking can
+return is scoped first to what the requesting role may see.
+
+**Why "inside the vector query," mechanically:** filtering ineligible chunks out of an
+already-fixed-size result set silently returns fewer than `n_results` whenever permissions trim
+the field -- "ask for 5, lose 3 to permissions, get back 2." Pushing the restriction into the
+ANN search itself means every chunk that comes back was already eligible, so the result count
+doesn't degrade with how restrictive the role is. Implemented by adding an optional `where`
+parameter to `ChunkStore.query()` (default `None` -- every pre-step-5 caller and test is
+unaffected) and having `PermissionedRetriever` pass `{"data_class": {"$in": [...]}}`, built from
+the set of data classes the role may see. BM25 has no per-call filter to push into (`BM25Okapi`
+scores a fixed in-memory corpus), so the same principle is enforced one layer up instead: the
+role-scoped BM25 index is built from only the visible chunks in the first place, rather than
+built from everything and filtered after scoring.
+
+**Authority, deliberately not the chunk's own field:** `DisclosurePolicy.can_view(role,
+data_class)`, re-derived from the live policy on every call -- not `chunk.allowed_roles`, even
+though `copilot.rag.corpus.check_corpus_against_policy` already checks at ingest time that the
+two agree. Same "the policy is the one source of truth" posture that check already takes toward
+the whole corpus; a disclosure boundary shouldn't have two places that can each say yes.
+
+Refactored `copilot.rag.retrieval` to pull the RRF-to-`RetrievedChunk` assembly logic (fuse the
+two rankings, resolve IDs back to chunks, cap at `n_results`) out of `HybridRetriever.retrieve()`
+into a standalone `fuse_rankings()` function, so `PermissionedRetriever` reuses the identical
+assembly code rather than a second, parallel copy of it that could drift. `HybridRetriever`
+itself is otherwise unchanged -- still unrestricted, still what step 4 built.
+
+Updated `docs/CODE_MAP.md`: new `permissions.py` entry, corrected `store.py`'s and
+`retrieval.py`'s now-stale text, and moved the "not yet started" note from "steps 5-7" to
+"steps 6-7." Code Map artifact updated in the same sitting, per the standing rule.
+
+Tests (12 new: 10 in `tests/test_rag_permissions.py`, 2 in `test_rag_store.py`): every role
+(`anonymous`/`viewer`/`analyst`/`approver`/`admin`) sees exactly the data classes the live
+policy grants it, over three identically-worded chunks of different classes so term overlap
+can't explain the difference; a chunk tagged `restricted` is unretrievable by any role,
+including `admin` (nobody may read `restricted`, per the policy itself); the "inside, not after"
+claim is proven directly -- five confidential chunks plus one public chunk, `candidate_pool=1`,
+role `anonymous`: a post-hoc filter would almost certainly retrieve a confidential chunk and
+return nothing, the `where`-pushed-down version always finds the public one; and BM25's
+role-scoped index test uses a term that appears in exactly one (ineligible) chunk to show that
+chunk is absent entirely, not merely out-ranked.
+
+**Mistakes and fixes:**
+
+- `ChunkStore.query()`'s new `where` parameter failed `mypy --strict`: a plain
+  `dict[str, object] | None` isn't assignable to Chroma's own `Where | None` type. Fixed with
+  the same `cast()`-from-a-string-quoted-type pattern already used elsewhere in this file for
+  `embeddings`/`query_embeddings`/`metadatas`, importing `chromadb.api.types.Where` under a
+  `noqa: F401` (used only inside the quoted cast, same as `Sequence` above it).
+
+**Metrics:** 208 tests pass (+12 over the 196 after Day 4 step 4). ruff and mypy (strict) clean
+across the whole repo.
+
+**Costs:** $0 -- no new dependency, no API calls; tests use `FakeEmbedder` and the real
+`load_policy()` against `policies/disclosure.yaml` (no network, it's a local file).
+
+**Open:** steps 6-7 of Day 4 (the Corrective RAG loop in LangGraph, and the recall@5/MRR/Ragas
+eval on 20 labelled questions) still ahead. `scripts/build_rag_index.py` still hasn't been run
+for real on your machine.

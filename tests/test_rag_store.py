@@ -112,6 +112,35 @@ def test_query_respects_n_results(store: ChunkStore) -> None:
     assert len(results) == 2
 
 
+def test_query_where_filters_before_ranking_not_after(store: ChunkStore) -> None:
+    # `where` (Day 4 step 5: the permission filter) restricts which chunks the ANN search even
+    # considers. Five chunks share the same text and vector; only one has data_class "public".
+    # A result-time filter on a size-1 result set would very likely find nothing; the `where`
+    # clause means the public chunk is found regardless.
+    embedder = FakeEmbedder()
+    chunks = [_chunk(f"c-internal-{i}", "shared text", data_class="internal") for i in range(4)] + [
+        _chunk("c-public", "shared text", data_class="public")
+    ]
+    store.upsert(chunks, embedder)
+
+    (query_vector,) = embedder.embed(["shared text"])
+    results = store.query(query_vector, n_results=1, where={"data_class": {"$in": ["public"]}})
+
+    assert len(results) == 1
+    assert results[0][0] == "c-public"
+
+
+def test_query_where_none_is_unrestricted(store: ChunkStore) -> None:
+    embedder = FakeEmbedder()
+    chunks = [
+        _chunk("c1", "alpha", data_class="public"),
+        _chunk("c2", "alpha", data_class="confidential"),
+    ]
+    store.upsert(chunks, embedder)
+    (query_vector,) = embedder.embed(["alpha"])
+    assert len(store.query(query_vector, n_results=2, where=None)) == 2
+
+
 def test_stored_metadata_round_trips_roles_and_data_class(store: ChunkStore) -> None:
     chunk = _chunk(
         "c1",

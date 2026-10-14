@@ -6,8 +6,9 @@ Purpose : persist chunk embeddings so retrieval doesn't re-embed the whole corpu
 Inputs  : Chunk objects (copilot.rag.chunking) and an Embedder (copilot.rag.embeddings).
 Outputs : a Chroma collection on disk (default: data/chroma/, gitignored -- same
           never-commit-derived-data posture as the data/snapshot/ Parquet files) queryable by
-          vector similarity. Hybrid fusion with BM25 (step 4) and the permission filter
-          (step 5) both build on top of the plain vector `query()` here.
+          vector similarity. `copilot.rag.retrieval.HybridRetriever` (step 4) and
+          `copilot.rag.permissions.PermissionedRetriever` (step 5) both build on top of the
+          plain vector `query()` here, the latter via its optional `where` filter.
 
 Idempotency key: `content_hash`, not `chunk_id`. The property that actually matters is "the
 same chunk text is embedded and stored exactly once, however many times the index build runs" --
@@ -26,6 +27,7 @@ from typing import cast
 
 import chromadb
 from chromadb.api import ClientAPI
+from chromadb.api.types import Where  # noqa: F401 -- used only inside string-quoted cast() types
 from pydantic import BaseModel
 
 from copilot.guardrails.policy import DataClass, Role
@@ -126,15 +128,24 @@ class ChunkStore:
         )
 
     def query(
-        self, query_vector: list[float], n_results: int = 5
+        self,
+        query_vector: list[float],
+        n_results: int = 5,
+        where: dict[str, object] | None = None,
     ) -> list[tuple[str, str, dict[str, object], float]]:
-        """Plain vector-similarity search: no permission filtering (step 5) and no BM25 fusion
-        (step 4) -- both wrap this. Returns (chunk_id, text, metadata, distance) tuples, nearest
-        first.
+        """Plain vector-similarity search; BM25 fusion (step 4) wraps this. `where` is an
+        optional Chroma metadata filter -- the permission filter (step 5,
+        copilot.rag.permissions) passes `{"data_class": {"$in": [...]}}` here so ineligible
+        chunks are excluded *inside* the ANN search itself, not dropped afterwards from an
+        already-fixed-size result set (which would silently return fewer than n_results
+        whenever permissions trim the field). `None` (the default) means "no restriction," so
+        every pre-step-5 caller, and every existing test, is unaffected.
+        Returns (chunk_id, text, metadata, distance) tuples, nearest first.
         """
         result = self._collection.query(
             query_embeddings=cast("list[Sequence[float]]", [query_vector]),
             n_results=n_results,
+            where=cast("Where | None", where),
             include=["documents", "metadatas", "distances"],
         )
         ids = result["ids"][0]

@@ -110,6 +110,42 @@ class RetrievedChunk:
     vector_rank: int | None  # None: this chunk didn't surface in the vector candidate pool
 
 
+def fuse_rankings(
+    bm25_ranking: list[str],
+    vector_ranking: list[str],
+    chunk_by_id: dict[str, Chunk],
+    rrf_k: int,
+    n_results: int,
+) -> list[RetrievedChunk]:
+    """Shared by HybridRetriever and the permission filter (copilot.rag.permissions, step 5):
+    turn two ID rankings into the final RetrievedChunk list via RRF. `chunk_by_id` is the
+    caller's responsibility to scope correctly -- HybridRetriever passes every chunk it was
+    built from; the permission filter passes only the chunks a given role may see, so a chunk_id
+    that leaks past that scoping (it shouldn't) is silently dropped here rather than resolved.
+    """
+    fused = reciprocal_rank_fusion([bm25_ranking, vector_ranking], k=rrf_k)
+    bm25_rank_by_id = {chunk_id: rank for rank, chunk_id in enumerate(bm25_ranking, start=1)}
+    vector_rank_by_id = {chunk_id: rank for rank, chunk_id in enumerate(vector_ranking, start=1)}
+
+    ordered_ids = sorted(fused, key=lambda chunk_id: fused[chunk_id], reverse=True)
+    results: list[RetrievedChunk] = []
+    for chunk_id in ordered_ids:
+        chunk = chunk_by_id.get(chunk_id)
+        if chunk is None:
+            continue
+        results.append(
+            RetrievedChunk(
+                chunk=chunk,
+                rrf_score=fused[chunk_id],
+                bm25_rank=bm25_rank_by_id.get(chunk_id),
+                vector_rank=vector_rank_by_id.get(chunk_id),
+            )
+        )
+        if len(results) == n_results:
+            break
+    return results
+
+
 class HybridRetriever:
     """Combines one BM25Index with one ChunkStore (step 3) over the same chunk list. Owns no
     permission logic itself -- the permission filter (step 5) wraps this, it doesn't live here --
@@ -141,28 +177,6 @@ class HybridRetriever:
         vector_hits = self._store.query(query_vector, n_results=candidate_pool)
         vector_ranking = [chunk_id for chunk_id, _, _, _ in vector_hits]
 
-        fused = reciprocal_rank_fusion([bm25_ranking, vector_ranking], k=self._rrf_k)
-        bm25_rank_by_id = {chunk_id: rank for rank, chunk_id in enumerate(bm25_ranking, start=1)}
-        vector_rank_by_id = {
-            chunk_id: rank for rank, chunk_id in enumerate(vector_ranking, start=1)
-        }
-
-        ordered_ids = sorted(fused, key=lambda chunk_id: fused[chunk_id], reverse=True)
-        results: list[RetrievedChunk] = []
-        for chunk_id in ordered_ids:
-            chunk = self._chunk_by_id.get(chunk_id)
-            if chunk is None:
-                # Defensive only: can't happen when the BM25 index and the store were built from
-                # the same chunk list, which is this class's one constructor contract.
-                continue
-            results.append(
-                RetrievedChunk(
-                    chunk=chunk,
-                    rrf_score=fused[chunk_id],
-                    bm25_rank=bm25_rank_by_id.get(chunk_id),
-                    vector_rank=vector_rank_by_id.get(chunk_id),
-                )
-            )
-            if len(results) == n_results:
-                break
-        return results
+        return fuse_rankings(
+            bm25_ranking, vector_ranking, self._chunk_by_id, self._rrf_k, n_results
+        )

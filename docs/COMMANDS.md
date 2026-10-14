@@ -86,3 +86,15 @@ No API key or network access needed -- BM25 is pure lexical scoring over chunk t
 memory, and every test uses `FakeEmbedder` for the vector half, same as steps 1-3. `rank-bm25`
 ships no type stubs, so `[[tool.mypy.overrides]]` in `pyproject.toml` ignores it by name rather
 than the whole-repo `ignore_missing_imports` escape hatch.
+
+## Day 4 (step 5: permission filter inside the vector query)
+
+| # | What this step does | Command | What each part does | Expected result |
+|---|---|---|---|---|
+| 1 | Run every check | `uv run ruff check . && uv run mypy && uv run pytest -q` | lint, strict type-check, tests, in that order | "All checks passed!" / "Success" / "208 passed" |
+
+No new dependency -- `copilot.rag.permissions` is built entirely on Chroma's existing `where`
+metadata filter (now exposed as an optional parameter on `ChunkStore.query()`) and the live
+`DisclosurePolicy` already used across the rest of the repo. No API key or network access
+needed; every test uses `FakeEmbedder` and `load_policy()` against the real
+`policies/disclosure.yaml`.
