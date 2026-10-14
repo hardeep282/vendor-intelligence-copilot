@@ -1,7 +1,7 @@
 # Project Progress: Vendor Intelligence Copilot
 
-Last updated: Wed 14 Oct 2026 (Day 5 of the 10-day sprint, sprint plan v3 -- all 6 steps
-shipped, Day 5 complete)
+Last updated: Thu 15 Oct 2026 (Day 6 of the 10-day sprint, sprint plan v3 -- all 7 steps
+shipped, Day 6 complete)
 
 ## Sprint status
 
@@ -12,7 +12,7 @@ shipped, Day 5 complete)
 | 3 | LLM service, text-to-SQL, effort and tokenization labs | Build done: 8 of 9 steps shipped (step 7 skipped, see below) |
 | 4 | RAG and advanced RAG | Build done: 7 of 7 steps shipped |
 | 5 | ML tools for the agents | **Build done: 6 of 6 steps shipped** |
-| 6 | Multi-agent system in LangGraph | Not started |
+| 6 | Multi-agent system in LangGraph | **Build done: 7 of 7 steps shipped** |
 | 7 | Guardian, guardrails, approvals | Not started |
 | 8 | Product, API keys, latency budget, evals in CI, release v0.1 | Not started |
 | 9 | Fine-tuning benchmark and MCP (MCP never cut) | Not started |
@@ -121,11 +121,85 @@ unlike the forecast/inventory/classifier tools, this agent needs a real `ANTHROP
 every run (no free half), and no key is loaded in this session; `scripts/run_model_selection_eval.py`
 is ready to run with your own key.
 
+## Day 6 checklist (sprint doc v3 D6)
+
+| # | Item | Status |
+|---|---|---|
+| 1 | `TaskSpec`/`AgentResult` Pydantic contracts | **Done** (`copilot.agents.contracts`) |
+| 2 | Specialists: Data Analyst, Forecasting & Risk, Inventory Planning, Knowledge, Action | **Done** (`copilot.agents.specialists`) |
+| 3 | Orchestrator: typed plan, `Send` fan-out, join, merge and conflict handling | **Done** (`copilot.agents.orchestrator.Orchestrator`) -- conflict handling logged only, not resolved (cut-first) |
+| 4 | Verifier: numeric grounding, citations, contradictions; max 2 loops back | **Done** (`orchestrator.py`'s `_verify`/`_route_after_verify`/`_revise_draft`, `prompts/orchestrator_verify/v1.yaml`) |
+| 5 | Per-agent budgets (steps/tokens/cost/latency) and temperature, timeouts; partial answers | **Done** (`AgentBudget.exceeds()` now actually enforced in `_run_specialist`; `effort` substitutes for `temperature` -- this model generation has no `temperature` param, see `copilot.llm.client`) |
+| 6 | SQLite checkpointer locally; per-agent LangSmith run names/tags; LangGraph Studio | **Done except Studio** (`Orchestrator(checkpoint_path=...)`, `_ls_extra()`); LangGraph Studio cut-first (external tool, not code) |
+| 7 | Run 10 multi-hop golden questions end to end | **Harness done, real run pending your key** (`copilot.agents.wiring`, `copilot.evals.orchestrator_golden`, `scripts/run_orchestrator_golden.py`) |
+
+**Steps 1-3, done:** `copilot.agents.contracts.TaskSpec`/`AgentResult` are the typed envelope
+every specialist and the Orchestrator pass between each other (master prompt C3: "never pass
+free text to each other"). The five specialists (`copilot.agents.specialists`) are thin
+`TaskSpec -> AgentResult` wrappers around already-tested Days 3-5 services/tools -- no new
+business logic, just the C3 contract plus two new lookups needed to fill `data_classes`
+honestly: `_sql_data_classes()` (parses generated SQL with sqlglot, looks up each table via the
+live `DisclosurePolicy`) and `PermissionedRetriever.chunk_by_id()` (same idea for a cited
+chunk). The Orchestrator (`copilot.agents.orchestrator.Orchestrator`) is this project's first
+*parallel* LangGraph graph -- every prior graph (`CorrectiveRagService`, `ModelSelectionAgent`)
+was sequential/conditional only. `_fan_out` returns one `Send` per planned task so independent
+specialists run as separate parallel invocations, with `results: Annotated[list[AgentResult],
+operator.add]` as the join; a real architectural bug surfaced and got fixed before shipping --
+an empty plan left `run_specialist` (and therefore `draft`) unreached, fixed by routing an empty
+plan straight to `draft` via its own `Send`. Conflict handling is logged only (`conflicts_noted`),
+never resolved or re-queried, per the sprint doc's own cut-first list for this day.
+
+**Step 4, done:** the Verifier reuses `ModelSelectionAgent`'s propose/critique/revise/accept
+shape exactly -- `_verify` is the critique (one more structured LLM call, scoring `grounded`/
+`citations_ok`/`sufficient`/`contradictions`), `_route_after_verify` is a pure routing function
+(no LLM call), `_revise_draft` is pure bookkeeping that folds the verdict's feedback back into
+the next `_draft` call via a new `feedback_block` in `orchestrator_draft`'s prompt. A draft that
+still fails after `MAX_VERIFICATION_LOOPS` (2) redrafts is finalized anyway with `verified=False`
+rather than looping forever -- a worse answer delivered honestly-flagged beats no answer.
+
+**Step 5, done:** `AgentBudget.exceeds()` existed since step 1 but nothing called it until now.
+`_run_specialist` waits on each specialist through a bounded `ThreadPoolExecutor`
+(`max_latency_s`) -- a specialist that doesn't return in time becomes `status="failed"` with a
+"timed out" gap rather than an unbounded hang (an honest limit: the Orchestrator can't force
+arbitrary synchronous code to actually stop, only stop waiting on it). An `ok` result that
+overran its cost/latency/llm_calls budget is downgraded to `status="partial"` with the specific
+overage named in `gaps`. `AgentBudget.effort` substitutes for the sprint doc's original
+"temperature" ask -- `copilot.llm.client`'s module docstring already established this Anthropic
+SDK/model generation has no `temperature` parameter at all.
+
+**Step 6, done (minus Studio):** `Orchestrator(checkpoint_path=...)` compiles the graph with a
+local `langgraph.checkpoint.sqlite.SqliteSaver`; `answer(..., thread_id=...)` is the checkpoint
+key a run can be inspected by afterwards (`select * from checkpoints where thread_id = ...`) --
+the inspection LangGraph Studio would otherwise give, which is this step's one cut-first item
+(an external tool to point at this process, not code to build). `_ls_extra()` tags each of
+`plan`/`draft`/`verify`'s own LLM call with an orchestrator-node-specific LangSmith run name and
+tags via `traceable`'s own `langsmith_extra` override -- no change needed to `LLMClient` itself
+-- plus `run_action` tags its own call the same way. The other four specialists delegate to
+Day 3-5 services whose internal LLM calls aren't yet agent-tagged; threading tags through those
+pre-existing services was out of this step's scope and is noted rather than silently left undone.
+
+**Step 7, done (harness):** `copilot.agents.wiring.build_executors()` is the one piece of glue
+nothing else needed -- it turns the five `run_*` functions into the `dict[AgentName,
+SpecialistExecutor]` map `Orchestrator` takes, against real services built the same way
+`scripts/run_effort_lab.py`/`run_rag_eval.py` already build them. 10 multi-hop golden questions
+(`evals/datasets/orchestrator_golden_v1.jsonl`, schema in `copilot.evals.orchestrator_golden`)
+each need 2+ specialists chained together -- distinct from `golden.py`'s own "multi_hop"
+category, which is multi-step *SQL* answered by one specialist alone. Each question is graded
+structurally (did the plan cover every specialist it needed), not against a fixed reference
+answer -- see the module's own docstring for why that's this step's stretch goal, not its floor.
+`scripts/run_orchestrator_golden.py` is ready to run all 10 end to end on your machine with your
+own `ANTHROPIC_API_KEY`; not run for real this sitting (same posture as every other real-key
+script in this project).
+
 ## Results
 
 | Metric | Baseline | Current | Notes |
 |---|---|---|---|
-| Tests passing | 33 | 299 | `uv run pytest -q`; +12 `copilot.llm`, +12 prompts + `InsightService`, +29 SQL validator, +16 schema/examples/text-to-SQL service, +22 evaluators/langsmith_sync, +10 golden v2, +4 effort lab, +5 tokenization lab, +3 evaluator column-name fix, +10 rag corpus, +9 chunking, +7 embeddings, +10 store, +12 retrieval (BM25 + RRF), +2 store `where` filter, +10 permission filter, +6 corrective RAG, +19 eval harness (golden/metrics/quality), +12 ml metrics, +10 forecast tool, +12 inventory tools, +12 risk classifier, +6 run-log, +5 model selection agent, +9 model selection eval |
+| Tests passing | 33 | 345 | `uv run pytest -q`; +12 `copilot.llm`, +12 prompts + `InsightService`, +29 SQL validator, +16 schema/examples/text-to-SQL service, +22 evaluators/langsmith_sync, +10 golden v2, +4 effort lab, +5 tokenization lab, +3 evaluator column-name fix, +10 rag corpus, +9 chunking, +7 embeddings, +10 store, +12 retrieval (BM25 + RRF), +2 store `where` filter, +10 permission filter, +6 corrective RAG, +19 eval harness (golden/metrics/quality), +12 ml metrics, +10 forecast tool, +12 inventory tools, +12 risk classifier, +6 run-log, +5 model selection agent, +9 model selection eval, +10 agent contracts, +14 agent specialists, +12 orchestrator (plan/fan-out/draft), +2 orchestrator verifier loop, +4 orchestrator budget/checkpoint enforcement, +3 orchestrator wiring, +5 orchestrator golden set |
+| Day 6: Verifier redraft loop, real end to end | n/a | 2/2 tests pass: a failing draft redrafts once with the verifier's feedback folded in and then passes; a draft that never passes finalizes anyway after `MAX_VERIFICATION_LOOPS` (2), flagged `verified=False` rather than looping forever | `tests/test_orchestrator.py`; real per-question numbers wait for `scripts/run_orchestrator_golden.py` on your machine |
+| Day 6: per-agent budget enforcement, real end to end | n/a | 2/2 tests pass: a specialist that outlives `max_latency_s` becomes `status="failed"` (Orchestrator stops waiting, can't force the thread to stop); a specialist that overruns `max_cost_usd` is downgraded `ok` -> `partial` with the overage named in `gaps` | `tests/test_orchestrator.py` |
+| Day 6: SQLite checkpointer, real end to end | n/a | 1/1 test: a run's state is actually queryable from the checkpoint file by `thread_id` afterwards | `tests/test_orchestrator.py` |
+| Day 6: 10 multi-hop golden questions (harness only) | n/a | schema + dataset built and tested (10/10 load, each needs >=2 distinct specialists, `inventory_planning` questions all also expect `forecasting_risk` per the planner's own rule) -- **not yet run against the real Orchestrator** | `copilot.evals.orchestrator_golden`, `scripts/run_orchestrator_golden.py` ready for your `ANTHROPIC_API_KEY` |
 | Golden questions | 40 (27 dev, 10 test, 3 adversarial) | 46 (27 dev, 16 test, 3 adversarial) | golden v2 adds the 6 text-to-SQL trap questions from the spec; v1 stays frozen at 40 for history |
 | Execution accuracy, grounding, leakage rate | n/a | evaluators built + tested; no end-to-end run yet | `copilot.evals.evaluators.execution_accuracy`/`leakage_free`, 17 tests pass; running them against real `TextToSqlService` output needs your API key, same as the effort/tokenization labs |
 | SQL validator: structural + semantic + coverage rules | n/a | 29/29 tests pass, 0 false positives on 33 real golden queries | every trap in `docs/specs/text_to_sql_safety.md`'s trap table has a BLOCK test and an ALLOW test |
@@ -158,14 +232,21 @@ constant (k=60, Cormack et al. 2009), the Corrective RAG loop's no-web-search si
 (follows from ADR-002, not a new decision), and building the Ragas-reduced quality evaluators
 by hand instead of the `ragas` package (follows the pattern `copilot.evals.evaluators` already
 set in Day 3) all just follow already-made or already-standard choices rather than being a new
-build-vs-buy decision with real alternatives measured against it.
+build-vs-buy decision with real alternatives measured against it. No new ADR for Day 6 either --
+the Verifier/budget-enforcement/checkpointer/LangSmith-tagging choices all follow the shape
+`ModelSelectionAgent` and `LLMClient` already established (propose/critique/revise, `effort`
+over `temperature`, `@traceable`); the one new dependency, `langgraph-checkpoint-sqlite`, is a
+companion package to the already-adopted `langgraph`, not a build-vs-buy decision of its own.
 
 ## Costs to date
 
 AWS $0, domain $0, LLM ~$0.01 (one real call, 14 Oct, on your machine with your dev key --
 `InsightService` on DIAGEO, after fixing a `max_tokens` bug that had been doubling the cost via
 unnecessary repair-loop retries). Expected once Day 2 resources exist: about $22 per month on
-AWS (Mumbai).
+AWS (Mumbai). Day 6's own real-key run (`scripts/run_orchestrator_golden.py`, 10 multi-hop
+questions, each 2-4 specialist LLM calls plus a plan/draft/verify call per question, with up to
+2 redrafts) hasn't been run yet -- expect a similar order of magnitude to the effort lab's
+~$0.11 for 15 calls, scaled up for more calls per question.
 
 ## Live URLs
 
@@ -173,13 +254,13 @@ None yet. Target: `https://api.vendor.<domain>/health`.
 
 ## Next step
 
-Me: Day 5 is complete -- all 6 steps built, 299/299 tests passing, ruff/mypy clean. Ready to
-start Day 6 (multi-agent system in LangGraph) on your go-ahead. You: two real-data/real-key runs
-are queued up whenever convenient -- `scripts/train_risk_classifier.py` against your real
-`vw_PortfolioHealth` export (risk classifier's real accuracy/F1), and
-`scripts/run_model_selection_eval.py` with your `ANTHROPIC_API_KEY` loaded (Model Selection
-Agent's real per-question numbers) -- neither blocks starting Day 6. Carried forward, still
-open and not urgent: `scripts/build_rag_index.py` + `scripts/run_rag_eval.py` (Day 4, real
-embedding index and recall@5/MRR), a third re-run of `scripts/run_effort_lab.py`, a real
-`TextToSqlService` call, Docker Desktop install/engine status, AWS resources, domain, GitHub
-variables from Day 2.
+Me: Day 6 is complete -- all 7 steps built (Studio itself cut-first, an external tool not code),
+345/345 tests passing, ruff/mypy clean. Ready to start Day 7 (Guardian, guardrails, approvals)
+on your go-ahead. You: `scripts/run_orchestrator_golden.py` is the new real-key run queued up --
+10 multi-hop questions end to end through the real Orchestrator with your `ANTHROPIC_API_KEY`
+loaded (plan coverage, verified status, cost/latency per question; doesn't block starting
+Day 7). Carried forward, still open and not urgent: `scripts/train_risk_classifier.py` against
+your real `vw_PortfolioHealth` export, `scripts/run_model_selection_eval.py`,
+`scripts/build_rag_index.py` + `scripts/run_rag_eval.py`, a third re-run of
+`scripts/run_effort_lab.py`, a real `TextToSqlService` call, Docker Desktop install/engine
+status, AWS resources, domain, GitHub variables from Day 2.

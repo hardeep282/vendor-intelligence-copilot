@@ -1068,3 +1068,112 @@ the fake Anthropic SDK.
 **Day 5 is now complete: all 6 steps shipped.** Open for Day 6: the multi-agent system in
 LangGraph that actually calls these tools (forecast, inventory, risk classifier, model
 selection) as agent tools rather than standalone functions.
+
+## 2026-10-15 · Day 6: multi-agent system in LangGraph -- all 7 steps
+
+**Steps 1-2 (contracts, specialists):** `copilot.agents.contracts.TaskSpec`/`AgentResult` are
+the typed envelope master prompt C3 requires so no specialist passes free text to another.
+The five specialists (`copilot.agents.specialists`) are thin wrappers around already-tested
+Days 3-5 services/tools -- `run_data_analyst` -> `TextToSqlService`, `run_forecasting_risk` ->
+`forecast_demand` (+ an optional synthetic-fixture risk classifier run, licence-safely, since
+this repo's snapshot has no real SKU-level data), `run_inventory_planning` -> `compute_
+inventory_plan`, `run_knowledge` -> `CorrectiveRagService`, `run_action` -> a new `action_draft`
+prompt (drafts only, never sends -- Day 7's Guardian/approver flow owns that). Two small new
+lookups were needed to fill `AgentResult.data_classes` honestly, the thing Day 7's Guardian will
+read: `_sql_data_classes()` (parses generated SQL with sqlglot, looks up each table via the live
+`DisclosurePolicy`) and `PermissionedRetriever.chunk_by_id()` (same idea for a cited chunk).
+
+**Step 3 (Orchestrator):** `copilot.agents.orchestrator.Orchestrator` is this project's first
+*parallel* LangGraph graph -- every earlier graph (`CorrectiveRagService`, `ModelSelectionAgent`)
+was purely sequential/conditional. `_fan_out` is a routing function, not a node: it returns one
+`Send` per planned task so independent specialists run as separate parallel invocations
+(LangGraph's own mechanism for exactly this), with `results: Annotated[list[AgentResult],
+operator.add]` as the join. **Real bug found and fixed before committing:** an empty plan (the
+question needed no specialist) left `run_specialist` never invoked, and since the static
+`run_specialist -> draft` edge is only traversed when `run_specialist` actually runs, `draft`
+(and the rest of the graph) never ran either -- `RuntimeError: orchestrator graph reached END
+without producing a result`. Fixed by having `_fan_out` return `[Send("draft", state)]` for an
+empty plan instead of an empty list, and adding `"draft"` as a valid destination on the
+`plan -> fan_out` conditional edge. Conflict handling is logged only (`conflicts_noted`), never
+resolved or re-queried, per the sprint doc's own Day 6 cut-first list.
+
+**Step 4 (Verifier):** reuses `ModelSelectionAgent`'s propose/critique/revise/accept shape
+exactly, via a new `orchestrator_verify` prompt. `_verify` is the critique (one more structured
+call scoring `grounded`/`citations_ok`/`sufficient`/`contradictions`); `_route_after_verify` is
+pure routing (no LLM call); `_revise_draft` is pure bookkeeping that folds the verdict's
+feedback into a new `feedback_block` on `orchestrator_draft`'s prompt for the next `_draft` call.
+A draft that still fails after `MAX_VERIFICATION_LOOPS` (2) redrafts is finalized anyway with
+`verified=False` rather than looping forever.
+
+**Step 5 (budgets, enforced):** `AgentBudget.exceeds()` was defined in step 1 but nothing called
+it -- `_run_specialist` now actually does, after waiting on each specialist through a
+`ThreadPoolExecutor` bounded by `max_latency_s` (a specialist that doesn't return in time
+becomes `status="failed"` with a "timed out" gap; the Orchestrator can only stop *waiting*, not
+force arbitrary sync code to stop, same honest limitation every `concurrent.futures`-timeout
+approach has). An `ok` result that overran its cost/llm_calls/latency budget is downgraded to
+`status="partial"` with the specific overage named in `gaps`. `AgentBudget.effort` substitutes
+for the sprint doc's original "temperature" ask, per the already-established finding (Day 3,
+`copilot.llm.client`'s module docstring) that this Anthropic SDK/model generation has no
+`temperature` parameter at all.
+
+**Step 6 (checkpointer + LangSmith tags, Studio cut):** added `langgraph-checkpoint-sqlite` as
+a dependency; `Orchestrator(checkpoint_path=...)` compiles with a local `SqliteSaver`, and
+`answer(..., thread_id=...)` is the checkpoint key a run can be inspected by afterwards --
+the thing LangGraph Studio would otherwise visualize, which is this step's one cut-first item
+(an external tool to point at this process, not code to build). `_ls_extra()` renames/tags each
+of `plan`/`draft`/`verify`'s own LLM call via `traceable`'s `langsmith_extra` call-time override
+(no change needed to `LLMClient`), and `run_action` tags its own call the same way; the other
+four specialists delegate to Day 3-5 services whose internal LLM calls aren't yet agent-tagged
+-- noted as out of scope rather than silently left undone.
+
+**Step 7 (10 multi-hop golden questions, harness):** `copilot.agents.wiring.build_executors()`
+turns the five `run_*` functions into the `dict[AgentName, SpecialistExecutor]` map the
+Orchestrator takes, against real services built the same way `scripts/run_effort_lab.py`/
+`run_rag_eval.py` already build them. `copilot.evals.orchestrator_golden` defines 10 questions
+(`evals/datasets/orchestrator_golden_v1.jsonl`) that each need 2+ specialists chained together
+-- distinct from `golden.py`'s own "multi_hop" category, which is multi-step *SQL* answered by
+one specialist alone. Each question is graded structurally (did the plan cover every specialist
+it needed), not against a fixed reference answer, since grading multi-agent answer *content* is
+this step's stretch goal, not its floor. `scripts/run_orchestrator_golden.py` is ready to run all
+10 end to end on your machine with your own `ANTHROPIC_API_KEY` -- not run for real this sitting.
+
+**Mistakes and fixes (mechanical), beyond the empty-plan bug above:**
+- `tests/test_agent_specialists.py` initially imported `demand_stats_from_backtest` from
+  `copilot.ml.forecast`; it actually lives in `copilot.ml.inventory` -- fixed the import.
+- A real-snapshot test used `"DIAGEO"` as a vendor name; that vendor doesn't exist verbatim in
+  `vendor_monthly_demand` (only `"DIAGEO CHATEAU ESTATE WINES"` and `"DIAGEO NORTH AMERICA
+  INC"` do) -- fixed to use the real name, confirmed via a direct DuckDB query first.
+- `run_action`'s first draft omitted `draft_type` from `prompt.render_user(...)`'s kwargs even
+  though the prompt's `user_template` references `{draft_type}` -- `KeyError` at test time,
+  fixed by adding the kwarg.
+- Several ruff `E501`/`F401` across the new files, fixed by wrapping long lines/dict literals
+  and removing unused imports -- same mechanical cleanup every day in this project needs.
+- `mypy` flagged `langsmith_extra={...}` as a plain `dict[str, Any]` against `traceable`'s
+  `LangSmithExtra` TypedDict parameter -- fixed by building it through `cast("LangSmithExtra",
+  {...})` in both `orchestrator.py` and `specialists.py`.
+
+Tests (46 new across six files): 10 `tests/test_agent_contracts.py`, 14 `tests/
+test_agent_specialists.py`, 12 `tests/test_orchestrator.py` (step 3's original plan/fan-out/
+join/draft/conflict suite, +2 verifier-loop tests from step 4, +4 budget/checkpoint-enforcement
+tests from steps 5-6, +1 sqlite-checkpointer-persists test from step 6), 3 `tests/
+test_orchestrator_wiring.py`, 5 `tests/test_orchestrator_golden.py`. All offline against
+`FakeMessagesResource`, no network, no real API key, except the snapshot-gated real-data tests
+(skipped gracefully when `data/snapshot/MANIFEST.json` doesn't exist, same `pytestmark_snapshot`
+convention `test_ml_forecast.py` already set).
+
+Updated `docs/CODE_MAP.md`: new entries for `copilot.agents.contracts`/`specialists`/
+`orchestrator`/`wiring`, `copilot.evals.orchestrator_golden`, the three new `prompts/
+orchestrator_*` YAMLs, and `scripts/run_orchestrator_golden.py` -- one `CODE_MAP.md` edit per
+commit, per this project's standing rule (not batched at the end of the day).
+
+**Metrics:** 345 tests pass (was 299). ruff and mypy (strict) clean across the whole repo
+(72 source files, up from 66).
+
+**Costs:** $0 -- no real LLM call made this sitting (no key available); every test runs against
+the fake Anthropic SDK or a skipped-gracefully real-snapshot path.
+
+**Day 6 is now complete: all 7 steps shipped** (LangGraph Studio itself cut-first, an external
+tool rather than code). Open for Day 7: the Guardian (cross-model-family provenance/safety
+check on `AgentResult.data_classes` vs. the requesting role and answer audience), the
+interrupt -> approver flow `run_action`'s own `gaps` already points at, and guardrails/approvals
+more broadly.
