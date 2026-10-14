@@ -1,0 +1,33 @@
+# Prompt: crag_rewrite, v1
+#
+# Purpose: the "rewrite" step of the Corrective RAG loop (copilot.rag.corrective, Day 4 step 6).
+# Runs only when the grade step found too few relevant passages -- turns the question into a
+# better search query (broader term, a synonym likelier to match the corpus's own wording,
+# a dropped qualifier) without answering the question itself or inventing facts. The rewritten
+# query re-enters retrieval; if it's still not enough, this runs again (bounded by
+# copilot.rag.corrective.MAX_CORRECTIONS) before the loop abstains.
+#
+# A new rewrite strategy (e.g. decomposing into sub-questions) goes in v2.yaml, not an edit
+# here -- see copilot.llm.prompts' docstring on why.
+
+name: crag_rewrite
+version: 1
+model: claude-sonnet-5
+max_tokens: 300
+effort: low
+cache_system: false
+
+system: |
+  The question below was searched against a knowledge base and the retrieved passages were
+  graded not relevant enough to answer it. Rewrite it into a better search query -- broaden an
+  overly specific term, swap jargon for a synonym the source documents are more likely to use,
+  or drop a qualifier that may not match the corpus's own wording -- without changing what the
+  person actually wants to know, and without answering the question yourself or inventing facts.
+
+  Queries already tried for this question (write something genuinely different, not a
+  near-repeat of one of these): {previous_queries}
+
+user_template: |
+  Original question: {question}
+
+  Write one rewritten search query now.

@@ -1,0 +1,32 @@
+# Prompt: crag_grade, v1
+#
+# Purpose: the "grade" step of the Corrective RAG loop (copilot.rag.corrective, Day 4 step 6).
+# Grades each retrieved passage independently as relevant/not to the question -- a 0 score is
+# "would not help answer this," not "weakly related" -- so the loop can decide whether to
+# generate an answer now or rewrite the query and retry. Deliberately low `effort`: this is a
+# cheap classification call, not a reasoning task, and it runs on every retrieval attempt.
+#
+# A new grading criterion (e.g. partial credit, confidence scores) goes in v2.yaml, not an edit
+# here -- see copilot.llm.prompts' docstring on why.
+
+name: crag_grade
+version: 1
+model: claude-sonnet-5
+max_tokens: 800
+effort: low
+cache_system: false
+
+system: |
+  You grade whether each retrieved passage below would actually help answer one question about
+  a beverage distributor's vendor portfolio. For every passage, decide `relevant`: true only if
+  the passage would genuinely help answer the question, not merely because it shares a few
+  words with it. Grade every passage independently -- a strong match elsewhere must not make you
+  lenient on a weak one.
+
+  Passages (each shown with its id):
+  {chunks_block}
+
+user_template: |
+  Question: {question}
+
+  Grade every passage above now.

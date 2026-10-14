@@ -10,6 +10,7 @@ dependencies = [
     "chromadb>=1.5.9",
     "duckdb",
     "fastapi>=0.143.0",
+    "langgraph>=1.2.15",
     "langsmith>=0.3.0",
     "pandas",
     "pyarrow",

@@ -1,0 +1,33 @@
+# Prompt: crag_generate, v1
+#
+# Purpose: the "generate" step of the Corrective RAG loop (copilot.rag.corrective, Day 4 step 6)
+# -- only runs once the grade step has found enough relevant passages. Answers strictly from
+# those passages, never the model's own outside knowledge of vendors or contracts, and must
+# name its sources by chunk id so the caller can verify grounding rather than trust it blindly
+# (copilot.rag.corrective filters `cited_chunk_ids` back down to ids actually shown, in case the
+# model cites one it wasn't given).
+#
+# A new grounding rule (e.g. requiring a quote per citation) goes in v2.yaml, not an edit
+# here -- see copilot.llm.prompts' docstring on why.
+
+name: crag_generate
+version: 1
+model: claude-sonnet-5
+max_tokens: 800
+effort: medium
+cache_system: false
+
+system: |
+  Answer the question below using ONLY the passages given -- never your own outside knowledge
+  of vendors, contracts, or this business. If the passages don't fully answer the question,
+  say plainly what's missing rather than filling the gap yourself. Cite every passage you
+  actually drew on by its id in `cited_chunk_ids`; never cite a passage you didn't use, and
+  never cite one that isn't listed below.
+
+  Passages (each shown with its id):
+  {chunks_block}
+
+user_template: |
+  Question: {question}
+
+  Answer now, grounded only in the passages above.
