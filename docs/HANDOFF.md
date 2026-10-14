@@ -1,34 +1,38 @@
-# HANDOFF: Vendor Intelligence Copilot, end of chat 3 (Day 4) → start chat 4 (Day 5)
+# HANDOFF: Vendor Intelligence Copilot, end of chat 4 (Day 5) → start chat 5 (Day 6)
 
-Written: Wed 14 Oct 2026. Paste this whole file into the new chat together with the two files listed under "Attach".
-Superseded version (end of chat 2, Day 3 → start chat 3) is in git history at the previous commit to this file.
+Written: Wed 15 Oct 2026. Paste this whole file into the new chat together with the two files listed under "Attach".
+Superseded version (end of chat 3, Day 4 → start chat 4) is in git history at the previous commit to this file.
 
 ## Attach to the new chat (in this order)
 
 1. `AI_GenAI_Agentic_Engineer_Master_Build_Prompt_v2_7.md` (master prompt, plus Addendum A1 agreed 13 Oct — Model
    Selection Agent, guardrails/tokenization/fine-tuning/cost/latency/temperature coverage)
-2. `Job_Ready_Sprint_10_Days_v3.md` (sprint plan v3)
+2. `Job_Ready_Sprint_10_Days_v3.md` (sprint plan v3) — **bring Day 6's exact step list; it was not re-typed
+   into this handoff, same discipline as the Day 5 handoff, and this new chat has no other way to see it**
 3. This file
 
 ## First message for the new chat
 
-> SPRINT MODE, continue from this handoff. Day 4 (RAG and advanced RAG) is fully built and pushed — all 7
-> steps. Day 5: ML tools for the agents, as in the sprint doc v3 (includes building XGBoost, per
-> docs/adr/000-corrections-to-master-prompt.md item 1 — only the Random Forest exists so far — plus the
-> Model Selection Agent from Addendum A1: LangGraph agents that pick a model for a requirement and
-> scrutinize the choice via CRAG/Self-RAG-style methods, evaluated with LLM evals).
+> SPRINT MODE, continue from this handoff. Day 5 (ML tools for the agents + the Model Selection Agent from
+> Addendum A1) is fully built and pushed — all 6 steps: WAPE/MASE/bias metrics, demand forecasting
+> (ETS vs naive, honest backtest), inventory (safety stock/ROP/EOQ), the SKU risk classifier (Random
+> Forest + XGBoost, leakage-safe, calibration + SHAP), a CSV run-log, and the Model Selection Agent itself
+> (LangGraph propose → critique → revise → accept/abstain, same CRAG/Self-RAG shape as Day 4's
+> CorrectiveRagService, with its own 8-question golden set and free + LLM-judge eval harness).
+> Day 6: multi-agent system in LangGraph, as in the sprint doc v3 — read its exact step list before planning,
+> this handoff deliberately doesn't re-type it.
 > Repo: hardeep282/vendor-intelligence-copilot (private), branch main. Attach it with push access, clone it,
 > rebuild the snapshot from the public analytics repo's workbook (scripts/build_snapshot.py), run the checks
 > (`uv run pytest -q`, `uv run ruff check .`, `uv run mypy`), confirm the state in five lines, flag anything
-> inconsistent with docs/PROJECT_PROGRESS.md, then give me the Day 5 plan with hour estimates and start step 1.
+> inconsistent with docs/PROJECT_PROGRESS.md, then give me the Day 6 plan with hour estimates and start step 1.
 > Do not re-derive decisions already settled in docs/adr/ or re-explain things already covered in
 > docs/BUILD_LOG.md — read them, then build.
 > Standing rule, every day from now on: whenever you add a new file or change what an existing file
 > does, add or update its entry in docs/CODE_MAP.md in the same commit (same convention as
-> BUILD_LOG.md / PROJECT_PROGRESS.md), AND update the companion Code Map HTML artifact
-> (https://claude.ai/artifact/DEhdU4uUTqPr7y1RgWDRCA, currently Version 6) the same sitting — read it first,
-> add/edit entries (new files get `day: 5`, `isNew: true`, and real `talksTo` cross-references to what
-> they actually call), then republish to the same URL so it never goes stale.
+> BUILD_LOG.md / PROJECT_PROGRESS.md). The companion Code Map HTML artifact
+> (https://claude.ai/artifact/DEhdU4uUTqPr7y1RgWDRCA, currently Version 8, current through Day 5) is now
+> updated only once at the very end of the whole 10-day sprint, not every commit — it was eating too much
+> turnaround updating it daily. docs/CODE_MAP.md in the repo stays the one source of truth day to day.
 
 ## Repo and versions
 
@@ -36,50 +40,53 @@ Superseded version (end of chat 2, Day 3 → start chat 3) is in git history at 
 |---|---|
 | Repo | `hardeep282/vendor-intelligence-copilot` (private; attach with push access) |
 | Branch | `main` |
-| Latest commit | `f8a7586` "Day 4 step 7: RAG eval harness -- recall@5, MRR, cut-down Ragas" |
+| Latest commit | `8dd0970` "Day 5 step 6 -- Model Selection Agent (Addendum A1)" |
 | Local folder | `C:\Projects\vendor-intelligence-copilot` |
 | Analytics repo (source data) | `hardeep282/Commercial-Analytics---Beverage-Distribution-Project---Vendor-and-Stock-Analysis` (public) |
-| Python / tooling | Python 3.12, uv, ruff, mypy (strict), pytest; FastAPI, boto3, anthropic 1.13.0, langsmith 0.14.8, sqlglot 30.22.0, tiktoken, tokenizers, sentence-transformers, chromadb, rank-bm25, langgraph |
+| Python / tooling | Python 3.12, uv, ruff, mypy (strict), pytest; FastAPI, boto3, anthropic 1.13.0, langsmith 0.14.8, sqlglot 30.22.0, tiktoken, tokenizers, sentence-transformers, chromadb, rank-bm25, langgraph, scikit-learn, xgboost, shap |
 | Deployed version | None yet. Target `https://api.vendor.<domain>/health` |
-| Code Map artifact | https://claude.ai/artifact/DEhdU4uUTqPr7y1RgWDRCA (Version 6, current through Day 4 step 7) |
+| Code Map artifact | https://claude.ai/artifact/DEhdU4uUTqPr7y1RgWDRCA (Version 8, current through Day 5 — **next update is the one-time end-of-sprint pass, not per-commit**) |
 
-## What exists (verified), end of Day 4
+## What exists (verified), end of Day 5
 
-Everything from the Day 1–3 handoff (data snapshot, disclosure policy, golden v1/v2, API skeleton,
-Docker/CI/CD, IAM, SQL safety layer 0, LLM client, InsightService, Text-to-SQL, effort/tokenization labs —
-unchanged, still all passing) **plus**, built this chat (Day 4, all 7 steps):
+Everything from the Day 1–4 handoff (data snapshot, disclosure policy, golden v1/v2, API skeleton,
+Docker/CI/CD, IAM, SQL safety layer 0, LLM client, InsightService, Text-to-SQL, effort/tokenization labs,
+RAG corpus/chunking/embeddings/hybrid retrieval/permission filter/Corrective RAG/eval harness — unchanged,
+still all passing) **plus**, built this chat (Day 5, all 6 steps):
 
-- **Knowledge corpus** (`copilot.rag.corpus`): 14 docs (4 methodology-family — data dictionary, metric
-  definitions, decision log, methodology — + 10 clearly-labelled synthetic vendor contracts), each with
-  YAML frontmatter (`doc_type`, `vendor`, `data_class`, `allowed_roles`) cross-checked against the live
-  `DisclosurePolicy` so a doc's hand-authored roles can never silently drift from the real policy.
-- **Heading-aware chunking** (`copilot.rag.chunking`): splits at Markdown headings, falls back to
-  paragraph+overlap only past ~1000 chars; every chunk carries its doc's permission metadata plus a stable
-  `chunk_id` and `content_hash`.
-- **Local embeddings + Chroma store** (`copilot.rag.embeddings`, `copilot.rag.store.ChunkStore`): real
-  local `all-MiniLM-L6-v2` (lazy-loaded, no download at construction) + a deterministic `FakeEmbedder` for
-  every test; idempotent upserts keyed by `content_hash`, so a full rebuild skips unchanged chunks.
-- **Hybrid retrieval with RRF** (`copilot.rag.retrieval.HybridRetriever`): BM25 + vector search fused via
-  Reciprocal Rank Fusion (`k=60`, Cormack et al. 2009) — ranks only, no score calibration needed between
-  BM25 and cosine distance. Reranker cut from this step on purpose.
-- **Permission filter inside the vector query** (`copilot.rag.permissions.PermissionedRetriever`): the
-  Chroma `where` filter is pushed into the ANN search itself (not applied post-hoc, which would silently
-  return fewer than `n_results`); BM25's role-scoped index is built from only the visible chunks in the
-  first place. Authority is always the live `DisclosurePolicy.can_view()`, never a chunk's own stored field.
-- **Corrective RAG loop** (`copilot.rag.corrective.CorrectiveRagService`, LangGraph `StateGraph`):
-  retrieve → grade → rewrite → retry (max 2) → abstain. No external web-search correction branch (ADR-002
-  already forbids fetching outside the licence-safe corpus) — retries the same corpus with a reformulated
-  query instead; a logged simplification, not a new ADR.
-- **RAG eval harness** (`copilot.evals.rag_golden`, `rag_metrics`, `rag_quality`): 20-question golden set
-  (`evals/datasets/rag_golden_v1.jsonl`, labelled by `doc_type`/`vendor` + a verbatim `must_contain` phrase
-  so it survives re-chunking, verified to resolve to exactly 1 real chunk each), free `recall_at_k`/MRR, and
-  a cut-down Ragas pair (faithfulness, context_recall — the sprint's own documented cut-first allowance)
-  built as two hand-written LLM-judge calls through the existing `LLMClient` rather than adding the `ragas`
-  package. CLI: `scripts/run_rag_eval.py` (`--quality` for real judge calls, costs money, off by default).
-- **Checks:** 233 tests pass (`uv run pytest -q`); ruff, mypy (strict) clean across the whole repo.
-- **Not yet run for real:** `scripts/build_rag_index.py` (the real embedding index) and
-  `scripts/run_rag_eval.py --quality` (real faithfulness/context_recall numbers) still need your machine —
-  see the status table below.
+- **Forecast metrics** (`copilot.ml.metrics`): WAPE, MASE, bias — not MAPE, which the analytics repo's own
+  backtest already found unreliable near zero actuals. Pure NumPy, no fakes needed.
+- **Demand forecasting** (`copilot.ml.forecast.forecast_demand`): ETS vs naive, picked by honest
+  out-of-sample rolling-origin backtest — never an in-sample fit (ADR-000 item 2 is exactly that mistake in
+  the Excel tool this project replaces). `AutoETS` fit non-seasonally (only 12 months of history exist);
+  floors the first backtest origin at 7 in-sample points (confirmed empirically, not the analytics repo's 6).
+- **Inventory planning** (`copilot.ml.inventory.compute_inventory_plan`): Silver/Pyke/Peterson safety
+  stock/ROP, Wilson EOQ. `demand_stats_from_backtest()` bridges a `ForecastResult` to these formulas using
+  historical month-over-month variability, not variance across the forecast points (a flat naive forecast
+  has zero variance by construction — caught and fixed before shipping).
+- **SKU risk classifier** (`copilot.ml.risk_classifier`): closes ADR-000 item 1 (XGBoost alongside the
+  existing Random Forest). Leakage-safe feature set excludes the margin family **and**
+  `SalesToPurchaseRatio`, confirmed algebraically equal to `StockTurnover * (1 + MarkupPct)` — an indirect
+  `ProfitMargin` proxy found only after two synthetic-fixture redesigns, by watching it dominate the "safe"
+  model's SHAP drivers. Confirmed differential (n=2000): RF accuracy 0.834→0.820, F1 0.291→0.211; XGBoost
+  accuracy 0.898→0.886, F1 0.667→0.596 (leaky → leakage-safe). `scripts/train_risk_classifier.py` runs the
+  same comparison against a real `vw_PortfolioHealth` export.
+- **CSV run-log** (`copilot.ml.run_log`): MLflow cut-first per the sprint doc; one `log_*_run()` builder per
+  tool, flat CSV row, header written on first use.
+- **Model Selection Agent** (`copilot.agents.model_selection.ModelSelectionAgent`, Addendum A1, LangGraph
+  `StateGraph`): propose → critique → revise → accept/abstain, the same CRAG/Self-RAG shape as Day 4's
+  `CorrectiveRagService` (retrieve → grade → rewrite → generate/abstain) applied to the agent scrutinizing
+  its own proposal instead of retrieved chunks. `MODEL_CATALOG` is a fixed, closed dict — the agent can never
+  invent a model family outside a named list. Bounded to `MAX_REVISIONS = 2` before an honest abstain.
+  Eval harness (`copilot.evals.model_selection_golden/metrics/quality`): 8-question golden set, two free
+  catalog-membership checks, one LLM-judge check (`reasoning_grounded`) reusing `evals.evaluators.EvalScore`.
+  CLI: `scripts/run_model_selection_eval.py` — unlike the RAG harness, every run here needs
+  `ANTHROPIC_API_KEY` (no free retrieval-only half exists).
+- **Checks:** 299 tests pass (`uv run pytest -q`); ruff, mypy (strict) clean across the whole repo
+  (66 source files).
+- **Not yet run for real:** `scripts/train_risk_classifier.py` (real `vw_PortfolioHealth` export) and
+  `scripts/run_model_selection_eval.py` (needs `ANTHROPIC_API_KEY`) still need your machine — see the status
+  table below. Neither blocks starting Day 6.
 
 ## Canonical metrics (from the snapshot, tested) — unchanged since Day 1
 
@@ -94,11 +101,12 @@ $1,640,474.69; blended margin 28.72% — a ratio of sums, not `AVG(BlendedMargin
 
 ADR-000 prompt corrections · ADR-001 separate repo · ADR-002 licence-safe snapshot · ADR-003 EC2 + Compose
 runtime · ADR-004 secrets in SSM, OIDC for CI · ADR-005 direct Anthropic API, not Bedrock (effort lab, not a
-temperature lab). **No new ADR for Day 4** — the embedding model, vector store, RRF constant, Corrective RAG's
-no-web-search simplification, and building the Ragas-reduced evaluators by hand all follow already-made or
-already-standard choices rather than a new build-vs-buy decision; see `docs/PROJECT_PROGRESS.md`'s "Decisions"
-section for the full reasoning. Next ADR number: 006 (expected Day 5, if XGBoost/model-selection involves a real
-build-vs-buy call rather than just following the sprint doc).
+temperature lab). **No new ADR for Day 5** — closing ADR-000 item 1 (XGBoost) isn't a new build-vs-buy
+decision, scikit-learn's `Pipeline`/SHAP follow the established ML-tooling pattern, and the Model Selection
+Agent's LangGraph shape directly reuses Day 4's `CorrectiveRagService` precedent rather than introducing a
+new architecture. Next ADR number: 006 (expected Day 6, if the multi-agent orchestration layer involves a
+real build-vs-buy call — e.g. a supervisor pattern vs. a fixed pipeline — rather than just following the
+sprint doc).
 
 ## Status of your actions (update before pasting)
 
@@ -118,12 +126,13 @@ build-vs-buy call rather than just following the sprint doc).
 | Run `scripts/build_rag_index.py` on your machine (free, needs network) | ☐ |
 | Run `scripts/run_rag_eval.py` on your machine (free) | ☐ |
 | Run `scripts/run_rag_eval.py --quality` on your machine (small $) | ☐ |
+| Run `scripts/train_risk_classifier.py` on your real `vw_PortfolioHealth` export (free) | ☐ |
+| Run `scripts/run_model_selection_eval.py` on your machine (small $) | ☐ |
 
-Day 5 can start before the AWS/domain rows and the "run on your machine" rows are done — none of Day 5's likely
-build steps (ML tools wrapped as agent-callable functions, XGBoost, the Model Selection Agent) need a real LLM
-call by default for the parts that can be unit-tested against fakes, same pattern as every day so far. If you
-did run any of the scripts above, paste the printed output into the new chat so it gets logged in
-`docs/PROJECT_PROGRESS.md`.
+Day 6 can start before the AWS/domain rows and the "run on your machine" rows are done — same pattern as every
+day so far: the parts that can be unit-tested against fakes don't need a real LLM call or your real data by
+default. If you did run any of the scripts above, paste the printed output into the new chat so it gets logged
+in `docs/PROJECT_PROGRESS.md`.
 
 ## How this project runs (carry forward, unchanged)
 
@@ -143,9 +152,10 @@ did run any of the scripts above, paste the printed output into the new chat so 
   and `docs/PROJECT_PROGRESS.md` are kept current after every step; a new chat should read those two plus this
   handoff before building anything, and treat a decision already recorded in `docs/adr/` as settled unless you
   say otherwise.
-- **Code Map, both forms, every commit that adds/changes a file:** `docs/CODE_MAP.md` (markdown, in the repo)
-  and the Code Map HTML artifact (link above) must both be updated in the same sitting as the code change —
-  never let either go stale a day behind the repo.
+- **Code Map:** `docs/CODE_MAP.md` (markdown, in the repo) is updated in the same commit as every file add/change
+  — unchanged. The Code Map HTML artifact (link above) is the one exception as of this handoff: it is now
+  updated **once, at the end of the whole 10-day sprint**, not every day — updating it daily was costing more
+  turnaround than it was worth. Don't republish it mid-sprint unless asked.
 
 ## Open RAID items (docs/RAID.md)
 
@@ -154,16 +164,15 @@ licence. R2 High: scope. R3 Medium: only 12 months of demand. R6 Medium: monthly
 vendor views $451.62M (0.1% gap). R8 High: AWS Free plan ends about 25 Dec 2026; upgrade. R9 Low: image build
 only in CI. R10 High: text-to-SQL semantic traps — mitigated by the Day 3 validator + golden v2, red team
 (Day 7, 8 cases) still ahead. R11 High: prompt-to-SQL injection — layer 0 + sqlglot allowlist in; still open
-until Day 7's red team. **R12 New, Low:** the RAG permission filter (Day 4 step 5) is unit-tested but the
-Day 7 red team should also probe it directly (e.g. a viewer asking a rephrased question to try to surface a
-confidential chunk) rather than relying solely on the SQL-path red team.
+until Day 7's red team.
 
 ## Costs to date
 
 AWS $0, domain $0, LLM ~$0.01127 + whatever the scripts above cost when you run them (effort lab: est.
-$0.15–0.20 at defaults; `run_rag_eval.py --quality`: roughly 20 questions × (1 CorrectiveRagService call + 2
-judge calls) at `effort: low/medium` — expect well under $1 for the full set; the rest are a few cents or free).
-Expected once Day 2 resources exist: about $22/month on AWS (Mumbai).
+$0.15–0.20 at defaults; `run_rag_eval.py --quality`: well under $1 for the full 20-question set;
+`run_model_selection_eval.py --quality`: 8 questions × (1 agent run, up to 3 LLM calls, + 1 judge call) at
+`effort: low/medium` — expect a few cents; `train_risk_classifier.py` is free, no API key; the rest are a
+few cents or free). Expected once Day 2 resources exist: about $22/month on AWS (Mumbai).
 
 ## Cuts and moves (carry forward)
 
@@ -171,7 +180,10 @@ Landing page → Day 10 (case-study page). Day 3 step 7 (question→SQL pair gen
 Day 9 if revisited. Day 4's cross-encoder reranker → cut from step 4, as the sprint doc itself flagged "cut
 first"; `RetrievedChunk` already carries full chunk text so one slots in later as a third stage if revisited.
 Day 4's Ragas suite → reduced to faithfulness + context_recall only, per the sprint doc's own cut-first
-allowance for step 7.
+allowance for step 7. Day 5's MLflow → a plain CSV run-log instead, per the sprint doc's own cut-first note
+(three tools called a handful of times a day don't need a tracking server). **Code Map HTML artifact cadence**
+→ moved from "update every commit" to "update once at the end of the sprint," starting this handoff — not a
+sprint-doc cut, a workflow change agreed 14 Oct to stop it eating turnaround every single day.
 
 ## Living documents (all in the repo)
 
@@ -192,28 +204,29 @@ allowance for step 7.
 Plan and tracker: https://claude.ai/artifact/AYJf5GTMPMdqPoXfcSztA1 · Day 1 setup guide:
 https://claude.ai/artifact/LVqBF2eUBjDrB81kYF8JcC · Day 2 deploy guide: https://claude.ai/artifact/2jkTr9nxbjB6VbBNTgLtGX
 · Day 3 step 4/5 explainer (ruff format vs. check, validator, text-to-SQL): https://claude.ai/artifact/MLZ5DhA5r1wHkJNpM2D77H
-· Code Map (every day, kept current — attach this to the new chat too): https://claude.ai/artifact/DEhdU4uUTqPr7y1RgWDRCA
+· Code Map (every day; now updated once, at the end of the sprint — don't expect it current mid-sprint):
+https://claude.ai/artifact/DEhdU4uUTqPr7y1RgWDRCA
 
-## Day 5 scope — read the sprint doc for the exact step list
+## Day 6 scope — read the sprint doc for the exact step list
 
 Known anchors going in (don't re-derive, the sprint doc v3 has the full itemized list):
 
-1. **XGBoost** — per `docs/adr/000-corrections-to-master-prompt.md` item 1, only the Random Forest exists in
-   the analytics repo so far; XGBoost is explicitly deferred to Day 5. Likely alongside the existing K-Means
-   and Random Forest as ML tools the agents can call.
-2. **Model Selection Agent** (Addendum A1, agreed 13 Oct) — LangGraph agents that pick a data-science model
-   for a stated requirement (e.g. K-Means for segmentation, logistic regression for classification), scrutinize
-   whether the choice is correct via CRAG/Self-RAG-style methods (the Day 4 Corrective RAG loop is a direct
-   precedent for the "scrutinize and retry" shape), and are evaluated with LLM evals.
-3. Addendum A1 also calls out guardrails, tokenization, fine-tuning, cost control, latency, and temperature/
-   effort as concerns that must stay covered through Day 5 and beyond — already true as of Day 3's effort lab
-   and the guardrails layer built Day 1, worth a one-line confirmation rather than rebuilding.
+1. **Multi-agent system in LangGraph** — the theme line from `docs/PROJECT_PROGRESS.md`'s sprint-status table
+   is all that's recorded in this repo; the step-by-step list and hour estimates live only in the sprint doc.
+2. What's already built and likely becomes agent-callable tools/nodes in this day's graph: `TextToSqlService`
+   (Day 3), `InsightService` (Day 3), `CorrectiveRagService` (Day 4), the three ML tools —
+   forecast/inventory/risk classifier (Day 5), and the `ModelSelectionAgent` itself (Day 5) — all already
+   independent, testable services with typed Pydantic I/O, which is exactly the shape a supervisor/router
+   node would need to call them as tools.
+3. Addendum A1's cross-cutting concerns (guardrails, tokenization, fine-tuning, cost control, latency,
+   temperature/effort) stay covered through Day 6 and beyond — already true as of Day 1's guardrails layer
+   and Day 3's effort lab, worth a one-line confirmation rather than rebuilding.
 
-**Read `Job_Ready_Sprint_10_Days_v3.md`'s Day 5 section for the exact step-by-step list and hour estimates**
-before planning — this handoff deliberately doesn't re-type it to avoid it drifting out of sync with the real
-sprint doc the way Day 4's "cut first" notes already did once.
+**Read `Job_Ready_Sprint_10_Days_v3.md`'s Day 6 section for the exact step-by-step list and hour estimates**
+before planning — this handoff deliberately doesn't re-type it, the same discipline the Day 5 handoff used
+(and the exact gap that made starting Day 6 in chat 4 impossible without the sprint doc in hand).
 
 ## Alternative start
 
 Your `Next_Chat_Continuation_Prompt.md` template works too: put v2.7+A1 in Part 1, this file in Part 2,
-`docs/PROJECT_PROGRESS.md` in Part 3, and "Resume at: Day 5, step 1".
+`docs/PROJECT_PROGRESS.md` in Part 3, and "Resume at: Day 6, step 1".
