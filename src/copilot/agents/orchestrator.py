@@ -31,6 +31,16 @@ day can act on `conflicts_noted` without this module changing.
 A raised exception becomes a `status="failed"` `AgentResult` with the exception message in
 `gaps`, so the draft step can say plainly what's missing -- same posture `run_data_analyst`/
 `run_knowledge` already take toward their own services' abstentions.
+
+**Day 6 step 4: the Verifier.** After `draft`, a separate judge call (`orchestrator_verify`)
+checks the drafted answer against the specialist findings it was supposed to be built from --
+numeric grounding, citations, sufficiency, contradictions between agents -- same propose/
+critique/revise/accept shape `ModelSelectionAgent` already uses (`_verify` is the critique,
+`_revise_draft` is the pure, LLM-free bookkeeping step that folds the verdict's feedback back
+into state, mirroring `_revise`/`MAX_REVISIONS` there). If the draft fails verification, it loops
+back to `draft` with that feedback for a redraft, up to `MAX_VERIFICATION_LOOPS` times; after
+that it finalizes anyway with `verified=False` rather than looping forever -- a worse answer
+delivered honestly-flagged beats no answer at all.
 """
 
 from __future__ import annotations
@@ -52,6 +62,8 @@ from copilot.llm.prompts import load_prompt
 from copilot.llm.types import CallMetrics
 
 SpecialistExecutor = Callable[[TaskSpec], AgentResult]
+
+MAX_VERIFICATION_LOOPS = 2
 
 _ROSTER = {
     "data_analyst": "figures from the database via text-to-SQL (lookups, aggregations)",
@@ -90,6 +102,20 @@ class DraftAnswer(BaseModel):
     conflicts_noted: list[str] = Field(default_factory=list)
 
 
+class VerifierVerdict(BaseModel):
+    """Forced structured output for the orchestrator_verify prompt (Day 6 step 4)."""
+
+    grounded: bool
+    citations_ok: bool
+    sufficient: bool
+    contradictions: list[str] = Field(default_factory=list)
+    feedback: str = ""
+
+    @property
+    def passed(self) -> bool:
+        return self.grounded and self.citations_ok and self.sufficient and not self.contradictions
+
+
 class OrchestratorResult(BaseModel):
     question: str
     role: Role
@@ -97,6 +123,8 @@ class OrchestratorResult(BaseModel):
     results: list[AgentResult] = Field(default_factory=list)
     answer: str | None = None
     conflicts_noted: list[str] = Field(default_factory=list)
+    verified: bool = False
+    verify_attempts: int = 0
     total_cost_usd: float = 0.0
     total_latency_s: float = 0.0
     llm_calls: int = 0
@@ -108,6 +136,10 @@ class _State(TypedDict):
     plan: list[TaskSpec]
     current_task: TaskSpec | None
     results: Annotated[list[AgentResult], operator.add]
+    draft: DraftAnswer | None
+    verify_attempt: int
+    verify_feedback: str
+    last_verdict: VerifierVerdict | None
     result: OrchestratorResult | None
     total_cost_usd: float
     total_latency_s: float
@@ -140,6 +172,10 @@ class Orchestrator:
             "plan": [],
             "current_task": None,
             "results": [],
+            "draft": None,
+            "verify_attempt": 0,
+            "verify_feedback": "",
+            "last_verdict": None,
             "result": None,
             "total_cost_usd": 0.0,
             "total_latency_s": 0.0,
@@ -162,10 +198,18 @@ class Orchestrator:
         graph.add_node("plan", self._plan)
         graph.add_node("run_specialist", self._run_specialist)
         graph.add_node("draft", self._draft)
+        graph.add_node("verify", self._verify)
+        graph.add_node("revise_draft", self._revise_draft)
+        graph.add_node("finalize", self._finalize)
         graph.set_entry_point("plan")
         graph.add_conditional_edges("plan", self._fan_out, ["run_specialist", "draft"])
         graph.add_edge("run_specialist", "draft")
-        graph.add_edge("draft", END)
+        graph.add_edge("draft", "verify")
+        graph.add_conditional_edges(
+            "verify", self._route_after_verify, ["finalize", "revise_draft"]
+        )
+        graph.add_edge("revise_draft", "draft")
+        graph.add_edge("finalize", END)
         return graph.compile()
 
     # -- nodes -----------------------------------------------------------------------------
@@ -268,13 +312,25 @@ class Orchestrator:
             for r in results
         ) or "(no specialists were needed for this question)"
 
+        # Only present on a redraft (loop back from _revise_draft); on the first pass the
+        # specialists haven't been second-guessed yet, so the prompt gets a plain default line
+        # rather than an empty section -- same reasoning the module docstring gives for
+        # `orchestrator_draft`'s feedback_block.
+        feedback_block = (
+            f"The previous draft failed verification -- fix this: {state['verify_feedback']}"
+            if state["verify_feedback"]
+            else "This is the first draft; no prior verifier feedback."
+        )
+
         prompt = load_prompt("orchestrator_draft")
         system = prompt.render_system(role=state["role"])
         messages: list[MessageParam] = [
             {
                 "role": "user",
                 "content": prompt.render_user(
-                    question=state["question"], findings_block=findings_block
+                    question=state["question"],
+                    findings_block=findings_block,
+                    feedback_block=feedback_block,
                 ),
             }
         ]
@@ -290,10 +346,94 @@ class Orchestrator:
                 cache_system=prompt.cache_system,
             ),
         )
+        return {
+            "draft": draft,
+            "total_cost_usd": state["total_cost_usd"] + metrics.cost_usd,
+            "total_latency_s": state["total_latency_s"] + metrics.total_latency_s,
+            "llm_calls": state["llm_calls"] + 1,
+        }
 
-        specialist_cost = sum(r.cost_usd for r in results)
-        specialist_latency = sum(r.latency_s for r in results)
-        specialist_calls = sum(r.llm_calls for r in results)
+    def _verify(self, state: _State) -> dict[str, object]:
+        draft = state["draft"]
+        if draft is None:
+            # Can't happen: "draft" always runs before "verify". Raised, not asserted, for the
+            # same -O-survival reason as the other guards in this module.
+            raise RuntimeError("verify invoked with no draft")
+
+        results = state["results"]
+        findings_block = "\n".join(
+            f"[{r.task_id}] {r.agent} (status={r.status}, confidence={r.confidence}): "
+            f"{r.findings}" + (f" | gaps: {'; '.join(r.gaps)}" if r.gaps else "")
+            for r in results
+        ) or "(no specialists were needed for this question)"
+
+        prompt = load_prompt("orchestrator_verify")
+        system = prompt.render_system(
+            question=state["question"],
+            findings_block=findings_block,
+            draft_answer=draft.answer,
+            cited_tasks=", ".join(draft.cited_tasks) or "(none cited)",
+        )
+        messages: list[MessageParam] = [{"role": "user", "content": prompt.render_user()}]
+        verdict, metrics = cast(
+            "tuple[VerifierVerdict, CallMetrics]",
+            self._llm.structured(
+                model=prompt.model,
+                system=system,
+                messages=messages,
+                output_model=VerifierVerdict,
+                max_tokens=prompt.max_tokens,
+                effort=self._effort or prompt.effort,
+                cache_system=prompt.cache_system,
+            ),
+        )
+        return {
+            "last_verdict": verdict,
+            "total_cost_usd": state["total_cost_usd"] + metrics.cost_usd,
+            "total_latency_s": state["total_latency_s"] + metrics.total_latency_s,
+            "llm_calls": state["llm_calls"] + 1,
+        }
+
+    def _route_after_verify(self, state: _State) -> str:
+        """Pure routing function (no LLM call, no state mutation) -- mirrors
+        `ModelSelectionAgent._route_after_critique`. Finalizes on a pass, or once
+        `MAX_VERIFICATION_LOOPS` redrafts have already been spent; otherwise loops back for
+        one more attempt via `_revise_draft`.
+        """
+        verdict = state["last_verdict"]
+        if verdict is not None and verdict.passed:
+            return "finalize"
+        if state["verify_attempt"] >= MAX_VERIFICATION_LOOPS:
+            return "finalize"
+        return "revise_draft"
+
+    def _revise_draft(self, state: _State) -> dict[str, object]:
+        """Pure bookkeeping node (no LLM call) -- mirrors `ModelSelectionAgent._revise`: turns
+        the verifier's verdict into feedback text for the next `_draft` pass and advances the
+        retry counter.
+        """
+        verdict = state["last_verdict"]
+        feedback_parts: list[str] = []
+        if verdict is not None:
+            if verdict.feedback:
+                feedback_parts.append(verdict.feedback)
+            if verdict.contradictions:
+                feedback_parts.append(
+                    "Unresolved contradictions: " + "; ".join(verdict.contradictions)
+                )
+        return {
+            "verify_feedback": " ".join(feedback_parts) or "verification failed",
+            "verify_attempt": state["verify_attempt"] + 1,
+        }
+
+    def _finalize(self, state: _State) -> dict[str, object]:
+        draft = state["draft"]
+        if draft is None:
+            # Can't happen: "verify" (and therefore "finalize") only ever runs after "draft"
+            # has set it. Raised, not asserted, for the same -O-survival reason as above.
+            raise RuntimeError("finalize invoked with no draft")
+        results = state["results"]
+        verdict = state["last_verdict"]
 
         result = OrchestratorResult(
             question=state["question"],
@@ -302,18 +442,22 @@ class Orchestrator:
             results=results,
             answer=draft.answer,
             conflicts_noted=draft.conflicts_noted,
-            total_cost_usd=state["total_cost_usd"] + specialist_cost + metrics.cost_usd,
-            total_latency_s=state["total_latency_s"] + specialist_latency + metrics.total_latency_s,
-            llm_calls=state["llm_calls"] + specialist_calls + 1,
+            verified=bool(verdict is not None and verdict.passed),
+            verify_attempts=state["verify_attempt"],
+            total_cost_usd=state["total_cost_usd"] + sum(r.cost_usd for r in results),
+            total_latency_s=state["total_latency_s"] + sum(r.latency_s for r in results),
+            llm_calls=state["llm_calls"] + sum(r.llm_calls for r in results),
         )
         return {"result": result}
 
 
 __all__ = [
+    "MAX_VERIFICATION_LOOPS",
     "DraftAnswer",
     "Orchestrator",
     "OrchestratorPlan",
     "OrchestratorResult",
     "PlannedTask",
     "SpecialistExecutor",
+    "VerifierVerdict",
 ]

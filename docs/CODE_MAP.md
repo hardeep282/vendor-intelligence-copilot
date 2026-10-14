@@ -510,18 +510,33 @@ allowed for a `reorder_recommendation`) as an instruction to the model -- real e
 the Guardian (Day 7), not this prompt; `run_action()`'s `gaps` says so explicitly.
 
 ### `src/copilot/agents/orchestrator.py` -- `Orchestrator` *(day: 6, isNew: true)*
-Typed plan -> `Send` fan-out -> join -> draft, compiled as a LangGraph graph (C3). `_plan`
-(one LLM call, `OrchestratorPlan`/`PlannedTask`) turns the user's question into a list of
-specialist tasks; `_fan_out` is a *routing function*, not a node -- it returns one `Send` per
-planned task so independent tasks run as separate parallel `run_specialist` invocations
-(LangGraph's mechanism for exactly this), or a single `Send("draft", ...)` when the plan is
-empty, since `run_specialist` never running would otherwise leave the static
-`run_specialist -> draft` edge untraversed. `results` is `Annotated[list[AgentResult],
-operator.add]` -- LangGraph's reducer pattern for collecting parallel branch outputs back into
-one state key (the "join"). `_draft` (one more LLM call, `DraftAnswer`) writes the one answer
-the user sees, citing which task each figure came from, and names any disagreement it notices
-between specialists in `conflicts_noted` -- **logged only, never resolved or re-queried**, the
-sprint doc's Day 6 cut-first item. A specialist executor that raises, or a planned agent with no
+Typed plan -> `Send` fan-out -> join -> draft -> verify -> (finalize | revise_draft -> draft...),
+compiled as a LangGraph graph (C3/C7). `_plan` (one LLM call, `OrchestratorPlan`/`PlannedTask`)
+turns the user's question into a list of specialist tasks; `_fan_out` is a *routing function*,
+not a node -- it returns one `Send` per planned task so independent tasks run as separate
+parallel `run_specialist` invocations (LangGraph's mechanism for exactly this), or a single
+`Send("draft", ...)` when the plan is empty, since `run_specialist` never running would otherwise
+leave the static `run_specialist -> draft` edge untraversed. `results` is `Annotated[list[
+AgentResult], operator.add]` -- LangGraph's reducer pattern for collecting parallel branch
+outputs back into one state key (the "join"). `_draft` (one LLM call, `DraftAnswer`) writes the
+answer the user will see if it passes verification, citing which task each figure came from, and
+names any disagreement it notices between specialists in `conflicts_noted` -- **logged only,
+never resolved or re-queried**, the sprint doc's Day 6 cut-first item. On a redraft it also
+reads `verify_feedback` out of state and folds it into the prompt as `feedback_block`.
+**Day 6 step 4, the Verifier (C3/C7):** `_verify` (one more LLM call, `VerifierVerdict` via the
+`orchestrator_verify` prompt) scores the draft against the specialist findings it was supposed
+to be grounded in -- `grounded` (every number traces to a finding), `citations_ok`, `sufficient`,
+and any `contradictions` between findings the draft papered over; `VerifierVerdict.passed` is
+the AND of the first three and "no contradictions". `_route_after_verify` is a pure routing
+function (no LLM call, no state mutation -- mirrors `ModelSelectionAgent._route_after_critique`):
+passes -> `finalize`; fails and `verify_attempt < MAX_VERIFICATION_LOOPS` (2) -> `revise_draft`;
+otherwise `finalize` anyway, flagged `verified=False` rather than looping forever.
+`_revise_draft` is pure bookkeeping (no LLM call -- mirrors `ModelSelectionAgent._revise`):
+turns the verdict's `feedback`/`contradictions` into `verify_feedback` text and increments
+`verify_attempt`, then loops back to `draft`. `_finalize` assembles the `OrchestratorResult`,
+summing each specialist's own cost/latency/llm_calls in exactly once regardless of how many
+draft/verify loops ran (that summation moved out of `_draft`, which can now run more than once,
+into this one-time-only node). A specialist executor that raises, or a planned agent with no
 executor registered, becomes a `status="failed"` `AgentResult` with the reason in `gaps` rather
 than crashing the whole plan.
 **Takes in:** an `LLMClient`, `executors: dict[AgentName, SpecialistExecutor]` -- the Day 6
@@ -529,21 +544,29 @@ step 2 `run_*` functions, wired in by the caller (never constructed here: each n
 different real dependency the Orchestrator has no business reproducing) -- plus a question and
 `Role` at call time.
 **Gives out:** `OrchestratorResult` (plan, every `AgentResult`, the drafted answer,
-`conflicts_noted`, summed cost/latency/llm_calls across plan + every specialist + draft).
+`conflicts_noted`, `verified`/`verify_attempts`, summed cost/latency/llm_calls across plan +
+every specialist + every draft/verify attempt).
 **Talks to:** `copilot.agents.contracts` (`TaskSpec`/`AgentResult`/`AgentBudget`/`AgentName`);
-`copilot.llm.client`/`prompts` (`orchestrator_plan`/`orchestrator_draft` v1.yaml);
-`copilot.guardrails.policy` (`Role`). Does not import `copilot.agents.specialists` directly --
-tests inject fake executors, and a real caller (Day 6 step 7's eval script, not yet built) wires
-the real `run_*` functions in.
+`copilot.llm.client`/`prompts` (`orchestrator_plan`/`orchestrator_draft`/`orchestrator_verify`
+v1.yaml); `copilot.guardrails.policy` (`Role`). Does not import `copilot.agents.specialists`
+directly -- tests inject fake executors, and a real caller (Day 6 step 7's eval script, not yet
+built) wires the real `run_*` functions in.
 
-### `prompts/orchestrator_plan/v1.yaml`, `prompts/orchestrator_draft/v1.yaml` *(day: 6, isNew: true)*
+### `prompts/orchestrator_plan/v1.yaml`, `prompts/orchestrator_draft/v1.yaml`, `prompts/orchestrator_verify/v1.yaml` *(day: 6, isNew: true)*
 `orchestrator_plan`: lists the five specialists with one-line purposes (`_roster_block()` in
 `orchestrator.py`), and states the one hard dependency the model must respect --
 `inventory_planning` always implies planning `forecasting_risk` too, since the former needs the
 latter's output. `orchestrator_draft`: given the question and every specialist's condensed
 findings, writes the final answer, with the same "ground every number in what you were given"
 rule `vendor_insight`/`text_to_sql` already use, plus the instruction to name (not resolve) any
-conflict it notices between specialists.
+conflict it notices between specialists; its `user_template` carries a `feedback_block` that is
+the previous verifier feedback on a redraft, or a plain "no prior feedback" line on the first
+pass (same posture as `model_selection_propose`'s own `feedback_block`). `orchestrator_verify`:
+a second structured call -- same model family as the draft is fine here (unlike the Guardian's
+cross-model-family posture, Day 7), since this catches drafting mistakes against known-good
+inputs, not an adversarial safety check -- scoring `grounded`/`citations_ok`/`sufficient`/
+`contradictions`/`feedback` strictly against the specialist findings and the draft's own
+`cited_tasks`.
 
 ---
 

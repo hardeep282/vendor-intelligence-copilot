@@ -7,6 +7,11 @@
 # (sprint doc cut-first), it does not re-query over them -- a future day can act on
 # `conflicts_noted` without changing this prompt.
 #
+# feedback_block (added Day 6 step 4): when the Verifier rejects a draft, its `feedback` is
+# folded back in here for the redraft -- same "the next attempt sees exactly what failed"
+# posture `model_selection_propose`'s feedback_block and `text_to_sql`'s self-correction loop
+# already use.
+#
 # A new output field, or a changed grounding rule, goes in v2.yaml, not an edit here.
 
 name: orchestrator_draft
@@ -38,5 +43,7 @@ user_template: |
 
   Specialist findings:
   {findings_block}
+
+  {feedback_block}
 
   Write the final answer now.

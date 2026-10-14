@@ -1,14 +1,15 @@
-"""Tests for the Orchestrator (Day 6 step 3): typed plan, Send fan-out, join, draft, and
-logged-only conflict handling. No network, no real API key, same convention as
-tests/test_model_selection_agent.py and tests/test_rag_corrective.py: the LLM side is
-FakeMessagesResource, queued in the exact order the graph is expected to call it in; specialists
-are fake executors (step 2's own correctness is covered in tests/test_agent_specialists.py).
+"""Tests for the Orchestrator (Day 6 steps 3-4): typed plan, Send fan-out, join, draft,
+logged-only conflict handling, and the Verifier's grounding/citation/sufficiency check with its
+redraft loop. No network, no real API key, same convention as tests/test_model_selection_agent.py
+and tests/test_rag_corrective.py: the LLM side is FakeMessagesResource, queued in the exact order
+the graph is expected to call it in; specialists are fake executors (step 2's own correctness is
+covered in tests/test_agent_specialists.py).
 """
 
 from __future__ import annotations
 
 from copilot.agents.contracts import AgentResult, TaskSpec
-from copilot.agents.orchestrator import Orchestrator
+from copilot.agents.orchestrator import MAX_VERIFICATION_LOOPS, Orchestrator
 from copilot.llm.client import LLMClient
 from tests.fakes.anthropic_fakes import FakeMessagesResource, structured_response
 
@@ -17,6 +18,25 @@ def _llm_with(responses: list[object]) -> LLMClient:
     llm = LLMClient(api_key="sk-test-not-real")
     llm._client.messages = FakeMessagesResource(responses)  # type: ignore[attr-defined]
     return llm
+
+
+def _verdict(
+    grounded: bool = True,
+    citations_ok: bool = True,
+    sufficient: bool = True,
+    contradictions: list[str] | None = None,
+    feedback: str = "",
+) -> dict[str, object]:
+    return {
+        "grounded": grounded,
+        "citations_ok": citations_ok,
+        "sufficient": sufficient,
+        "contradictions": contradictions or [],
+        "feedback": feedback,
+    }
+
+
+_PASSING_VERDICT = structured_response(_verdict())
 
 
 def _ok(agent: str, findings: str, data_classes: list[str] | None = None) -> AgentResult:
@@ -56,6 +76,7 @@ def test_single_specialist_plan_runs_end_to_end() -> None:
                     "conflicts_noted": [],
                 }
             ),
+            _PASSING_VERDICT,
         ]
     )
     orch = Orchestrator(
@@ -70,7 +91,10 @@ def test_single_specialist_plan_runs_end_to_end() -> None:
     assert result.results[0].status == "ok"
     assert result.answer == "Total freight cost is $1.64M."
     assert result.conflicts_noted == []
-    assert result.llm_calls == 3  # plan(1) + draft(1) + the fake specialist's own llm_calls=1
+    assert result.verified is True
+    assert result.verify_attempts == 0
+    # plan(1) + draft(1) + verify(1) + the fake specialist's own llm_calls=1
+    assert result.llm_calls == 4
 
 
 def test_two_independent_specialists_fan_out_and_join() -> None:
@@ -95,6 +119,7 @@ def test_two_independent_specialists_fan_out_and_join() -> None:
                     "conflicts_noted": [],
                 }
             ),
+            _PASSING_VERDICT,
         ]
     )
     orch = Orchestrator(
@@ -124,6 +149,7 @@ def test_empty_plan_still_drafts_an_answer() -> None:
                     "conflicts_noted": [],
                 }
             ),
+            _PASSING_VERDICT,
         ]
     )
     orch = Orchestrator(llm, executors={})
@@ -148,6 +174,7 @@ def test_missing_executor_for_a_planned_agent_becomes_a_failed_result_not_a_cras
                     "conflicts_noted": [],
                 }
             ),
+            _PASSING_VERDICT,
         ]
     )
     orch = Orchestrator(llm, executors={})  # no "action" executor registered
@@ -183,6 +210,7 @@ def test_a_raising_executor_becomes_a_failed_result_not_a_crash() -> None:
                     "conflicts_noted": [],
                 }
             ),
+            _PASSING_VERDICT,
         ]
     )
     orch = Orchestrator(llm, executors={"forecasting_risk": _raises})
@@ -216,6 +244,7 @@ def test_conflicts_noted_by_the_draft_step_are_logged_not_resolved() -> None:
                     ],
                 }
             ),
+            _PASSING_VERDICT,
         ]
     )
     orch = Orchestrator(
@@ -229,9 +258,9 @@ def test_conflicts_noted_by_the_draft_step_are_logged_not_resolved() -> None:
     result = orch.answer("What is blended margin?", role="analyst")
 
     assert len(result.conflicts_noted) == 1
-    # logged, not re-queried: exactly one plan call and one draft call, no extra loop over the
-    # conflict -- plus the two fake specialists' own llm_calls=1 each
-    assert result.llm_calls == 4
+    # logged, not re-queried: exactly one plan call, one draft call and one verify call, no extra
+    # loop over the conflict -- plus the two fake specialists' own llm_calls=1 each
+    assert result.llm_calls == 5
 
 
 def test_cost_latency_and_calls_sum_across_plan_specialists_and_draft() -> None:
@@ -241,6 +270,7 @@ def test_cost_latency_and_calls_sum_across_plan_specialists_and_draft() -> None:
                 {"tasks": [{"agent": "data_analyst", "objective": "x", "constraints": {}}]}
             ),
             structured_response({"answer": "ok", "cited_tasks": ["t0"], "conflicts_noted": []}),
+            _PASSING_VERDICT,
         ]
     )
     orch = Orchestrator(
@@ -249,8 +279,77 @@ def test_cost_latency_and_calls_sum_across_plan_specialists_and_draft() -> None:
 
     result = orch.answer("x?", role="analyst")
 
-    # 2 LLM calls (plan, draft) at FakeMessagesResource's fixed cost, plus the fake specialist's
-    # own 0.001/0.1/1 accounting folded in by the draft node.
-    assert result.llm_calls == 3  # plan(1) + draft(1) + specialist(1)
+    # 3 LLM calls (plan, draft, verify) at FakeMessagesResource's fixed cost, plus the fake
+    # specialist's own 0.001/0.1/1 accounting folded in by the finalize node.
+    assert result.llm_calls == 4  # plan(1) + draft(1) + verify(1) + specialist(1)
     assert result.total_cost_usd > 0.001
     assert result.total_latency_s > 0.1
+
+
+def test_a_failed_verification_triggers_one_redraft_that_then_passes() -> None:
+    llm = _llm_with(
+        [
+            structured_response(
+                {"tasks": [{"agent": "data_analyst", "objective": "x", "constraints": {}}]}
+            ),
+            structured_response(
+                {"answer": "freight is about $2M", "cited_tasks": [], "conflicts_noted": []}
+            ),
+            structured_response(
+                _verdict(
+                    grounded=False,
+                    citations_ok=False,
+                    feedback="You said $2M but the finding says $1.64M -- use that figure "
+                    "and cite t0.",
+                )
+            ),
+            structured_response(
+                {"answer": "freight is $1.64M", "cited_tasks": ["t0"], "conflicts_noted": []}
+            ),
+            _PASSING_VERDICT,
+        ]
+    )
+    orch = Orchestrator(
+        llm, executors={"data_analyst": _ok("data_analyst", "freight is $1.64M", ["internal"])}
+    )
+
+    result = orch.answer("What is freight cost?", role="analyst")
+
+    assert result.answer == "freight is $1.64M"
+    assert result.verified is True
+    assert result.verify_attempts == 1
+    # plan(1) + draft(1) + verify(1) + revise + draft(1) + verify(1) + specialist(1)
+    assert result.llm_calls == 6
+
+
+def test_verification_that_never_passes_finalizes_unverified_after_max_loops() -> None:
+    llm = _llm_with(
+        [
+            structured_response(
+                {"tasks": [{"agent": "data_analyst", "objective": "x", "constraints": {}}]}
+            ),
+            structured_response(
+                {"answer": "attempt 1", "cited_tasks": [], "conflicts_noted": []}
+            ),
+            structured_response(_verdict(grounded=False, feedback="still wrong, attempt 1")),
+            structured_response(
+                {"answer": "attempt 2", "cited_tasks": [], "conflicts_noted": []}
+            ),
+            structured_response(_verdict(grounded=False, feedback="still wrong, attempt 2")),
+            structured_response(
+                {"answer": "attempt 3", "cited_tasks": [], "conflicts_noted": []}
+            ),
+            structured_response(_verdict(grounded=False, feedback="still wrong, attempt 3")),
+        ]
+    )
+    orch = Orchestrator(
+        llm, executors={"data_analyst": _ok("data_analyst", "x", ["internal"])}
+    )
+
+    result = orch.answer("x?", role="analyst")
+
+    assert result.verified is False
+    assert result.verify_attempts == MAX_VERIFICATION_LOOPS
+    assert result.answer == "attempt 3"  # delivered anyway, honestly flagged unverified
+    # plan(1) + 3x(draft+verify) + specialist(1) = 1 + 6 + 1
+    assert result.llm_calls == 8
