@@ -552,16 +552,36 @@ returns, `AgentResult.exceeds(task.budget)` is checked for real now (step 1 defi
 called it); an overage downgrades the result to `status="partial"` with the specific cost/
 latency/llm_calls overage named in `gaps`, so a specialist that quietly blew its budget is never
 reported as if nothing happened.
+**Day 6 step 6: a local SQLite checkpointer, and per-agent LangSmith run names/tags.**
+`Orchestrator(..., checkpoint_path=...)` compiles the graph with a `langgraph.checkpoint.sqlite.
+SqliteSaver` over that file (a plain `sqlite3.Connection`, `check_same_thread=False` since
+`_run_specialist` calls into a thread pool); `answer(..., thread_id=...)` is the checkpoint key
+-- a caller can resume or inspect one run's state later (`select * from checkpoints where
+thread_id = ...`), which is also what LangGraph Studio would otherwise visualize -- **Studio
+itself is this step's cut-first item** (an external tool to point at this process, not code to
+build). With no `checkpoint_path`, nothing changes (`checkpointer=None`, same as before step 6).
+`_ls_extra(node, role, **tags)` builds a `langsmith.run_helpers.LangSmithExtra` (`name="
+orchestrator.<node>"`, `tags=["orchestrator", node, f"role:{role}", ...]`), passed as
+`langsmith_extra=` to each of `_plan`/`_draft`/`_verify`'s own `LLMClient.structured()` call --
+`traceable`'s own call-time override, no change needed to `LLMClient` itself -- so a LangSmith
+trace can tell which orchestrator node (and which redraft attempt) a given LLM call belongs to,
+instead of every call showing up as the same generic `LLMClient.structured` run.
+`copilot.agents.specialists.run_action` tags its own call the same way
+(`name="specialist.action"`, tagged with `draft_type`); the other four specialists delegate to
+Day 3-5 services (`TextToSqlService`, `CorrectiveRagService`) whose internal LLM calls aren't
+yet agent-tagged -- threading tags through those pre-existing services is out of this step's
+scope, noted here rather than silently left undone.
 **Takes in:** an `LLMClient`, `executors: dict[AgentName, SpecialistExecutor]` -- the Day 6
 step 2 `run_*` functions, wired in by the caller (never constructed here: each needs a
-different real dependency the Orchestrator has no business reproducing) -- plus a question and
-`Role` at call time.
+different real dependency the Orchestrator has no business reproducing) -- plus a question,
+`Role`, and optional `thread_id` at call time; optional `checkpoint_path` at construction time.
 **Gives out:** `OrchestratorResult` (plan, every `AgentResult`, the drafted answer,
 `conflicts_noted`, `verified`/`verify_attempts`, summed cost/latency/llm_calls across plan +
 every specialist + every draft/verify attempt).
 **Talks to:** `copilot.agents.contracts` (`TaskSpec`/`AgentResult`/`AgentBudget`/`AgentName`);
 `copilot.llm.client`/`prompts` (`orchestrator_plan`/`orchestrator_draft`/`orchestrator_verify`
-v1.yaml); `copilot.guardrails.policy` (`Role`). Does not import `copilot.agents.specialists`
+v1.yaml); `copilot.guardrails.policy` (`Role`); `langgraph.checkpoint.sqlite` (`SqliteSaver`);
+`langsmith.run_helpers` (`LangSmithExtra`). Does not import `copilot.agents.specialists`
 directly -- tests inject fake executors, and a real caller (Day 6 step 7's eval script, not yet
 built) wires the real `run_*` functions in.
 

@@ -45,6 +45,7 @@ import duckdb
 import pandas as pd
 import sqlglot
 from anthropic.types import MessageParam
+from langsmith.run_helpers import LangSmithExtra
 from pydantic import BaseModel
 from sqlglot import exp
 
@@ -356,6 +357,13 @@ def run_action(spec: TaskSpec, llm: LLMClient, effort: Effort | None = None) -> 
             max_tokens=prompt.max_tokens,
             effort=effort or prompt.effort,
             cache_system=prompt.cache_system,
+            langsmith_extra=cast(
+                "LangSmithExtra",
+                {
+                    "name": "specialist.action",
+                    "tags": ["specialist", "action", f"draft_type:{draft_type}"],
+                },
+            ),
         ),
     )
 

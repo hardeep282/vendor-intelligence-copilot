@@ -57,15 +57,19 @@ is never reported as if nothing happened.
 from __future__ import annotations
 
 import operator
+import sqlite3
 import time
+import uuid
 from collections.abc import Callable
 from concurrent.futures import ThreadPoolExecutor
 from concurrent.futures import TimeoutError as FutureTimeoutError
 from typing import Annotated, Any, TypedDict, cast
 
 from anthropic.types import MessageParam
+from langgraph.checkpoint.sqlite import SqliteSaver
 from langgraph.graph import END, StateGraph
 from langgraph.types import Send
+from langsmith.run_helpers import LangSmithExtra
 from pydantic import BaseModel, Field
 
 from copilot.agents.contracts import AgentBudget, AgentName, AgentResult, TaskSpec
@@ -161,8 +165,17 @@ class _State(TypedDict):
 
 class Orchestrator:
     """Wraps an `LLMClient` and a specialist-executor map in the plan -> fan-out -> join ->
-    draft loop, compiled once as a LangGraph graph in `__init__` -- same construction pattern
-    `CorrectiveRagService`/`ModelSelectionAgent` already use.
+    draft -> verify loop, compiled once as a LangGraph graph in `__init__` -- same construction
+    pattern `CorrectiveRagService`/`ModelSelectionAgent` already use.
+
+    **Day 6 step 6: a local SQLite checkpointer.** Passing `checkpoint_path` compiles the graph
+    with a `SqliteSaver` over that file, so a run's state is durable across process restarts and
+    inspectable afterwards (e.g. with `sqlite3 <path> "select * from checkpoints"`) -- the thing
+    LangGraph Studio would otherwise visualize; Studio itself is this step's cut-first item per
+    the sprint doc (an external tool to point at this process, not code to build). `answer()`
+    then takes an optional `thread_id` (LangGraph's checkpoint key) so a caller can resume or
+    inspect one specific run; a fresh one is generated when the caller doesn't need to. Day 8's
+    server swaps this for Postgres -- not this module's concern.
     """
 
     def __init__(
@@ -171,14 +184,20 @@ class Orchestrator:
         executors: dict[AgentName, SpecialistExecutor],
         effort: Effort | None = None,
         default_budget: AgentBudget | None = None,
+        checkpoint_path: str | None = None,
     ) -> None:
         self._llm = llm
         self._executors = executors
         self._effort = effort
         self._default_budget = default_budget or AgentBudget()
+        self._checkpointer = (
+            SqliteSaver(sqlite3.connect(checkpoint_path, check_same_thread=False))
+            if checkpoint_path is not None
+            else None
+        )
         self._graph = self._build_graph()
 
-    def answer(self, question: str, role: Role) -> OrchestratorResult:
+    def answer(self, question: str, role: Role, thread_id: str | None = None) -> OrchestratorResult:
         initial: _State = {
             "question": question,
             "role": role,
@@ -194,7 +213,10 @@ class Orchestrator:
             "total_latency_s": 0.0,
             "llm_calls": 0,
         }
-        final_state = cast("_State", self._graph.invoke(initial))
+        config: dict[str, Any] = {}
+        if self._checkpointer is not None:
+            config = {"configurable": {"thread_id": thread_id or str(uuid.uuid4())}}
+        final_state = cast("_State", self._graph.invoke(initial, config=config))
         result = final_state["result"]
         if result is None:
             # Can't happen: "draft" always sets "result" before END -- raised rather than
@@ -223,9 +245,24 @@ class Orchestrator:
         )
         graph.add_edge("revise_draft", "draft")
         graph.add_edge("finalize", END)
-        return graph.compile()
+        return graph.compile(checkpointer=self._checkpointer)
 
     # -- nodes -----------------------------------------------------------------------------
+
+    @staticmethod
+    def _ls_extra(node: str, role: Role, **extra_tags: str) -> LangSmithExtra:
+        """Day 6 step 6: per-agent LangSmith run names and tags. `LLMClient.structured`/
+        `.complete` are already `@traceable`, but every call surfaced under the same generic
+        name/tags -- indistinguishable in a trace. `langsmith_extra` is `traceable`'s own
+        call-time override (no change needed to `LLMClient` itself): it renames this one run
+        `orchestrator.<node>` and tags it `orchestrator`, the node, and the requesting role, so
+        a LangSmith trace can be filtered by agent the same way `AgentResult.agent` lets code
+        filter by agent. A no-op (not an error) when tracing isn't configured -- same
+        `langsmith_tracing`/`langsmith_api_key` gate `LLMClient._configure_tracing` already
+        checks.
+        """
+        tags = ["orchestrator", node, f"role:{role}", *(f"{k}:{v}" for k, v in extra_tags.items())]
+        return cast("LangSmithExtra", {"name": f"orchestrator.{node}", "tags": tags})
 
     def _plan(self, state: _State) -> dict[str, object]:
         prompt = load_prompt("orchestrator_plan")
@@ -246,6 +283,7 @@ class Orchestrator:
                 max_tokens=prompt.max_tokens,
                 effort=self._effort or prompt.effort,
                 cache_system=prompt.cache_system,
+                langsmith_extra=self._ls_extra("plan", state["role"]),
             ),
         )
         tasks = [
@@ -390,6 +428,9 @@ class Orchestrator:
                 max_tokens=prompt.max_tokens,
                 effort=self._effort or prompt.effort,
                 cache_system=prompt.cache_system,
+                langsmith_extra=self._ls_extra(
+                    "draft", state["role"], attempt=str(state["verify_attempt"])
+                ),
             ),
         )
         return {
@@ -431,6 +472,9 @@ class Orchestrator:
                 max_tokens=prompt.max_tokens,
                 effort=self._effort or prompt.effort,
                 cache_system=prompt.cache_system,
+                langsmith_extra=self._ls_extra(
+                    "verify", state["role"], attempt=str(state["verify_attempt"])
+                ),
             ),
         )
         return {

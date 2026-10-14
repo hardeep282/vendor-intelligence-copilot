@@ -9,7 +9,9 @@ covered in tests/test_agent_specialists.py).
 
 from __future__ import annotations
 
+import sqlite3
 import time
+from pathlib import Path
 
 from copilot.agents.contracts import AgentBudget, AgentResult, TaskSpec
 from copilot.agents.orchestrator import MAX_VERIFICATION_LOOPS, Orchestrator
@@ -418,3 +420,31 @@ def test_a_specialist_that_overruns_its_cost_budget_is_downgraded_to_partial() -
     assert result.results[0].status == "partial"
     assert "exceeded budget" in result.results[0].gaps[0]
     assert "cost" in result.results[0].gaps[0]
+
+
+def test_sqlite_checkpointer_persists_the_run_under_its_thread_id(tmp_path: Path) -> None:
+    db_path = str(tmp_path / "checkpoints.sqlite")
+    llm = _llm_with(
+        [
+            structured_response(
+                {"tasks": [{"agent": "data_analyst", "objective": "x", "constraints": {}}]}
+            ),
+            structured_response({"answer": "ok", "cited_tasks": ["t0"], "conflicts_noted": []}),
+            _PASSING_VERDICT,
+        ]
+    )
+    orch = Orchestrator(
+        llm, executors={"data_analyst": _ok("data_analyst", "x")}, checkpoint_path=db_path
+    )
+
+    result = orch.answer("x?", role="analyst", thread_id="run-42")
+
+    assert result.answer == "ok"
+    con = sqlite3.connect(db_path)
+    try:
+        rows = con.execute(
+            "select count(*) from checkpoints where thread_id = ?", ("run-42",)
+        ).fetchone()
+    finally:
+        con.close()
+    assert rows[0] > 0
