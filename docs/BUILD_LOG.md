@@ -295,3 +295,35 @@ runs this against your actual `LANGSMITH_API_KEY` -- next for you to run on your
 **Metrics:** 136 tests pass (104 after step 4 -> 126 with +17 `evaluators` and +5
 `langsmith_sync` tests -> 136 with +10 `test_golden_v2.py`). `verify()` against the real
 snapshot: 0 mismatches across all 46 questions. ruff and mypy clean.
+
+## 2026-10-14 · Day 3, step 8 · Effort lab (sweeps `effort`, not temperature)
+
+**Covered:** `copilot.evals.effort_lab.run_effort_lab()` -- the rebuilt version of the
+sprint plan's original "temperature lab", per ADR-005's correction from step 1 (this model
+generation has no `temperature`/`top_p`/`top_k` parameter at all; `output_config.effort` is
+the nearest per-call lever, and it trades reasoning depth for latency/cost, not output
+diversity at fixed sampling). Runs the same golden questions at every one of the 5 effort
+levels and scores each run with step 6's evaluators, so the comparison uses real behaviour
+and real numbers, not a model's self-report.
+
+Metrics per effort level, same ones the sprint doc specified for the temperature version:
+execution accuracy, grounding (`leakage_free` here -- see step 6's entry for why it's kept
+separate from accuracy), SQL diversity across repeats (only computed when `--repeats > 1`;
+at 1 repeat there's nothing to compare a single run against, so it's reported as `n/a`
+rather than a meaningless 0 or 1), average cost, average latency.
+
+`scripts/run_effort_lab.py` is the real CLI -- makes actual Anthropic API calls, so it's for
+you to run on your machine with your `ANTHROPIC_API_KEY`. Defaults to 3 representative
+questions (a plain lookup, the ratio-of-sums margin question, and the Q1-2025 abstain trap)
+x 5 effort levels x 1 repeat = 15 calls; `--repeats` and `--questions` are both overridable.
+
+**Mistakes and fixes:**
+- First draft of the SQL-diversity calculation mixed rows from different questions together
+  before counting distinct SQL strings, which would have measured "are these two different
+  questions' queries different" (trivially always yes) instead of "does the same question
+  get a different query across repeats at this effort level." Fixed by grouping by
+  `question_id` first, computing each question's own distinct-SQL fraction, then averaging
+  across questions -- caught by writing
+  `test_diversity_measures_fraction_of_distinct_sql_across_repeats` before trusting the logic.
+
+**Metrics:** 140 tests pass (+4). ruff and mypy clean.
