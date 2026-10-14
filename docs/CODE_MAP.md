@@ -582,8 +582,38 @@ every specialist + every draft/verify attempt).
 `copilot.llm.client`/`prompts` (`orchestrator_plan`/`orchestrator_draft`/`orchestrator_verify`
 v1.yaml); `copilot.guardrails.policy` (`Role`); `langgraph.checkpoint.sqlite` (`SqliteSaver`);
 `langsmith.run_helpers` (`LangSmithExtra`). Does not import `copilot.agents.specialists`
-directly -- tests inject fake executors, and a real caller (Day 6 step 7's eval script, not yet
-built) wires the real `run_*` functions in.
+directly -- tests inject fake executors, and the real caller is `copilot.agents.wiring` (Day 6
+step 7) via `scripts/run_orchestrator_golden.py`.
+
+### `src/copilot/agents/wiring.py` -- `build_executors()` *(day: 6, isNew: true)*
+The one piece of glue nothing else needed: turns the five already-tested `run_*` functions
+(step 2) into the `dict[AgentName, SpecialistExecutor]` shape `Orchestrator` takes, against real
+services (`LLMClient`, `TextToSqlService`, a DuckDB connection, `CorrectiveRagService` + its
+`PermissionedRetriever`) built the same way `scripts/run_effort_lab.py`/`run_rag_eval.py`
+already build them -- this module doesn't reconstruct that wiring, it just closes over it.
+`_inventory_executor(spec, con)` is the only non-trivial entry: `run_inventory_planning` needs a
+`ForecastResult`, not a bare `TaskSpec` (step 2's own signature), so this calls
+`forecast_result_for_inventory` itself first, keeping the executor map's own shape uniform.
+**Takes in:** the already-constructed real services (see above), `con`/`policy` optional
+(`None` falls back to each function's own default, same as calling it directly would).
+**Gives out:** `dict[AgentName, SpecialistExecutor]`.
+**Talks to:** `copilot.agents.contracts`/`orchestrator`/`specialists`; `copilot.guardrails.
+policy`; `copilot.llm.client`; `copilot.rag.corrective`/`permissions`; `copilot.sql.service`.
+Only caller so far: `scripts/run_orchestrator_golden.py`.
+
+### `src/copilot/evals/orchestrator_golden.py`, `evals/datasets/orchestrator_golden_v1.jsonl` *(day: 6, isNew: true)*
+Day 6 step 7's 10 multi-hop golden questions -- distinct from `copilot.evals.golden`'s
+"multi_hop" category (gq-031..034), which is multi-step *SQL* answered by one specialist.
+These are multi-*agent*-hop: each `OrchestratorGoldenQuestion` names `expected_agents`
+(>=2, Pydantic-validated -- a single-agent question belongs in `golden`/`rag_golden` instead),
+checked structurally (did the plan actually involve every specialist this question needs), not
+by diffing against a fixed reference answer (no `expected_rows`/`reference_answer` field here --
+see the module docstring for why grading multi-agent answer *content* is this step's stretch
+goal, not its floor). Every question that expects `inventory_planning` also expects
+`forecasting_risk`, per `orchestrator_plan`'s own planning rule -- `tests/
+test_orchestrator_golden.py` asserts this stays true of the dataset itself.
+**Gives out:** `OrchestratorGoldenQuestion`, `load_orchestrator_golden()`.
+**Talks to:** `copilot.agents.contracts` (`AgentName`); `copilot.guardrails.policy` (`Role`).
 
 ### `prompts/orchestrator_plan/v1.yaml`, `prompts/orchestrator_draft/v1.yaml`, `prompts/orchestrator_verify/v1.yaml` *(day: 6, isNew: true)*
 `orchestrator_plan`: lists the five specialists with one-line purposes (`_roster_block()` in
@@ -624,6 +654,7 @@ imports work later; no real code yet. (`src/copilot/rag/`, `src/copilot/ml/`, an
 | `scripts/build_rag_index.py` | network (no API key) | downloads the embedding model, builds `data/chroma/` |
 | `scripts/train_risk_classifier.py` | your real `vw_PortfolioHealth` export (CSV/XLSX) | real RF/XGBoost leaky-vs-safe accuracy/F1 + SHAP drivers, appends to `run_log.csv` |
 | `scripts/run_model_selection_eval.py` | `ANTHROPIC_API_KEY` (every run, not just `--quality`) | real Model Selection Agent runs over the 8-question golden set; `--quality` adds the LLM-judged reasoning check |
+| `scripts/run_orchestrator_golden.py` | `ANTHROPIC_API_KEY` + the real snapshot + `data/chroma/` | Day 6 step 7: runs the 10 multi-hop golden questions end to end through the real Orchestrator (real specialists, real Verifier loop); prints plan coverage, verified status, cost/latency per question, and leaves a SQLite checkpoint per run at `data/orchestrator_checkpoints.sqlite` |
 
 ## Tests (`tests/*.py`)
 One test file per module above, named `test_<module>.py` — not documented individually here since
