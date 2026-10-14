@@ -102,3 +102,16 @@ class PermissionedRetriever:
         vector_ranking = [chunk_id for chunk_id, _, _, _ in vector_hits if chunk_id in chunk_by_id]
 
         return fuse_rankings(bm25_ranking, vector_ranking, chunk_by_id, self._rrf_k, n_results)
+
+    def chunk_by_id(self, chunk_id: str) -> Chunk | None:
+        """Look up one chunk's full metadata (notably `data_class`) by id, from the full
+        corpus this retriever was built with -- regardless of which role's call last ran.
+        Added for Day 6's Knowledge specialist (`copilot.agents.specialists.run_knowledge`),
+        which needs each *cited* chunk's class after the fact; `CorrectiveRagResult` reports
+        only chunk ids, not the chunks themselves, so the specialist looks them back up here
+        rather than `CorrectiveRagService` growing a field it has no other use for.
+        """
+        for c in self._chunks:
+            if c.chunk_id == chunk_id:
+                return c
+        return None

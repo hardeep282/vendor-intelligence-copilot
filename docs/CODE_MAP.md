@@ -282,6 +282,10 @@ role-scoped BM25 index is built from only the visible chunks in the first place.
 **Talks to:** `copilot.rag.retrieval` for `BM25Index`/`fuse_rankings`/`RetrievedChunk`;
 `copilot.rag.store` (its `where`-filtered `query()`); `copilot.guardrails.policy` for
 `DisclosurePolicy`/`Role`/`DataClass`.
+*(day: 6 addition)* `chunk_by_id(chunk_id) -> Chunk | None` — plain lookup against the full
+corpus this retriever was built with, added for the Knowledge specialist
+(`copilot.agents.specialists.run_knowledge`), which needs a *cited* chunk's `data_class` after
+the fact; `CorrectiveRagResult` only reports chunk ids, not the chunks themselves.
 
 ### `src/copilot/rag/corrective.py`
 `CorrectiveRagService` — the Corrective RAG loop, compiled as a LangGraph `StateGraph`:
@@ -463,6 +467,47 @@ data_analyst/forecasting_risk/inventory_planning/knowledge/action), `AgentStatus
 `TextToSqlResult`/`CorrectiveRagResult`/`ModelSelectionResult` as the envelope -- those stay each
 service's own return type; the orchestrator-not-yet-built wraps each into an `AgentResult`
 rather than those services growing orchestrator-shaped fields.
+
+### `src/copilot/agents/specialists.py` *(day: 6, isNew: true)*
+The five specialist nodes (C3 roster), each a plain `TaskSpec -> AgentResult` function wrapping
+an already-tested service -- no new logic, just the C3 contract on top.
+- `run_data_analyst(spec, sql_service, policy=None, effort=None)` -- wraps
+  `TextToSqlService.answer()`; `data_classes` comes from a new helper, `_sql_data_classes(sql,
+  policy)`, which parses the generated SQL with sqlglot and looks up every referenced table's
+  class via `DisclosurePolicy.class_of()` -- not self-reported by the SQL service, same
+  "the policy is the one source of truth" posture `copilot.rag.permissions` takes.
+- `run_forecasting_risk(spec, con=None, risk_df=None, compute_shap=False)` -- always runs a real
+  `forecast_demand()` against this repo's own snapshot (`spec.constraints["level"]` =
+  portfolio/vendor); the SKU risk-classifier half only runs when
+  `spec.constraints["run_risk_classifier"] == "true"`, and against `make_synthetic_skus()`
+  unless the caller supplies a real `risk_df` -- this repo's licence-safe snapshot has no
+  SKU-level features, same limitation Day 5's classifier had. `forecast_result_for_inventory()`
+  is a small sibling that returns the raw `ForecastResult` the Orchestrator (step 3) will chain
+  into Inventory Planning.
+- `run_inventory_planning(spec, forecast)` -- wraps `compute_inventory_plan()`, fed by
+  `demand_stats_from_backtest(forecast)` exactly as Day 5's real run did; cost/service-level
+  constraints read from `spec.constraints` with Day 5's own real-run defaults.
+- `run_knowledge(spec, rag_service, retriever)` -- wraps `CorrectiveRagService.answer()`;
+  `data_classes` comes from looking up each `cited_chunk_ids` entry via the new
+  `PermissionedRetriever.chunk_by_id()` (see that file's entry above).
+- `run_action(spec, llm, effort=None)` -- the one specialist with its own prompt
+  (`prompts/action_draft/v1.yaml`), drafting a `renegotiation_email` or
+  `reorder_recommendation` via `LLMClient.structured()` into `ActionDraft`
+  (`subject`/`body`). Always returns `status="partial"` with a gap stating the draft hasn't
+  passed the Guardian/an approver yet (Day 7) -- this function never sends anything.
+**Takes in:** a `TaskSpec` plus each specialist's already-constructed dependency
+(`TextToSqlService`, a DuckDB connection, a `ForecastResult`, a `CorrectiveRagService` +
+`PermissionedRetriever`, an `LLMClient`).
+**Gives out:** `AgentResult` for each; `ActionDraft`, `DraftType` are also exported.
+**Talks to:** `copilot.sql.service`, `copilot.ml.forecast`/`inventory`/`risk_classifier`,
+`copilot.rag.corrective`/`permissions`, `copilot.llm.client`/`prompts`,
+`copilot.guardrails.policy`.
+
+### `prompts/action_draft/v1.yaml` *(day: 6, isNew: true)*
+The Action specialist's one prompt. System prompt states the vendor-facing audience rule
+(public facts + that vendor's own terms only, for a `renegotiation_email`; internal figures
+allowed for a `reorder_recommendation`) as an instruction to the model -- real enforcement is
+the Guardian (Day 7), not this prompt; `run_action()`'s `gaps` says so explicitly.
 
 ---
 
