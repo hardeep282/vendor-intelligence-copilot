@@ -128,3 +128,17 @@ access -- all 4 eval modules are unit-tested against `FakeMessagesResource`/`Fak
 real 20-question golden set resolved against the real corpus. Commands #2-#3 need a built index
 (`scripts/build_rag_index.py`) but no API key. Command #4 needs both the built index and your own
 `ANTHROPIC_API_KEY`.
+
+## Day 5 (steps 1 & 4: forecast tool + inventory tools)
+
+| # | What this step does | Command | What each part does | Expected result |
+|---|---|---|---|---|
+| 1 | Add forecasting/inventory dependencies | `uv add statsforecast scikit-learn shap xgboost` (`scipy` already present via `statsforecast`) | Resolves and locks the Day 5 ML stack -- `statsforecast` for ETS, `scikit-learn`/`xgboost`/`shap` for the risk classifier (steps 2-3) added in the same `uv sync` so the lockfile only needs resolving once | `uv.lock` updated; `pandas` pinned down to 2.3.3 by `statsforecast`'s own constraint (was 3.0.6 -- full suite re-run after, no breakage) |
+| 2 | Rebuild the snapshot (needed every fresh clone) | `uv run python scripts/build_snapshot.py "path/to/Vendor_Summary.xlsx"` | Rebuilds the 11 licence-safe Parquet tables this session's forecast/inventory numbers are computed from | 11 tables printed with row counts, matching Day 1's documented shape |
+| 3 | Run every check | `uv run ruff check . && uv run mypy && uv run pytest -q` | lint, strict type-check, tests, in that order | "All checks passed!" / "Success, no issues" / "267 passed" |
+| 4 | Real forecast, right now (no API key, no network) | `uv run python -c "from copilot.ml.forecast import forecast_demand, ForecastRequest; print(forecast_demand(ForecastRequest(level='portfolio', horizon_months=3)))"` | Runs the real rolling-origin backtest and forecast against the real snapshot | portfolio WAPE 11.5% (both ETS and naive), matching the analytics repo's own "naive 11.8%" baseline |
+
+No new "run on your machine" item from this step -- unlike every earlier day, both the forecast
+tool and the inventory tools compute real, final numbers in this session, because
+`portfolio_monthly_demand`/`vendor_monthly_demand` are already licence-safe aggregates (no API
+key or raw SKU data needed, just the snapshot already built in step 2).

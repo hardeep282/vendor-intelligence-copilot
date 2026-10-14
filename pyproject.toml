@@ -18,11 +18,15 @@ dependencies = [
     "pydantic-settings",
     "pyyaml",
     "rank-bm25>=0.2.2",
+    "scikit-learn>=1.9.0",
     "sentence-transformers>=6.1.0",
+    "shap>=0.49.0",
     "sqlglot>=27.0.0",
+    "statsforecast>=2.0.4",
     "tenacity>=9.0.0",
     "tiktoken>=0.9.0",
     "tokenizers>=0.23.3",
+    "xgboost>=3.0.0",
     "uvicorn[standard]>=0.54.0",
 ]
 
@@ -68,6 +72,19 @@ plugins = ["pydantic.mypy"]
 # rank-bm25 ships no type stubs and no py.typed marker; its surface used here (BM25Okapi,
 # get_scores) is tiny and stable, so an untyped import is simpler than hand-rolling a stub file.
 module = "rank_bm25"
+ignore_missing_imports = true
+
+[[tool.mypy.overrides]]
+# scipy.stats ships no inline types for this version; `scipy-stubs` pulls in its own numpy
+# version constraints that fight the rest of this project's pinned stack, and the surface used
+# here (norm.ppf) is one call -- same reasoning as rank_bm25 above.
+module = "scipy.stats"
+ignore_missing_imports = true
+
+[[tool.mypy.overrides]]
+# statsforecast and xgboost ship no py.typed marker either; both have a large, fast-moving
+# surface not worth hand-stubbing for the handful of calls this project makes into them.
+module = ["statsforecast.*", "xgboost.*"]
 ignore_missing_imports = true
 
 [tool.pytest.ini_options]

@@ -331,11 +331,55 @@ quality judges); `copilot.evals.evaluators` for `EvalScore`.
 
 ---
 
-## Not yet started (empty package markers only, Day 4+)
-`src/copilot/ml/`, `src/copilot/agents/`, `src/copilot/dl/`, `src/copilot/mcp/`, `src/copilot/nlp/`,
+## ML tools — the Forecasting & Risk and Inventory Planning agents' tools (Day 5)
+
+### `src/copilot/ml/metrics.py`
+WAPE, MASE, bias -- the three forecast-accuracy metrics the sprint doc names (not MAPE, which
+the analytics repo's own `forecast_backtest.py` already found unreliable near-zero actuals).
+**Takes in:** parallel actual/forecast sequences (plus the training series, for MASE's scale).
+**Gives out:** one float per metric.
+**Talks to:** nothing -- pure NumPy arithmetic, no fakes needed, same category as
+`copilot.evals.rag_metrics`.
+
+### `src/copilot/ml/forecast.py` — `forecast_demand()`
+Demand forecast tool: ETS vs naive, honest out-of-sample accuracy from a rolling-origin
+backtest (never an in-sample fit -- ADR-000 item 2 is exactly that mistake, in the Excel tool
+this project replaces). Matches the analytics repo's `forecast_backtest.py` methodology
+(one-month-ahead, expanding window) so the numbers are comparable.
+**Takes in:** a `ForecastRequest` (portfolio or one vendor, horizon in months).
+**Gives out:** a `ForecastResult` -- point forecasts, which model won the backtest, and the
+WAPE/MASE/bias for both models, plus `seasonality_note` explaining why true seasonal-naive
+isn't estimable with only 12 months of history (R3 in `docs/RAID.md`).
+**Talks to:** `copilot.data.store` (reads `portfolio_monthly_demand` / `vendor_monthly_demand`),
+`copilot.ml.metrics`, `statsforecast.models.AutoETS`. Consumed by `copilot.ml.inventory`
+(`demand_stats_from_backtest`) and will be a LangGraph tool for the Forecasting & Risk agent
+(Day 6).
+**Real numbers already run in this sitting** (not deferred to your machine -- no API key or
+network needed): portfolio WAPE 11.5%, matching the analytics repo's own documented "naive
+11.8%" baseline as a sanity check; both ETS and naive converge to nearly the same forecast on
+the portfolio series (AutoETS's auto-selected trend reduces to effectively no trend on this
+short, noisy series) -- a real finding, not a bug, logged in `docs/BUILD_LOG.md`.
+
+### `src/copilot/ml/inventory.py` — `compute_inventory_plan()`
+Safety stock, reorder point, EOQ -- standard OR formulas (Silver/Pyke/Peterson; Wilson 1913 for
+EOQ), from a forecast's output. `demand_stats_from_backtest()` is the bridge from a
+`ForecastResult` to these formulas' (mean, std-dev) inputs -- deliberately uses historical
+month-over-month variability, not variance across the forecast points themselves, because a
+flat (naive) forecast has zero variance by construction and would otherwise silently hand back
+a zero safety stock.
+**Takes in:** an `InventoryRequest` (mean/std demand per period, lead time, service level,
+ordering and holding costs) or a `ForecastResult` via `demand_stats_from_backtest()`.
+**Gives out:** an `InventoryPlan` (z-score, safety stock, reorder point, EOQ).
+**Talks to:** `copilot.ml.forecast` (`ForecastResult`), `scipy.stats.norm` (service level ->
+z-score). Will be a LangGraph tool for the Inventory Planning agent (Day 6).
+
+---
+
+## Not yet started (empty package markers only)
+`src/copilot/agents/`, `src/copilot/dl/`, `src/copilot/mcp/`, `src/copilot/nlp/`,
 `src/copilot/extract/`, `src/copilot/observability/`, `src/copilot/ui/` — folders exist with an
-`__init__.py` so imports work later; no real code yet. (`src/copilot/rag/` has moved to the
-section above — Day 4's 7 steps are all built.)
+`__init__.py` so imports work later; no real code yet. (`src/copilot/rag/` and `src/copilot/ml/`
+have moved to the sections above.)
 
 ---
 

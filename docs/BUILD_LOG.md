@@ -806,3 +806,92 @@ install, AWS/domain/GitHub variables from Day 2 -- plus two new real-machine ite
 `scripts/build_rag_index.py` for the real embedding index, and optionally
 `scripts/run_rag_eval.py --quality` for real faithfulness/context_recall numbers. Next sprint day
 is Day 5 (ML tools for the agents).
+
+## 2026-10-14 · Day 5 steps 1 & 4: forecast tool + inventory tools
+
+Built the Forecasting & Risk agent's demand forecast tool and the Inventory Planning agent's
+safety stock / reorder point / EOQ tools -- the two Day 5 items that are fully computable now,
+for real, against the already-built licence-safe snapshot (no API key, no network, no SKU-level
+data needed; see the Day 5 plan note on why the risk classifier, steps 2-3, is different).
+
+**Forecast tool (`copilot.ml.forecast`, `copilot.ml.metrics`):** `forecast_demand()` backtests
+AutoETS against a plain one-step naive on `portfolio_monthly_demand`/`vendor_monthly_demand`,
+using the analytics repo's own `forecast_backtest.py` methodology (rolling-origin, one-month-
+ahead, expanding window) so the numbers are directly comparable. WAPE/MASE/bias
+(`copilot.ml.metrics`) chosen over MAPE per the sprint doc and per that same script's own
+documented reason (MAPE blows up near-zero actuals).
+
+**Two real findings worth recording (not just "it runs"):**
+1. `statsforecast`'s `AutoETS` raises `NotImplementedError("tiny datasets")` below 7 in-sample
+   points (confirmed empirically) -- one more than the analytics repo's own `first_origin=6`.
+   `ForecastRequest.first_backtest_origin` floors at 7 for this reason, documented in the
+   field's own description so the constraint travels with the schema, not just a code comment.
+2. Ran the real backtest against the real portfolio series: ETS and naive both score
+   WAPE=0.1153, MASE=1.516, essentially identical point forecasts -- AutoETS's auto-selected
+   trend component reduces to effectively no trend on this short, noisy 12-month series. This
+   is a real result, not a bug (re-verified by hand, and it matches the existing honesty
+   pattern from `forecast_backtest.py`: "Excel's gamma comes out at ~0, so the ETS projection
+   reduces to a straight trend" -- same phenomenon, different ETS implementation). WAPE 11.5%
+   also lines up with that script's own documented "portfolio naive 11.8%" baseline, which is a
+   good independent sanity check that this reimplementation is measuring the same thing.
+
+**Inventory tools (`copilot.ml.inventory`):** standard OR formulas (Silver/Pyke/Peterson for
+safety stock/ROP; Wilson 1913 for EOQ). `demand_stats_from_backtest()` bridges a
+`ForecastResult` to these formulas' (mean, std-dev) inputs.
+
+**Mistake caught and fixed before it reached a test:** the first version of
+`demand_stats_from_backtest()` computed demand std-dev from variance *across the forecast
+points themselves*. Both models here can (and did, for the portfolio series above) produce an
+effectively flat forecast, which has zero variance by construction -- that would have silently
+returned a zero safety stock, understating real risk rather than being a safe conservative
+default. Fixed to use historical month-over-month variability instead (always non-zero for real
+demand), with a fallback for the edge case of exactly 2 history points (1 diff, no sample
+variance of a single number). Caught by running the real end-to-end forecast -> inventory
+pipeline by hand before writing it up here, not by a test (the original tests were written to
+match the bug, then rewritten once the bug was found -- see commit diff, not worth restating
+test-by-test here).
+
+Real numbers, portfolio, 3-month horizon, 1-period lead time, 95% service level, $500/order,
+$0.50/unit/year holding cost: mean demand/period 3,758,005; std dev (from history) 363,277;
+safety stock 597,537; reorder point 4,355,542; EOQ 300,320.
+
+**New dependencies:** `statsforecast`, `scikit-learn`, `shap`, `xgboost` added together (steps
+2-3 need the latter three; adding all four now means one `uv sync` instead of two). `pandas`
+pinned down from 3.0.6 to 2.3.3 by `statsforecast`'s own dependency constraint -- full 233-test
+suite re-run immediately after and confirmed clean before writing any Day 5 code, so the pin is
+known-safe, not just assumed.
+
+**Mistakes and fixes (mechanical):**
+- `store.connect()` opens a read-only DuckDB connection that locks configuration on the shared
+  in-process handle to that file; calling it twice in the same test (once to look up a real
+  vendor name, once inside `forecast_demand()`) raised `InvalidInputException` on the second
+  call's `SET enable_external_access`. Not a new bug in `store.py` -- every existing caller
+  only ever opens one connection per call site. Fixed by reusing one connection across both
+  calls in the affected tests, and confirmed `connect()` -> `.close()` -> `connect()` again
+  works fine (own-connection tests, which `forecast_demand()` always closes, were never at risk).
+- mypy: `float ** 0.5` and `int(row["year"])` from `DataFrame.itertuples()` both inferred as
+  `Any` -- fixed with explicit `float(...)` wraps and switching to `df.to_dict("records")`
+  (dict access type-narrows better than a generated namedtuple here).
+- mypy: `scipy.stats`, `statsforecast.*`, `xgboost.*` ship no inline types or stubs for the
+  pinned versions -- added to `[[tool.mypy.overrides]]` with the same `ignore_missing_imports`
+  reasoning already on record for `rank_bm25` (small, stable surface used; not worth a hand-
+  rolled stub file or an extra `-stubs` package fighting this project's pinned numpy/pandas
+  versions).
+
+Updated `docs/CODE_MAP.md`: new "ML tools" section for `copilot.ml.metrics`/`forecast`/
+`inventory`; "Not yet started" note narrowed (ml/ is no longer empty).
+
+Tests (34 new: 12 in `tests/test_ml_metrics.py`, 10 in `tests/test_ml_forecast.py`, 12 in
+`tests/test_ml_inventory.py`). `test_ml_forecast.py`'s 4 `forecast_demand()` end-to-end tests
+skip when the snapshot isn't built, same pattern as `tests/test_store_security.py` -- but it was
+built and all 4 ran for real in this sitting, not skipped.
+
+**Metrics:** 267 tests pass (was 233). ruff and mypy (strict) clean across the whole repo
+(58 source files, up from 55).
+
+**Costs:** $0 -- every number in this entry came from code run in this session against the
+already-built licence-safe snapshot; no LLM call, no API key, no network access beyond the one
+already-cloned analytics repo and `uv sync`'s package downloads.
+
+**Open:** steps 2-3 (risk classifier + XGBoost comparison) and step 6 (Model Selection Agent)
+still ahead for Day 5.
