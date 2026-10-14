@@ -444,6 +444,28 @@ that a free check can't tell apart from real grounding.
 
 ---
 
+## Multi-agent system -- Orchestrator + 5 specialists (Day 6, in progress)
+
+### `src/copilot/agents/contracts.py` *(day: 6, isNew: true)*
+`TaskSpec`/`AgentResult` -- the typed handoff contracts C3 requires so no specialist passes free
+text to another. `TaskSpec` is what the Orchestrator (step 3, not yet built) hands one specialist:
+`objective` + `constraints` (a dict, not prose, so a node reads a known key instead of
+re-parsing), a `role`, and an `AgentBudget` (steps/LLM calls/cost/latency ceiling, defaults
+1/3/$0.05/30s). `AgentResult` is what comes back: condensed `findings` (C3's <=1500-token
+target), `evidence`, a `status` of ok/partial/failed, `gaps` when partial, and -- the field the
+Guardian (Day 7) will read -- `data_classes`, filled by the specialist itself from
+`DisclosurePolicy`, never inferred downstream. `AgentResult.exceeds()` is the self-check a
+specialist runs before returning, to decide `ok` vs `partial`.
+**Takes in:** nothing at import time -- pure Pydantic contracts.
+**Gives out:** `TaskSpec`, `AgentResult`, `AgentBudget`, `AgentName` (the closed 5-name Literal:
+data_analyst/forecasting_risk/inventory_planning/knowledge/action), `AgentStatus`.
+**Talks to:** `copilot.guardrails.policy` (`DataClass`, `Role`). Deliberately does **not** reuse
+`TextToSqlResult`/`CorrectiveRagResult`/`ModelSelectionResult` as the envelope -- those stay each
+service's own return type; the orchestrator-not-yet-built wraps each into an `AgentResult`
+rather than those services growing orchestrator-shaped fields.
+
+---
+
 ## Not yet started (empty package markers only)
 `src/copilot/dl/`, `src/copilot/mcp/`, `src/copilot/nlp/`, `src/copilot/extract/`,
 `src/copilot/observability/`, `src/copilot/ui/` — folders exist with an `__init__.py` so
