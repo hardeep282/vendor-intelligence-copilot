@@ -20,6 +20,10 @@ Superseded version (end of chat 1, Days 1–2 → start chat 2) is in git histor
 > inconsistent with docs/PROJECT_PROGRESS.md, then give me the Day 4 plan with hour estimates and start step 1.
 > Do not re-derive decisions already settled in docs/adr/ or re-explain things already covered in
 > docs/BUILD_LOG.md — read them, then build.
+> Standing rule, every day from now on: whenever you add a new file or change what an existing file
+> does, add or update its entry in docs/CODE_MAP.md in the same commit (same convention as
+> BUILD_LOG.md / PROJECT_PROGRESS.md). That file is the plain-language map of what every file in
+> this repo does, what it takes in/gives out, and what it talks to -- keep it current, never stale.
 
 ## Repo and versions
 
