@@ -9,7 +9,7 @@ Last updated: Wed 14 Oct 2026 (Day 4 of the 10-day sprint, sprint plan v3, in pr
 | 1 | Foundations, data, golden set | Build done; repo pushed to GitHub (14 Oct) |
 | 2 | Production skeleton live | Code done and tested. Waiting on you: AWS resources, domain, GitHub variables |
 | 3 | LLM service, text-to-SQL, effort and tokenization labs | Build done: 8 of 9 steps shipped (step 7 skipped, see below) |
-| 4 | RAG and advanced RAG | In progress: 5 of 7 steps shipped |
+| 4 | RAG and advanced RAG | Build done: 7 of 7 steps shipped |
 | 5 | ML tools for the agents | Not started |
 | 6 | Multi-agent system in LangGraph | Not started |
 | 7 | Guardian, guardrails, approvals | Not started |
@@ -56,8 +56,15 @@ instead of 3 temperatures x 5 runs. Full writeup: `docs/adr/005-llm-provider.md`
 | 3 | Local sentence-transformers embeddings; Chroma collection with idempotent upserts | **Done** (`copilot.rag.embeddings`, `copilot.rag.store`; real model run needs your machine -- `scripts/build_rag_index.py`) |
 | 4 | Hybrid retrieval: BM25 + vectors fused with RRF; cross-encoder reranker | **Done** (`copilot.rag.retrieval`; reranker cut, see below) |
 | 5 | Permission filter inside the vector query | **Done** (`copilot.rag.permissions.PermissionedRetriever`) |
-| 6 | Corrective RAG loop in LangGraph | Not started |
-| 7 | 20 labelled questions: recall@5, MRR, Ragas | Not started |
+| 6 | Corrective RAG loop in LangGraph | **Done** (`copilot.rag.corrective.CorrectiveRagService`) |
+| 7 | 20 labelled questions: recall@5, MRR, Ragas | **Done, Ragas cut to faithfulness + context_recall** (see below) |
+
+**Cut-first item for step 7:** the full Ragas suite (faithfulness, answer relevancy, context
+precision, context recall) reduced to faithfulness + context_recall only, per this step's own
+cut-first note (`docs/HANDOFF.md`). Built as two small structured-output LLM-judge calls
+(`copilot.evals.rag_quality`) reusing `copilot.evals.evaluators.EvalScore`, rather than pulling
+in the `ragas` package -- consistent with this repo's existing hand-written evaluator pattern,
+not a new ADR-level decision.
 
 **Cut-first item for step 4:** a cross-encoder reranker on top of the fused BM25+vector
 candidates. The step's job was to prove the fusion mechanics (BM25 index, RRF math, candidate
@@ -69,7 +76,7 @@ later as a third stage without changing `copilot.rag.retrieval`'s contract.
 
 | Metric | Baseline | Current | Notes |
 |---|---|---|---|
-| Tests passing | 33 | 208 | `uv run pytest -q`; +12 `copilot.llm`, +12 prompts + `InsightService`, +29 SQL validator, +16 schema/examples/text-to-SQL service, +22 evaluators/langsmith_sync, +10 golden v2, +4 effort lab, +5 tokenization lab, +3 evaluator column-name fix, +10 rag corpus, +9 chunking, +7 embeddings, +10 store, +12 retrieval (BM25 + RRF), +2 store `where` filter, +10 permission filter |
+| Tests passing | 33 | 233 | `uv run pytest -q`; +12 `copilot.llm`, +12 prompts + `InsightService`, +29 SQL validator, +16 schema/examples/text-to-SQL service, +22 evaluators/langsmith_sync, +10 golden v2, +4 effort lab, +5 tokenization lab, +3 evaluator column-name fix, +10 rag corpus, +9 chunking, +7 embeddings, +10 store, +12 retrieval (BM25 + RRF), +2 store `where` filter, +10 permission filter, +6 corrective RAG, +19 eval harness (golden/metrics/quality) |
 | Golden questions | 40 (27 dev, 10 test, 3 adversarial) | 46 (27 dev, 16 test, 3 adversarial) | golden v2 adds the 6 text-to-SQL trap questions from the spec; v1 stays frozen at 40 for history |
 | Execution accuracy, grounding, leakage rate | n/a | evaluators built + tested; no end-to-end run yet | `copilot.evals.evaluators.execution_accuracy`/`leakage_free`, 17 tests pass; running them against real `TextToSqlService` output needs your API key, same as the effort/tokenization labs |
 | SQL validator: structural + semantic + coverage rules | n/a | 29/29 tests pass, 0 false positives on 33 real golden queries | every trap in `docs/specs/text_to_sql_safety.md`'s trap table has a BLOCK test and an ALLOW test |
@@ -84,16 +91,20 @@ later as a third stage without changing `copilot.rag.retrieval`'s contract.
 | Embeddings + Chroma store (Day 4 step 3) | n/a | idempotency verified end to end (119 embedded first run, 0 embedded / 119 unchanged second run against unchanged chunks, via FakeEmbedder + a temp Chroma dir) | real `all-MiniLM-L6-v2` run still needs your machine -- `scripts/build_rag_index.py` |
 | Hybrid retrieval (Day 4 step 4) | n/a | 12/12 tests pass: BM25 ranking, RRF formula verified against hand-computed values, a chunk with zero lexical overlap surfaced purely via the vector ranking | reranker cut (see checklist note above); real end-to-end quality numbers wait for step 7's eval set |
 | Permission filter (Day 4 step 5) | n/a | 12/12 tests pass (10 permissions + 2 store `where`): every role sees exactly its policy-allowed classes, the vector filter is proven to run inside the ANN query (not after) via a small-candidate-pool test that would under-fill under a post-hoc filter, BM25's role-scoped index excludes an ineligible chunk entirely rather than just ranking it low | authority is the live `DisclosurePolicy`, re-derived per call -- never the chunk's own `allowed_roles` field |
+| Corrective RAG loop (Day 4 step 6) | n/a | 6/6 tests pass: happy path (grade relevant -> generate), one rewrite then success, exhausts the retry budget and abstains, abstains without wasting an LLM call grading an empty retrieval, never cites a chunk id it wasn't shown, ignores a grade for a chunk id outside the retrieved set | reranker-style web-search fallback cut (no web search by design, ADR-002) -- rewrites and retries the same corpus instead |
+| RAG eval harness (Day 4 step 7) | n/a | 19/19 tests pass; 20/20 golden questions verified to resolve to exactly one real chunk against the live corpus; recall@5/MRR run for real end to end with `FakeEmbedder` (mean recall@5 0.40, MRR 0.258 -- expected to be noise-level since `FakeEmbedder` isn't semantic, see below) | real embedding-model numbers and the `--quality` (faithfulness/context_recall) run both need `scripts/run_rag_eval.py` on your machine |
 
 ## Decisions
 
 ADR-000 prompt corrections · ADR-001 separate repo · ADR-002 licence-safe snapshot ·
 ADR-003 EC2 + Compose runtime · ADR-004 secrets in SSM, OIDC for CI · ADR-005: direct Anthropic
-API, not Bedrock, for now -- and the temperature/effort correction above. No new ADR yet for
-Day 4 -- the embedding model (local sentence-transformers), vector store (Chroma), and the RRF
-fusion constant (k=60, the standard default from Cormack et al. 2009) all just follow
-already-named/standard choices rather than being a real build-vs-buy decision with alternatives
-measured against it.
+API, not Bedrock, for now -- and the temperature/effort correction above. No new ADR for Day 4 --
+the embedding model (local sentence-transformers), vector store (Chroma), the RRF fusion
+constant (k=60, Cormack et al. 2009), the Corrective RAG loop's no-web-search simplification
+(follows from ADR-002, not a new decision), and building the Ragas-reduced quality evaluators
+by hand instead of the `ragas` package (follows the pattern `copilot.evals.evaluators` already
+set in Day 3) all just follow already-made or already-standard choices rather than being a new
+build-vs-buy decision with real alternatives measured against it.
 
 ## Costs to date
 
@@ -108,12 +119,14 @@ None yet. Target: `https://api.vendor.<domain>/health`.
 
 ## Next step
 
-Me: continuing Day 4 build -- steps 6-7 next (the Corrective RAG loop in LangGraph, and the
-recall@5/MRR/Ragas eval on 20 labelled questions). You: run
-`scripts/build_rag_index.py` on your machine whenever convenient to get the real embedding
-index built (needs no API key, just internet access for the one-time model download) -- not
-blocking, step 4's retrieval-quality work can be developed and tested against FakeEmbedder in
-the meantime, same as the rest of Day 4 so far. Also still open, carried from earlier days and
-not urgent: a third re-run of `scripts/run_effort_lab.py` for a clean accuracy number; a real
-`TextToSqlService` call; Docker Desktop install/engine status (Day 2's actual `docker build`
-has not run yet); AWS resources, domain, GitHub variables from Day 2.
+Me: Day 4 is fully built (all 7 steps) -- ready to move to Day 5 (ML tools for the agents)
+whenever you say go. You: two things on your machine whenever convenient, neither blocking --
+`scripts/build_rag_index.py` to get the real embedding index built (no API key, just internet
+access for the one-time model download), then `scripts/run_rag_eval.py` for real recall@5/MRR
+numbers against that real index (free), and `--quality` on top of that for real
+faithfulness/context_recall numbers (uses your `ANTHROPIC_API_KEY`, costs a small amount --
+one `CorrectiveRagService.answer()` call plus two judge calls per question, 20 questions by
+default, use `--questions q01,q02` to try just a couple first). Also still open, carried from
+earlier days and not urgent: a third re-run of `scripts/run_effort_lab.py` for a clean accuracy
+number; a real `TextToSqlService` call; Docker Desktop install/engine status (Day 2's actual
+`docker build` has not run yet); AWS resources, domain, GitHub variables from Day 2.

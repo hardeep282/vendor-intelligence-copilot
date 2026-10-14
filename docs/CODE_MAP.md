@@ -283,6 +283,24 @@ role-scoped BM25 index is built from only the visible chunks in the first place.
 `copilot.rag.store` (its `where`-filtered `query()`); `copilot.guardrails.policy` for
 `DisclosurePolicy`/`Role`/`DataClass`.
 
+### `src/copilot/rag/corrective.py`
+`CorrectiveRagService` — the Corrective RAG loop, compiled as a LangGraph `StateGraph`:
+retrieve → grade → (generate | rewrite → retrieve again | abstain). Grading and query-rewriting
+are their own versioned prompts (`prompts/crag_grade/`, `prompts/crag_rewrite/`); generation is
+`prompts/crag_generate/`. Wraps a `PermissionedRetriever` (step 5) behind a `Retriever` Protocol,
+so this loop is permission-aware by construction. Simplified from the CRAG paper on purpose: no
+external web-search fallback (this system answers from one internal corpus by design — ADR-002)
+— "not enough relevant chunks" rewrites the query and retries the *same* corpus instead, bounded
+by `MAX_CORRECTIONS` (mirrors `copilot.sql.service.MAX_SELF_CORRECTIONS`), then abstains honestly
+rather than generate from weak grounding. Never trusts a grade or citation for a chunk id that
+wasn't actually shown to the model.
+**Takes in:** a question, a `Role` (per call, not per instance).
+**Gives out:** a `CorrectiveRagResult` — a grounded answer + the chunk ids it actually cited, or
+an explicit abstention + reason, plus cost/latency/call accounting (same shape as
+`TextToSqlResult`).
+**Talks to:** `copilot.rag.permissions`/`copilot.rag.retrieval` (via the `Retriever` Protocol and
+`RetrievedChunk`); `copilot.llm.client`/`copilot.llm.prompts` for the three LLM calls.
+
 ### `scripts/build_rag_index.py`
 Loads the corpus, checks it against the live disclosure policy, chunks it, embeds with the real
 local model, and upserts into `data/chroma/` — prints how many chunks were actually (re-)embedded
@@ -290,13 +308,34 @@ vs. already up to date.
 **Needs:** nothing but normal internet access (no API key — the model is local and free to run).
 **Talks to:** every `copilot.rag.*` module above, in pipeline order.
 
+### `scripts/run_rag_eval.py`
+Day 4 step 7's eval runner. Retrieval metrics (recall@k, MRR — `copilot.evals.rag_metrics`) are
+free and run against whatever's already in `data/chroma/`. `--quality` additionally runs the
+cut-down Ragas pair (`copilot.evals.rag_quality`: faithfulness + context_recall) via real
+`CorrectiveRagService`/LLM calls — costs money, off by default.
+**Needs:** the real Chroma index (`build_rag_index.py` first); `--quality` needs `ANTHROPIC_API_KEY`.
+**Talks to:** `copilot.evals.rag_golden`/`rag_metrics`/`rag_quality`, `copilot.rag.permissions`,
+`copilot.rag.corrective`.
+
+### `src/copilot/evals/rag_golden.py`, `rag_metrics.py`, `rag_quality.py`
+The RAG eval harness (Day 4 step 7). `rag_golden`: 20 labelled questions
+(`evals/datasets/rag_golden_v1.jsonl`) against the real knowledge corpus, each naming a
+`doc_type`/`vendor` + a verbatim `must_contain` phrase rather than a `chunk_id` directly, so the
+dataset survives a re-chunk; `relevant_chunk_ids()` resolves it at eval time. `rag_metrics`:
+pure-arithmetic `recall_at_k()`/`reciprocal_rank()` + means — no LLM, runs for real anywhere.
+`rag_quality`: `faithfulness()`/`context_recall()`, the sprint's Ragas suite cut down to two
+(its own cut-first note) — small LLM-judge calls reusing `copilot.evals.evaluators.EvalScore`
+rather than the `ragas` package, consistent with this repo's existing hand-written evaluators.
+**Talks to:** `copilot.rag.chunking`/`corpus` (to resolve relevance); `copilot.llm.client` (the
+quality judges); `copilot.evals.evaluators` for `EvalScore`.
+
 ---
 
 ## Not yet started (empty package markers only, Day 4+)
 `src/copilot/ml/`, `src/copilot/agents/`, `src/copilot/dl/`, `src/copilot/mcp/`, `src/copilot/nlp/`,
 `src/copilot/extract/`, `src/copilot/observability/`, `src/copilot/ui/` — folders exist with an
-`__init__.py` so imports work later; no real code yet. (`src/copilot/rag/` has moved to the section
-above, steps 6–7 still ahead: the Corrective RAG loop and the recall/MRR/Ragas eval.)
+`__init__.py` so imports work later; no real code yet. (`src/copilot/rag/` has moved to the
+section above — Day 4's 7 steps are all built.)
 
 ---
 

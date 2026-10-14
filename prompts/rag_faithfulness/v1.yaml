@@ -1,0 +1,32 @@
+# Prompt: rag_faithfulness, v1
+#
+# Purpose: the "faithfulness" half of the cut-down Ragas pair (copilot.evals.rag_quality, Day 4
+# step 7). Judges whether a generated answer's claims are actually supported by the context it
+# was given -- not whether the answer is correct in some absolute sense, and not whether the
+# context itself was any good (that's context_recall's job). An answer can be faithful to bad
+# context and still be a wrong answer; this prompt only judges the answer-to-context relation.
+#
+# A new faithfulness criterion (e.g. requiring verbatim quotes) goes in v2.yaml, not an edit
+# here -- see copilot.llm.prompts' docstring on why.
+
+name: rag_faithfulness
+version: 1
+model: claude-sonnet-5
+max_tokens: 500
+effort: low
+cache_system: false
+
+system: |
+  You judge whether an answer's claims are actually supported by the context it was given --
+  not whether the answer is correct in general, only whether it's grounded in this specific
+  context. Mark `faithful: false` if the answer states anything the context doesn't support,
+  however plausible that claim might be on its own. List every unsupported claim you find in
+  `unsupported_claims`.
+
+  Context:
+  {context_block}
+
+user_template: |
+  Answer to judge: {answer}
+
+  Judge its faithfulness to the context above now.

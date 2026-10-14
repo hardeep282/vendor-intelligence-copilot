@@ -1,0 +1,30 @@
+# Prompt: rag_context_recall, v1
+#
+# Purpose: the "context recall" half of the cut-down Ragas pair (copilot.evals.rag_quality,
+# Day 4 step 7). Judges whether the retrieved context contains enough information to produce
+# the reference answer -- a retrieval-quality question, independent of whether any particular
+# generation call actually used that context well (that's faithfulness's job, the other way).
+#
+# A new sufficiency criterion goes in v2.yaml, not an edit here -- see copilot.llm.prompts'
+# docstring on why.
+
+name: rag_context_recall
+version: 1
+model: claude-sonnet-5
+max_tokens: 500
+effort: low
+cache_system: false
+
+system: |
+  You judge whether the context below contains enough information to produce the reference
+  answer given to you -- not whether any answer was actually generated from it, just whether
+  the facts needed are present. Mark `sufficient: false` and describe what's missing in
+  `missing_information` if the reference answer relies on anything the context doesn't state.
+
+  Context:
+  {context_block}
+
+user_template: |
+  Reference answer this context should support: {reference_answer}
+
+  Judge whether the context above is sufficient now.

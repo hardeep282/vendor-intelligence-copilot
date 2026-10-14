@@ -98,3 +98,33 @@ metadata filter (now exposed as an optional parameter on `ChunkStore.query()`) a
 `DisclosurePolicy` already used across the rest of the repo. No API key or network access
 needed; every test uses `FakeEmbedder` and `load_policy()` against the real
 `policies/disclosure.yaml`.
+
+## Day 4 (step 6: Corrective RAG loop in LangGraph)
+
+| # | What this step does | Command | What each part does | Expected result |
+|---|---|---|---|---|
+| 1 | Add the graph-orchestration dependency | `uv add langgraph` | Resolves and locks `langgraph` (the `StateGraph`/conditional-routing library used for the retrieve/grade/rewrite/generate/abstain loop) against pinned Python 3.12 | `uv.lock` updated; `+ langgraph==1.2.15` in the output |
+| 2 | Run every check | `uv run ruff check . && uv run mypy && uv run pytest -q` | lint, strict type-check, tests, in that order | "All checks passed!" / "Success" / "214 passed" |
+
+No API key or network access needed for the tests -- every scenario in `tests/test_rag_corrective.py`
+runs through `FakeMessagesResource` (same no-network convention as the rest of the repo's
+LLM-calling tests) and a stub `Retriever`. Running `CorrectiveRagService.answer()` for real needs
+your own `ANTHROPIC_API_KEY` plus a built Chroma index (see step 1-3's `build_rag_index.py`).
+
+## Day 4 (step 7: RAG eval harness -- recall@5, MRR, cut-down Ragas)
+
+| # | What this step does | Command | What each part does | Expected result |
+|---|---|---|---|---|
+| 1 | Run every check | `uv run ruff check . && uv run mypy && uv run pytest -q` | lint, strict type-check, tests, in that order | "All checks passed!" / "Success" / "233 passed" |
+| 2 | Retrieval metrics only (free) | `uv run python scripts/run_rag_eval.py` | Runs recall@5 and MRR for all 20 golden questions against whatever real index already exists at `data/chroma/` -- pure arithmetic, no LLM calls | Per-question recall/RR lines, then mean recall@5 and MRR |
+| 3 | A couple of questions only | `uv run python scripts/run_rag_eval.py --questions q01,q02` | Same as above, restricted to the given comma-separated golden question ids | Just those two questions' scores |
+| 4 | Add quality metrics (costs money) | `uv run python scripts/run_rag_eval.py --quality` | On top of #2, runs one `CorrectiveRagService.answer()` plus two LLM-judge calls (faithfulness, context_recall) per question via your own `ANTHROPIC_API_KEY` | Per-question faithfulness/context_recall scores, then means |
+
+No new dependency -- `recall_at_k`/`reciprocal_rank` (`copilot.evals.rag_metrics`) are pure
+arithmetic, and `faithfulness`/`context_recall` (`copilot.evals.rag_quality`) are two small
+structured-output LLM-judge calls through the existing `LLMClient`, not the `ragas` package (see
+`docs/PROJECT_PROGRESS.md`'s "Decisions" section for why). Command #1 needs no API key or network
+access -- all 4 eval modules are unit-tested against `FakeMessagesResource`/`FakeEmbedder` and the
+real 20-question golden set resolved against the real corpus. Commands #2-#3 need a built index
+(`scripts/build_rag_index.py`) but no API key. Command #4 needs both the built index and your own
+`ANTHROPIC_API_KEY`.

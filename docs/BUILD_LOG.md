@@ -645,3 +645,164 @@ across the whole repo.
 **Open:** steps 6-7 of Day 4 (the Corrective RAG loop in LangGraph, and the recall@5/MRR/Ragas
 eval on 20 labelled questions) still ahead. `scripts/build_rag_index.py` still hasn't been run
 for real on your machine.
+
+## 2026-10-14 · Day 4 step 6: Corrective RAG loop in LangGraph
+
+Built `copilot.rag.corrective.CorrectiveRagService` -- a retrieve/grade/rewrite/generate/abstain
+loop over the existing `PermissionedRetriever`, implemented as a LangGraph `StateGraph` rather
+than hand-rolled control flow, since the loop has real branching (grade can route to generate,
+rewrite, or abstain) that a graph makes easier to read and to extend later than a chain of `if`s.
+
+**Why Corrective RAG (Yan et al., 2024), reduced:** the paper's loop is retrieve -> grade ->
+[correct via query rewrite + web search | generate | abstain]. This repo's ADR-002 already rules
+out fetching anything outside the licence-safe internal corpus, so the "incorrect -> external web
+search" branch has no home here -- the rewrite-and-retry branch retries the *same* corpus with a
+reformulated query instead, bounded by `MAX_CORRECTIONS = 2`, then falls through to abstain. This
+is a simplification that follows directly from an already-made decision (ADR-002), not a new
+build-vs-buy call, so it's logged here and in `PROJECT_PROGRESS.md` rather than as a new ADR.
+Mirrors the existing `MAX_SELF_CORRECTIONS` retry-then-give-up shape in
+`copilot.sql.service` -- same posture: bounded retries, then an honest "I don't know" over a
+weakly-grounded answer.
+
+Graph nodes: `retrieve` (calls the injected `Retriever` Protocol -- a stub in tests, the real
+`PermissionedRetriever` in production, so tests never subclass the real retriever); `grade`
+(structured LLM call, one relevance verdict per retrieved chunk, skipped entirely -- no LLM call
+at all -- when retrieval returned nothing); `rewrite` (structured LLM call, given the question and
+every query tried so far, proposes one new query); `generate` (structured LLM call, grounded only
+in the chunks the grade step marked relevant, forced to cite chunk ids actually shown to it);
+`abstain` (no LLM call -- a plain refusal result with a reason). Routing after `grade`: enough
+relevant chunks -> `generate`; not enough and corrections remain -> `rewrite` -> `retrieve` again;
+not enough and corrections exhausted -> `abstain`.
+
+New prompts: `prompts/crag_grade/v1.yaml`, `prompts/crag_rewrite/v1.yaml`,
+`prompts/crag_generate/v1.yaml` -- same versioned-YAML convention as every other prompt in this
+repo, loaded via `copilot.llm.prompts.load_prompt()`.
+
+New dependency: `langgraph` (`uv add langgraph`).
+
+Updated `docs/CODE_MAP.md` with a new `corrective.py` entry per the standing rule.
+
+Tests (6, `tests/test_rag_corrective.py`), all against `FakeMessagesResource` and a stub
+`Retriever` -- no network, no API key: answers directly when the first grade is already
+sufficient; rewrites once then succeeds on the better query; abstains after exhausting the retry
+budget; abstains *without* calling the LLM to grade when nothing is ever retrieved (proving the
+skip-grading optimization is real, by asserting the exact `llm_calls` count); never cites a chunk
+id the model wasn't actually shown; ignores a grade for a chunk id outside the retrieved set.
+
+**Mistakes and fixes:**
+
+- mypy: `_build_graph()`'s return type (`CompiledStateGraph[...]`) isn't worth spelling out for a
+  value immediately `cast` back to `_State` at its one call site -- typed it `-> Any` with a
+  `# noqa: ANN401` explaining why, rather than fighting the generic.
+- mypy: `llm.structured(...)`'s generic return didn't resolve from the `output_model=` kwarg at
+  three call sites (grade, rewrite, generate) -- same shape `sql/service.py` and
+  `insights/service.py` already hit; fixed identically, wrapping each call in
+  `cast("tuple[SpecificModel, CallMetrics]", ...)`.
+- ruff `S101`: had a bare `assert result is not None` guarding a can't-happen path in `answer()`.
+  Replaced with an explicit `if result is None: raise RuntimeError(...)`, since a bare `assert` is
+  stripped under `-O` and ruff flags it in production code either way.
+- ruff `E501`: two long lines, both fixed by `ruff format` auto-wrapping.
+
+**Metrics:** 214 tests pass (+6 over the 208 after Day 4 step 5). ruff and mypy (strict) clean
+across the whole repo.
+
+**Costs:** $0 -- new dependency (`langgraph`) is free and local; every test runs against
+`FakeMessagesResource`, no real API calls made in this sitting.
+
+**Open:** step 7 of Day 4 (recall@5/MRR/Ragas eval on 20 labelled questions) still ahead.
+`CorrectiveRagService.answer()` has not yet been called for real against a real index or a real
+API key.
+
+## 2026-10-14 · Day 4 step 7: RAG eval harness -- recall@5, MRR, cut-down Ragas
+
+Built the Day 4 eval harness: a 20-question labelled golden set, free retrieval metrics
+(recall@k, MRR), and a cut-down Ragas pair (faithfulness, context_recall) as hand-written
+LLM-judge functions, plus a CLI script to run all of it.
+
+**Golden set (`evals/datasets/rag_golden_v1.jsonl`, `copilot.evals.rag_golden`):** 20 questions --
+one per vendor contract (q01-q10, role `analyst`, `confidential`), four over
+`metric_definitions` (q11-q14, role `viewer`, `public`), three over `decision_log` (q15-q17, role
+`analyst`, `internal`), two over `methodology` (q18-q19, role `viewer`, `public`), one over
+`data_dictionary` (q20, role `viewer`, `public`). Labelled by `doc_type`/`vendor` plus a verbatim
+`must_contain` substring rather than a hardcoded `chunk_id`, so the dataset survives future
+re-chunking; `relevant_chunk_ids()` resolves the label to the actual current chunk id(s) at eval
+time. Verified empirically, not just asserted: wrote and ran a throwaway validation script against
+the real chunked corpus before building any eval module around the dataset, confirming all 20
+questions resolve to exactly 1 chunk each.
+
+**Retrieval metrics (`copilot.evals.rag_metrics`):** `recall_at_k` and `reciprocal_rank` (MRR's
+per-question term) are pure arithmetic over chunk-id lists -- no LLM, no fakes needed, run for
+real in any environment including this one.
+
+**Quality metrics, cut down (`copilot.evals.rag_quality`):** the sprint's own step asked for the
+full Ragas suite (faithfulness, answer relevancy, context precision, context recall); this step's
+own cut-first note in `docs/HANDOFF.md` allows reducing to faithfulness + context_recall. Built as
+two small structured-output LLM-judge calls through the existing `LLMClient`
+(`faithfulness`/`context_recall`, both returning `copilot.evals.evaluators.EvalScore`) rather than
+adding the `ragas` package -- `ragas` would bring its own parallel LLM-wrapper and dependency
+surface alongside the `LLMClient` wrapper this repo already standardizes on, for two judges that
+are each a two-field structured call. Consistent with the hand-written-evaluator pattern Day 3
+already set (`copilot.evals.evaluators`), not a new ADR-level decision.
+
+New prompts: `prompts/rag_faithfulness/v1.yaml`, `prompts/rag_context_recall/v1.yaml`.
+
+New CLI: `scripts/run_rag_eval.py` -- retrieval metrics (free) run by default against whatever
+real index already exists at `data/chroma/`; `--quality` additionally runs
+`CorrectiveRagService.answer()` plus both judges per question (costs money, off by default);
+`--questions` restricts to a comma-separated subset of golden ids.
+
+Updated `docs/CODE_MAP.md` with a combined entry for `rag_golden.py`/`rag_metrics.py`/
+`rag_quality.py` and a `run_rag_eval.py` entry, and closed out the "not yet started" note -- all
+7 of Day 4's steps are now built.
+
+Tests (19 new: 5 in `tests/test_rag_golden.py`, 10 in `tests/test_rag_metrics.py`, 4 in
+`tests/test_rag_quality.py`), all free/offline: golden-set loading and role/data-class
+consistency; the "resolves to exactly 1 chunk against the real corpus" check as an actual test,
+not just the one-off validation script; `relevant_chunk_ids()` respecting `doc_type`/`vendor`
+filters and case-insensitivity; every recall@k/MRR edge case (full credit, zero credit, fractional
+credit for multiple relevant ids, empty relevant set); both score branches (1.0 and 0.0) for each
+judge, including that the judge's free-text reasoning (`unsupported_claims`,
+`missing_information`) surfaces in the score's `comment`.
+
+Ran recall@5/MRR for real (not just unit tests) end to end over the full 20-question golden set
+against the real knowledge corpus with `FakeEmbedder`: mean recall@5 = 0.40, MRR = 0.258. Reporting
+these honestly as noise-level, not real retrieval-quality numbers -- `FakeEmbedder` has no
+semantic notion of similarity, same caveat this project has applied to every other
+FakeEmbedder-based number so far (e.g. step 3's idempotency check). Real numbers need
+`scripts/build_rag_index.py` run on your machine first.
+
+**Mistakes and fixes:**
+
+- RAG golden-set labelling bug: q15's original `must_contain` phrase ("licence guard that rejects
+  SKU-level columns") spanned a markdown soft-wrap line break in the source `decision_log.md`
+  file, so the literal substring never appeared on one line in the stored chunk text --
+  `relevant_chunk_ids()` resolved to 0 matches instead of 1. Caught by the validation script
+  before any eval module was built around the dataset, not after. Fixed by rewriting q15's
+  `must_contain` to a phrase confirmed to sit entirely on one source line ("aggregate-only Parquet
+  snapshot built from the analytics project's Gold views"), then re-ran the validator to confirm
+  all 20 questions resolve cleanly.
+- mypy: same `llm.structured(...)` generic-resolution issue as step 6, at two call sites
+  (faithfulness, context_recall) in `rag_quality.py` -- fixed identically with
+  `cast("tuple[SpecificModel, CallMetrics]", ...)`.
+- ruff `E501`: one long print-statement line in `run_rag_eval.py`, fixed by extracting
+  `recall, rr = score.recall_at_k, score.reciprocal_rank` into local variables and shortening the
+  f-string -- chosen deliberately over adding a `# noqa`, once I noticed the noqa option was also
+  available.
+- Left a stray `_Split = Literal["dog", "test"]` placeholder and an unused `Literal` import in
+  `rag_golden.py` from an earlier draft; removed both and simplified `__all__` to the four real
+  exports, self-caught before this was flagged.
+
+**Metrics:** 233 tests pass (+19 over the 214 after Day 4 step 6). ruff and mypy (strict) clean
+across the whole repo. All 20 golden questions verified to resolve to exactly 1 chunk each against
+the real corpus.
+
+**Costs:** $0 in this sitting -- retrieval metrics are pure arithmetic; quality-metric tests use
+`FakeMessagesResource`; no real `CorrectiveRagService.answer()` or judge call has been made with a
+real API key yet.
+
+**Open:** Day 4 (RAG and advanced RAG) is now fully built, all 7 steps. Still open from earlier:
+a third re-run of `scripts/run_effort_lab.py`, a real `TextToSqlService` call, Docker Desktop
+install, AWS/domain/GitHub variables from Day 2 -- plus two new real-machine items from today:
+`scripts/build_rag_index.py` for the real embedding index, and optionally
+`scripts/run_rag_eval.py --quality` for real faithfulness/context_recall numbers. Next sprint day
+is Day 5 (ML tools for the agents).
