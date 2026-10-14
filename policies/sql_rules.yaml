@@ -1,0 +1,40 @@
+# Semantic SQL rules: patterns that are syntactically valid but produce a wrong number.
+# Enforced by copilot.sql.validator (layer 2, docs/specs/text_to_sql_safety.md).
+# Each case names the trap seen on this data (see the spec for the worked examples).
+version: 1
+
+# Columns that are already percentages/ratios. AVG() or SUM() across vendors on these columns
+# is wrong -- a portfolio figure must be a ratio of sums (e.g. SUM(GrossProfit)/SUM(Revenue)).
+ratio_columns:
+  - BlendedMargin
+  - BlendedMarginPct
+  - MarginPct
+  - SharePct
+  - GrowthPct
+
+# Tables that repeat one vendor's per-vendor totals across many rows (e.g. one row per
+# vendor per month). Summing a per-vendor total column straight out of a join against one
+# of these tables double-counts it once per repeated row.
+fanout_tables:
+  - vendor_monthly_demand
+  - portfolio_monthly_demand
+
+# Per-vendor total columns that must never be summed after a join touching a fan-out table
+# above, because the join multiplies each vendor's row by its month count first.
+per_vendor_total_columns:
+  - TotalFreight
+  - FreightLeakage
+  - TotalRevenue
+  - TotalCost
+
+# Independent classification counts that look additive but double-count overlapping SKUs.
+# A query must report each column separately, never SUM() them together in one expression.
+non_additive_count_groups:
+  - - LossMakingSKUs
+    - DeadStockSKUs
+
+# The data's actual coverage. A WHERE/filter entirely outside this range means 0 rows will
+# come back -- the model must say so, not state the empty result as a real answer.
+data_coverage:
+  years: [2024]
+  months: [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12]

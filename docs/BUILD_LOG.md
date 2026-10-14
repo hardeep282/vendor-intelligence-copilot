@@ -169,3 +169,45 @@ interpreter to take effect) -- `repair=0 attempt=1`, clean single call, `cost=$0
 |---|---|---|---|---|---|
 | Before fix | 700 | 2 (truncated, then repaired) | 1 | not captured | not captured |
 | After fix | 1200 | 1 | 0 | $0.01127 | 7.31s |
+
+## 2026-10-14 · Day 3, step 5 · Layered sqlglot validator + `policies/sql_rules.yaml`
+
+**Covered:** `copilot.sql.validator.validate()` -- the static check every LLM-generated SQL
+string passes through before it ever reaches `copilot.data.store` (layer 0). Built the two
+layers the spec calls for:
+
+- **Layer 1 (structure):** exactly one statement; root is SELECT/UNION/EXCEPT/INTERSECT; every
+  real table in every branch (CTEs, joins, subqueries, UNION arms) is in `disclosure.yaml` *and*
+  readable by the caller's role; no table-valued functions (`read_csv`, `glob`, `duckdb_tables`,
+  `pragma_*`); no `information_schema`/`pg_catalog`; no `PRAGMA`/`ATTACH`/`SET`/`COPY`/`INSTALL`/
+  `LOAD`/`CALL` statements; `LIMIT` injected at 200 if missing, or lowered to 200 if higher.
+- **Layer 2 (semantic traps, `policies/sql_rules.yaml`):** `AVG`/`SUM` of an already-blended
+  column (`BlendedMargin`, `SharePct`, ...) across rows is blocked -- a portfolio figure must be
+  a ratio of sums; `SUM` of a per-vendor total (`TotalFreight`, `TotalRevenue`, ...) after a join
+  that touches a fan-out table (`vendor_monthly_demand`, one row per vendor per month) with no
+  `GROUP BY` is blocked -- the join repeats each vendor's row once per month before the sum ever
+  runs; adding two independent SKU-classification counts in one expression
+  (`LossMakingSKUs + DeadStockSKUs`) is blocked -- the dimensions overlap, so the two columns
+  must be reported separately.
+
+Every one of the six RAID-flagged traps in `docs/specs/text_to_sql_safety.md`'s "Why this
+exists" table now has a test that proves the validator catches it, plus the matching "this
+correct form is allowed" test so the rule doesn't over-block.
+
+**Mistakes and fixes:**
+- First cut of `_function_name()` used `exp.Anonymous.sql_name()` to recover a blocked
+  function's real name (`duckdb_tables`, `glob`, ...). sqlglot's `sql_name()` returns the
+  literal string `"ANONYMOUS"` for that node type -- it's a generic dispatch name, not the
+  parsed function name -- so `duckdb_tables()` silently passed validation. Fixed by reading
+  `.this` directly on the `Anonymous` node, which holds the actual called name as parsed from
+  the SQL (confirmed interactively: `t.this.this == "duckdb_tables"`).
+- mypy flagged a variable (`cols`) reused with two different element types (`list[str]` for the
+  aggregate-function check, then `set[str]` for the additive-count check) in the same function
+  scope. Fixed by giving the second one its own name (`addend_cols`).
+- mypy flagged `sqlglot.parse()`'s return type (`list[Expr | None]`) as incompatible with the
+  helper functions' `exp.Expression` parameters, even after filtering out `None` entries earlier
+  in the same function -- mypy doesn't narrow a list element's type from a filter applied to a
+  different list. Fixed with an `assert ... is not None` plus `cast("exp.Expression", ...)` at
+  the one point the value is actually used, rather than loosening every helper's signature.
+
+**Metrics:** 82 tests pass (+23 for the validator: 59 -> 82). ruff and mypy clean.
