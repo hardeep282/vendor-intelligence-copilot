@@ -46,6 +46,22 @@ from copilot.sql.schema import build_schema_card
 MODEL = "claude-sonnet-5"
 
 
+def _anthropic_client() -> anthropic.Anthropic:
+    """`anthropic.Anthropic()` with no args only reads a real OS environment variable, not
+    `.env` -- `.env` is loaded by `copilot.settings.get_settings()` (pydantic-settings), the
+    same place `LLMClient` gets its key from. Go through it so this script works from a plain
+    `.env` file instead of requiring the key to also be exported in the shell."""
+    key = get_settings().anthropic_api_key
+    if key is None:
+        print(
+            "error: no ANTHROPIC_API_KEY found (checked .env via copilot.settings). "
+            "Add it to your .env file -- see docs/HANDOFF.md.",
+            file=sys.stderr,
+        )
+        sys.exit(1)
+    return anthropic.Anthropic(api_key=key.get_secret_value())
+
+
 def _text_to_sql_samples() -> list[PromptSample]:
     """Real system/user text as `TextToSqlService.answer()` actually builds it -- same
     schema_card + retrieved examples a live call would send, for a viewer and an analyst."""
@@ -104,7 +120,7 @@ def main() -> int:
 
     print(f"Running {len(samples)} prompt(s) through 3 token-counting methods...\n")
 
-    client = anthropic.Anthropic()  # reads ANTHROPIC_API_KEY from the environment/.env
+    client = _anthropic_client()
     report = run_tokenization_lab(
         samples,
         model=MODEL,
