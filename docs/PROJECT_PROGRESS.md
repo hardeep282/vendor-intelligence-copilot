@@ -8,7 +8,7 @@ Last updated: Wed 14 Oct 2026 (Day 3 of the 10-day sprint, sprint plan v3, in pr
 |---|---|---|
 | 1 | Foundations, data, golden set | Build done; repo pushed to GitHub (14 Oct) |
 | 2 | Production skeleton live | Code done and tested. Waiting on you: AWS resources, domain, GitHub variables |
-| 3 | LLM service, text-to-SQL, effort and tokenization labs | In progress: steps 1-5 of 9 done |
+| 3 | LLM service, text-to-SQL, effort and tokenization labs | In progress: steps 1-6 of 9 done |
 | 4 | RAG and advanced RAG | Not started |
 | 5 | ML tools for the agents | Not started |
 | 6 | Multi-agent system in LangGraph | Not started |
@@ -26,7 +26,7 @@ Last updated: Wed 14 Oct 2026 (Day 3 of the 10-day sprint, sprint plan v3, in pr
 | 3 | Refactor `vendor_insights.py` into `InsightService` | **Done** (`copilot.insights.service.InsightService`; model id now lives only in the prompt YAML) |
 | 4 | Text-to-SQL: schema linking, business rules, 3 retrieved golden examples | **Done** (`copilot.sql.service.TextToSqlService`, `copilot.sql.schema`, `copilot.sql.examples`) |
 | 5 | Layered sqlglot validator + `policies/sql_rules.yaml` | **Done** (`copilot.sql.validator`; built ahead of step 4 since step 4's self-correction loop needs it; a 6th layer, data-coverage, was added while building step 4) |
-| 6 | Golden v2 as a LangSmith dataset + evaluators | Not started |
+| 6 | Golden v2 as a LangSmith dataset + evaluators | **Done** (`copilot.evals.evaluators`, `copilot.evals.langsmith_sync`; actual push needs your `LANGSMITH_API_KEY` -- run `scripts/push_golden_to_langsmith.py` on your machine) |
 | 7 | Question->SQL pair generator | Not started (cut-first item; may move to Day 9 regardless) |
 | 8 | Temperature lab | **Changed to an effort lab** -- see correction below. Not started |
 | 9 | Tokenization lab | Not started |
@@ -51,9 +51,9 @@ instead of 3 temperatures x 5 runs. Full writeup: `docs/adr/005-llm-provider.md`
 
 | Metric | Baseline | Current | Notes |
 |---|---|---|---|
-| Tests passing | 33 | 104 | `uv run pytest -q`; +12 `copilot.llm`, +12 prompts + `InsightService`, +29 SQL validator, +16 schema/examples/text-to-SQL service |
-| Golden questions | 40 (27 dev, 10 test, 3 adversarial) | 40 | golden v2 (+6 trap questions) is step 6, not yet built |
-| Execution accuracy, grounding, leakage rate | n/a | TBD | needs step 6 (golden v2 as a LangSmith dataset + evaluators); real behaviour already exercised, just not scored as a metric yet |
+| Tests passing | 33 | 136 | `uv run pytest -q`; +12 `copilot.llm`, +12 prompts + `InsightService`, +29 SQL validator, +16 schema/examples/text-to-SQL service, +22 evaluators/langsmith_sync, +10 golden v2 |
+| Golden questions | 40 (27 dev, 10 test, 3 adversarial) | 46 (27 dev, 16 test, 3 adversarial) | golden v2 adds the 6 text-to-SQL trap questions from the spec; v1 stays frozen at 40 for history |
+| Execution accuracy, grounding, leakage rate | n/a | evaluators built + tested; no end-to-end run yet | `copilot.evals.evaluators.execution_accuracy`/`leakage_free`, 17 tests pass; running them against real `TextToSqlService` output needs your API key, same as the effort/tokenization labs |
 | SQL validator: structural + semantic + coverage rules | n/a | 29/29 tests pass, 0 false positives on 33 real golden queries | every trap in `docs/specs/text_to_sql_safety.md`'s trap table has a BLOCK test and an ALLOW test |
 | Text-to-SQL self-correction loop | n/a | 4/4 tests pass (first-try, 1-retry, abstain, exhausted) | validator rejection fed back as the next turn; abstains after 2 retries rather than run bad SQL |
 | LLM client: retries, repair loop, caching, no-temperature guard | n/a | Tested | against a fake SDK, no API key used (`tests/test_llm_client.py`) |
@@ -78,11 +78,11 @@ None yet. Target: `https://api.vendor.<domain>/health`.
 
 ## Next step
 
-Me: Day 3 steps 6-9 (golden v2 as a LangSmith dataset + execution-accuracy/grounding
-evaluators, question->SQL pair generator, the effort lab, the tokenization lab). You:
-confirmed `ANTHROPIC_API_KEY` and `LANGSMITH_API_KEY` both load from `.env` (14 Oct); Docker
-Desktop install/engine status on your machine is still open (Day 2's actual `docker build` has
-not run yet) -- next you'll also run `TextToSqlService` for real on your machine (same pattern
-as the `InsightService` first-call test), then the effort lab and tokenization lab scripts once
-they exist (keys never go in chat; you paste back the printed results) -- also still open: AWS
-resources, domain, GitHub variables from Day 2.
+Me: Day 3 steps 7-9 (question->SQL pair generator -- likely cut or moved to Day 9 per the
+sprint doc, the effort lab, the tokenization lab). You: run `scripts/push_golden_to_langsmith.py`
+on your machine (needs your `LANGSMITH_API_KEY`, already in `.env`) to actually create the
+dataset in LangSmith; Docker Desktop install/engine status is still open (Day 2's actual
+`docker build` has not run yet) -- next you'll also run `TextToSqlService` for real (same
+pattern as the `InsightService` first-call test), then the effort lab and tokenization lab
+scripts once they exist (keys never go in chat; you paste back the printed results) -- also
+still open: AWS resources, domain, GitHub variables from Day 2.

@@ -64,6 +64,9 @@ def test_valid_sql_on_first_attempt_returns_real_rows(con, policy, rules) -> Non
     assert result.rows == [{"VendorName": "BIG CO", "TotalRevenue": 1000000.0}]
     assert result.self_corrections == 0
     assert len(fake.calls) == 1
+    assert result.llm_calls == 1
+    assert result.total_cost_usd > 0
+    assert result.total_latency_s > 0
 
 
 def test_validator_rejection_is_fed_back_and_self_corrected(con, policy, rules) -> None:  # noqa: ANN001
@@ -89,6 +92,8 @@ def test_validator_rejection_is_fed_back_and_self_corrected(con, policy, rules) 
     assert result.rows == [{"margin": 0.28}]  # run_rows rounds floats to 2 dp for comparison
     assert result.self_corrections == 1
     assert len(fake.calls) == 2
+    assert result.llm_calls == 2
+    assert result.total_cost_usd > 0
     # The rejected SQL and the exact violation code must have been fed back as context.
     second_call_messages = fake.calls[1]["messages"]
     assert any("AVG(BlendedMargin)" in str(m["content"]) for m in second_call_messages)

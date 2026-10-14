@@ -18,6 +18,9 @@ from pydantic import BaseModel
 from copilot.settings import REPO_ROOT
 
 GOLDEN_PATH = REPO_ROOT / "evals" / "datasets" / "golden_v1.jsonl"
+# v2 adds the 6 text-to-SQL trap questions from docs/specs/text_to_sql_safety.md on top of v1's
+# 40 (v1 stays frozen so its history stays attached to the InsightService-era eval numbers).
+GOLDEN_V2_PATH = REPO_ROOT / "evals" / "datasets" / "golden_v2.jsonl"
 
 Category = Literal[
     "lookup",

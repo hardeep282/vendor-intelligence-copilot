@@ -253,3 +253,45 @@ Also ran `build_schema_card()`/`retrieve_examples()` against the real snapshot a
 
 **Metrics:** 104 tests pass (+22 from step 5's 82: +6 coverage-layer validator tests, +5
 schema, +7 examples, +4 service). ruff and mypy clean across the whole repo.
+
+## 2026-10-14 · Day 3, step 6 · Golden v2 as a LangSmith dataset + evaluators
+
+**Covered:** the 6 trap questions `docs/specs/text_to_sql_safety.md` specified for v2, added
+on top of v1's frozen 40 (`evals/datasets/golden_v2.jsonl`, 46 total; `golden_v1.jsonl` never
+touched). Every number in the 6 new questions was computed by actually running the matching
+SQL against the real snapshot, not typed from the spec by hand -- all five exactly match the
+spec's quoted figures: total freight $1,640,474.69, blended margin 28.72% (vs. 5.31% from the
+wrong `AVG(BlendedMarginPct)`), 2,127 loss-making SKUs and 6,334 dead-stock SKUs reported
+separately (never 8,461). `golden_v2.manifest.json` pins its SHA-256 the same way v1's does.
+
+**`copilot.evals.evaluators`** -- two scores per question, kept separate on purpose:
+- `execution_accuracy`: did the system behave right (answer vs. abstain) AND, when it
+  answered, return the right numbers (result-set match, 0.01 numeric tolerance,
+  order-insensitive unless the question is a `trend` category). Abstaining is a pass when the
+  golden expects a refusal and a fail when it expects an answer, and vice versa -- behaviour
+  and numbers are graded together because either one alone hides the other kind of failure.
+- `leakage_free`: re-validates whatever SQL actually ran through the exact same
+  `copilot.sql.validator.validate()` the service already called. This can never disagree with
+  the validator about what's safe -- it exists to catch a future *service* bug (e.g. running
+  SQL from a rejected attempt by mistake), not a validator bug, so a correct-looking row count
+  doesn't quietly hide that the wrong query produced it.
+
+**`copilot.evals.langsmith_sync`** -- `sync_golden_dataset()` makes the LangSmith dataset
+`vendor-copilot-golden-v2` exactly mirror the JSONL file: clear-then-recreate rather than a
+partial diff, since 46 rows makes that simpler to reason about than matching stale examples.
+Tested against a hand-written fake client (same pattern as the Anthropic SDK fakes) -- no
+network call, no API key. `scripts/push_golden_to_langsmith.py` is the real one-line CLI that
+runs this against your actual `LANGSMITH_API_KEY` -- next for you to run on your machine.
+
+**Mistakes and fixes:**
+- `TextToSqlResult` didn't carry cost/latency, so an eval run had nowhere to report spend.
+  Added `total_cost_usd` / `total_latency_s` / `llm_calls`, accumulated across every attempt in
+  the self-correction loop (not just the last one) -- a question that took 2 retries should
+  show as 3x the cost of one that didn't, not hide the retries' cost.
+- mypy flagged `_values_match()`'s equality fallback (`got == want`) as returning `Any`
+  instead of `bool` -- Python's `==` can return anything if a value overrides `__eq__`. Fixed
+  with an explicit `bool(...)`.
+
+**Metrics:** 136 tests pass (104 after step 4 -> 126 with +17 `evaluators` and +5
+`langsmith_sync` tests -> 136 with +10 `test_golden_v2.py`). `verify()` against the real
+snapshot: 0 mismatches across all 46 questions. ruff and mypy clean.

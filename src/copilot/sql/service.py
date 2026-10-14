@@ -52,6 +52,9 @@ class TextToSqlResult(BaseModel):
     abstain_reason: str | None = None
     truncated: bool = False
     self_corrections: int = 0
+    total_cost_usd: float = 0.0
+    total_latency_s: float = 0.0
+    llm_calls: int = 0
 
 
 def _feedback(violations: list[Violation]) -> str:
@@ -90,8 +93,12 @@ class TextToSqlService:
         ]
 
         violations: list[Violation] = []
+        total_cost = 0.0
+        total_latency = 0.0
         for attempt in range(MAX_SELF_CORRECTIONS + 1):
-            generation, _metrics = self._call(prompt, system, convo, effort)
+            generation, metrics = self._call(prompt, system, convo, effort)
+            total_cost += metrics.cost_usd
+            total_latency += metrics.total_latency_s
 
             if generation.sql is None:
                 return TextToSqlResult(
@@ -101,6 +108,9 @@ class TextToSqlService:
                     abstained=True,
                     abstain_reason=generation.abstain_reason or "model abstained without a reason",
                     self_corrections=attempt,
+                    total_cost_usd=total_cost,
+                    total_latency_s=total_latency,
+                    llm_calls=attempt + 1,
                 )
 
             result = validate(generation.sql, role, self._policy, self._rules)
@@ -115,6 +125,9 @@ class TextToSqlService:
                     abstained=False,
                     truncated=result.truncated,
                     self_corrections=attempt,
+                    total_cost_usd=total_cost,
+                    total_latency_s=total_latency,
+                    llm_calls=attempt + 1,
                 )
 
             violations = result.violations
@@ -135,6 +148,9 @@ class TextToSqlService:
                 + "; ".join(f"{v.code}: {v.message}" for v in violations)
             ),
             self_corrections=MAX_SELF_CORRECTIONS,
+            total_cost_usd=total_cost,
+            total_latency_s=total_latency,
+            llm_calls=MAX_SELF_CORRECTIONS + 1,
         )
 
     def _call(
