@@ -1,7 +1,7 @@
 # Project Progress: Vendor Intelligence Copilot
 
-Last updated: Wed 14 Oct 2026 (Day 5 of the 10-day sprint, sprint plan v3, in progress -- steps
-1-5 of 6 shipped; step 6 (Model Selection Agent) ahead)
+Last updated: Wed 14 Oct 2026 (Day 5 of the 10-day sprint, sprint plan v3 -- all 6 steps
+shipped, Day 5 complete)
 
 ## Sprint status
 
@@ -11,7 +11,7 @@ Last updated: Wed 14 Oct 2026 (Day 5 of the 10-day sprint, sprint plan v3, in pr
 | 2 | Production skeleton live | Code done and tested. Waiting on you: AWS resources, domain, GitHub variables |
 | 3 | LLM service, text-to-SQL, effort and tokenization labs | Build done: 8 of 9 steps shipped (step 7 skipped, see below) |
 | 4 | RAG and advanced RAG | Build done: 7 of 7 steps shipped |
-| 5 | ML tools for the agents | Build in progress: steps 1, 2, 3, 4, 5 of 6 shipped |
+| 5 | ML tools for the agents | **Build done: 6 of 6 steps shipped** |
 | 6 | Multi-agent system in LangGraph | Not started |
 | 7 | Guardian, guardrails, approvals | Not started |
 | 8 | Product, API keys, latency budget, evals in CI, release v0.1 | Not started |
@@ -82,7 +82,7 @@ later as a third stage without changing `copilot.rag.retrieval`'s contract.
 | 3 | XGBoost comparison on the same split | **Done** (`copilot.ml.risk_classifier.compare_models()`) -- see below |
 | 4 | Inventory tools: safety stock, reorder point, EOQ | **Done, real numbers run in this sitting** (`copilot.ml.inventory`) -- see below |
 | 5 | Pydantic schemas + unit tests for every tool; run-log (MLflow cut, CSV instead per sprint doc) | **Done** -- schemas + tests for all 3 tools; CSV run-log (`copilot.ml.run_log`) |
-| 6 | Model Selection Agent (Addendum A1): LangGraph propose -> critique -> revise, LLM-judge eval | Not started |
+| 6 | Model Selection Agent (Addendum A1): LangGraph propose -> critique -> revise, LLM-judge eval | **Done** (`copilot.agents.model_selection.ModelSelectionAgent`) -- see below |
 
 **Why steps 1 & 4 and not 2-3 first:** `portfolio_monthly_demand`/`vendor_monthly_demand` are
 already licence-safe aggregates in this repo's own snapshot, so the forecast and inventory
@@ -107,11 +107,25 @@ column, and had to be added to `LEAKING_FEATURES`. `copilot.ml.run_log` is the C
 `scripts/train_risk_classifier.py` is the real-data counterpart, same never-in-chat convention
 as the other real-data scripts.
 
+**Step 6, done:** `copilot.agents.model_selection.ModelSelectionAgent` -- the LangGraph
+propose -> critique -> revise -> abstain loop Addendum A1 calls for, directly reusing the shape
+Day 4's `CorrectiveRagService` already established (propose a model choice from a fixed,
+closed catalog, scrutinize it with a second structured call, revise with the critique's
+feedback folded in up to a retry budget, or abstain). No new ADR -- the shape, the retry-then-
+abstain posture, and the eval-split philosophy below all follow from decisions already made
+(handoff's placeholder ADR-006 wasn't needed). Eval harness
+(`copilot.evals.model_selection_golden`/`metrics`/`quality`) splits free catalog-membership
+checks from the one LLM-judged "is the reasoning actually grounded" check, same split the RAG
+harness uses for recall@k/MRR vs. faithfulness/context_recall. Not run for real this sitting --
+unlike the forecast/inventory/classifier tools, this agent needs a real `ANTHROPIC_API_KEY` for
+every run (no free half), and no key is loaded in this session; `scripts/run_model_selection_eval.py`
+is ready to run with your own key.
+
 ## Results
 
 | Metric | Baseline | Current | Notes |
 |---|---|---|---|
-| Tests passing | 33 | 285 | `uv run pytest -q`; +12 `copilot.llm`, +12 prompts + `InsightService`, +29 SQL validator, +16 schema/examples/text-to-SQL service, +22 evaluators/langsmith_sync, +10 golden v2, +4 effort lab, +5 tokenization lab, +3 evaluator column-name fix, +10 rag corpus, +9 chunking, +7 embeddings, +10 store, +12 retrieval (BM25 + RRF), +2 store `where` filter, +10 permission filter, +6 corrective RAG, +19 eval harness (golden/metrics/quality), +12 ml metrics, +10 forecast tool, +12 inventory tools, +12 risk classifier, +6 run-log |
+| Tests passing | 33 | 299 | `uv run pytest -q`; +12 `copilot.llm`, +12 prompts + `InsightService`, +29 SQL validator, +16 schema/examples/text-to-SQL service, +22 evaluators/langsmith_sync, +10 golden v2, +4 effort lab, +5 tokenization lab, +3 evaluator column-name fix, +10 rag corpus, +9 chunking, +7 embeddings, +10 store, +12 retrieval (BM25 + RRF), +2 store `where` filter, +10 permission filter, +6 corrective RAG, +19 eval harness (golden/metrics/quality), +12 ml metrics, +10 forecast tool, +12 inventory tools, +12 risk classifier, +6 run-log, +5 model selection agent, +9 model selection eval |
 | Golden questions | 40 (27 dev, 10 test, 3 adversarial) | 46 (27 dev, 16 test, 3 adversarial) | golden v2 adds the 6 text-to-SQL trap questions from the spec; v1 stays frozen at 40 for history |
 | Execution accuracy, grounding, leakage rate | n/a | evaluators built + tested; no end-to-end run yet | `copilot.evals.evaluators.execution_accuracy`/`leakage_free`, 17 tests pass; running them against real `TextToSqlService` output needs your API key, same as the effort/tokenization labs |
 | SQL validator: structural + semantic + coverage rules | n/a | 29/29 tests pass, 0 false positives on 33 real golden queries | every trap in `docs/specs/text_to_sql_safety.md`'s trap table has a BLOCK test and an ALLOW test |
@@ -132,6 +146,7 @@ as the other real-data scripts.
 | Inventory tools (Day 5 step 4), real run from the forecast above | n/a | 12/12 tests pass; real plan (3-month horizon, 1-period lead time, 95% service level, $500/order, $0.50/unit/yr holding): mean demand/period 3,758,005, std dev 363,277, safety stock 597,537, reorder point 4,355,542, EOQ 300,320 | caught and fixed a bug before shipping: std dev must come from historical variability, not variance across a (possibly flat) forecast -- see `docs/BUILD_LOG.md` |
 | SKU risk classifier (Day 5 steps 2-3), synthetic fixture run | n/a | 12/12 tests pass; n=2000: RF accuracy 0.834 -> 0.820, F1 0.291 -> 0.211; XGBoost accuracy 0.898 -> 0.886, F1 0.667 -> 0.596 (leaky -> leakage-safe) | leakage inflates both models' scores in the expected direction; `SalesToPurchaseRatio` had to be added to `LEAKING_FEATURES` after it was found reconstructing `ProfitMargin` algebraically -- see `docs/BUILD_LOG.md`. Synthetic data, so direction is the finding, not the exact figures |
 | CSV run-log (Day 5 step 5) | n/a | 6/6 tests pass; smoke-tested end to end via `scripts/train_risk_classifier.py` against a synthetic CSV | MLflow cut-first per sprint doc; `run_log.csv` covered by the existing blanket `*.csv` gitignore rule |
+| Model Selection Agent (Day 5 step 6) | n/a | 14/14 tests pass (5 agent + 9 eval harness); no real run this sitting -- no `ANTHROPIC_API_KEY` loaded | reuses `CorrectiveRagService`'s propose/critique/revise/abstain shape; real per-question numbers wait for `scripts/run_model_selection_eval.py` on your machine |
 
 ## Decisions
 
@@ -158,12 +173,13 @@ None yet. Target: `https://api.vendor.<domain>/health`.
 
 ## Next step
 
-Me: Day 5 steps 1, 2, 3, 4 & 5 are all built and run for real (or against synthetic data where
-licence rules require it) -- continuing now with step 6, the Model Selection Agent (Addendum
-A1): a LangGraph propose -> critique -> revise flow, following the `CorrectiveRagService`
-pattern from Day 4, evaluated with an LLM judge. You: run `scripts/train_risk_classifier.py`
-against your real `vw_PortfolioHealth` export whenever convenient, for the real accuracy/F1
-numbers to replace the synthetic ones in this doc. Carried forward, still open and not urgent:
-`scripts/build_rag_index.py` + `scripts/run_rag_eval.py` (Day 4, real embedding index and
-recall@5/MRR), a third re-run of `scripts/run_effort_lab.py`, a real `TextToSqlService` call,
-Docker Desktop install/engine status, AWS resources, domain, GitHub variables from Day 2.
+Me: Day 5 is complete -- all 6 steps built, 299/299 tests passing, ruff/mypy clean. Ready to
+start Day 6 (multi-agent system in LangGraph) on your go-ahead. You: two real-data/real-key runs
+are queued up whenever convenient -- `scripts/train_risk_classifier.py` against your real
+`vw_PortfolioHealth` export (risk classifier's real accuracy/F1), and
+`scripts/run_model_selection_eval.py` with your `ANTHROPIC_API_KEY` loaded (Model Selection
+Agent's real per-question numbers) -- neither blocks starting Day 6. Carried forward, still
+open and not urgent: `scripts/build_rag_index.py` + `scripts/run_rag_eval.py` (Day 4, real
+embedding index and recall@5/MRR), a third re-run of `scripts/run_effort_lab.py`, a real
+`TextToSqlService` call, Docker Desktop install/engine status, AWS resources, domain, GitHub
+variables from Day 2.

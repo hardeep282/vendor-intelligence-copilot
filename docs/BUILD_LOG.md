@@ -976,3 +976,95 @@ Tests (18 new: 12 in `tests/test_ml_risk_classifier.py`, 6 in `tests/test_ml_run
 `uv sync`'s package downloads (none needed this sitting -- no new dependencies).
 
 **Open:** step 6 (Model Selection Agent, Addendum A1) is the only Day 5 item left.
+
+## 2026-10-14 · Day 5 step 6 · Model Selection Agent (Addendum A1)
+
+**Covered:** `copilot.agents.model_selection.ModelSelectionAgent` -- the LangGraph propose ->
+critique -> revise -> abstain loop Addendum A1 calls for, plus its eval harness
+(`copilot.evals.model_selection_golden`/`metrics`/`quality`, `scripts/run_model_selection_eval.py`).
+This closes Day 5 entirely (all 6 steps).
+
+**Design, following the Day 4 precedent directly:** the addendum explicitly names CRAG/Self-RAG-
+style scrutiny as the mechanism, and `copilot.rag.corrective.CorrectiveRagService` is exactly
+that shape already built here -- retrieve/grade/rewrite/generate/abstain. This agent reuses the
+same shape with different nodes: propose a model choice (`copilot.llm` structured call against
+a fixed, closed `MODEL_CATALOG` -- never an invented model family), critique it (a second
+structured call that scrutinizes the proposal against the stated requirement and returns
+`correct`/`incorrect`/`ambiguous` plus concerns and an optional suggested alternative), and
+either accept, revise (fold the critique's feedback into the next proposal) and retry up to
+`MAX_REVISIONS = 2`, or abstain -- same retry-budget-then-abstain posture as
+`copilot.sql.service.MAX_SELF_CORRECTIONS` and `CorrectiveRagService.MAX_CORRECTIONS`.
+
+**One deliberate simplification versus `CorrectiveRagService`:** that loop's "rewrite" node
+needs its own LLM call because reformulating a search query is a creative task. Here, "revise"
+only has to forward the critique's already-structured `concerns`/`suggested_model_family`
+fields into the next proposal's feedback block -- plain string formatting of output the
+critique call already produced, so `_revise` is pure bookkeeping with no LLM call of its own.
+Logged here rather than as a new ADR, for the same reason Day 4's reranker/embedding-model
+choices weren't: the overall shape, the retry-then-abstain posture, and the eval-split
+philosophy below all follow directly from decisions this repo already made, not a new
+build-vs-buy call -- so **no new ADR for Day 5** (handoff's placeholder ADR-006 wasn't needed).
+
+**Model catalog is fixed and closed:** `random_forest`/`xgboost` (classification) and
+`ets`/`naive` (forecasting) are backed by real tools already built this week
+(`copilot.ml.risk_classifier`, `copilot.ml.forecast`); `kmeans` (clustering),
+`logistic_regression`/`linear_regression` (classification/regression) are catalog entries only
+-- K-Means already exists in the analytics repo per ADR-000 item 1, and logistic/linear
+regression are the sprint doc's own worked examples -- so those three are correct *category*
+picks today, with the actual tool implementation still ahead, not a gap in this agent.
+
+**Eval harness, same free/judged split as the RAG harness (Day 4 step 7):** whether
+`task_type`/`model_family` are correct is pure catalog-membership logic, so
+`copilot.evals.model_selection_metrics.task_type_correct`/`model_family_acceptable` need no
+LLM. What a free check can't see is whether the agent's final *reasoning* is actually grounded
+in the requirement's own stated characteristics versus generic ML boilerplate that would read
+the same for any requirement sharing its task type -- that's the one LLM-judge call
+(`model_selection_quality.reasoning_grounded`), closing Addendum A1's "evaluated with LLM
+evals" requirement. The golden set (`evals/datasets/model_selection_golden_v1.jsonl`, 8
+requirements, 2 per task type) scores each question's `model_family` against an *accepted set*,
+not one exemplar -- the catalog genuinely offers more than one reasonable pick for
+classification (`random_forest`/`xgboost`/`logistic_regression`) and forecasting
+(`ets`/`naive`), and penalizing a correct-but-different choice would be testing the dataset's
+own arbitrary pick, not the agent.
+
+**Not run for real this sitting:** unlike the forecast/inventory tools (real snapshot data, no
+API key needed) and the risk classifier (synthetic fixture, no API key needed), this agent
+needs a real `ANTHROPIC_API_KEY` for every single run -- there's no free half, since producing
+even one `ModelSelectionResult` means running the propose/critique LLM loop. No key is loaded
+in this session's `.env` (confirmed: `LLMClient()` raises `LLMCallError` as designed). Same
+"run on your machine" posture as the effort/tokenization labs: `scripts/run_model_selection_eval.py`
+is ready to run with your own key for the real per-question task_type/model_family/
+reasoning_grounded numbers.
+
+**Mistakes and fixes (mechanical):**
+- First draft stashed the critique result under an undeclared TypedDict key
+  (`state["_last_critique"]`) read back via `.get()` -- ruff/mypy didn't catch it immediately
+  but it's fragile (a plain dict key, not part of `_State`'s declared shape) and left a dead
+  `_revise_feedback` stub as a "documentation anchor" that was never called. Rewritten before
+  committing: `last_critique: ModelCritique | None` is a proper declared field on `_State`, and
+  a real `_revise` graph node (mirroring `CorrectiveRagService`'s `_rewrite`) does the feedback
+  bookkeeping and increments `attempt`, with the dead stub removed entirely.
+- ruff `S101` (no bare `assert` outside `tests/`) flagged 5 `assert proposal is not None`-style
+  narrowings copied from `CorrectiveRagService`'s raise-not-assert posture inconsistently --
+  fixed by converting every one to an explicit `if x is None: raise RuntimeError(...)`, same
+  pattern `ModelSelectionAgent.select()`'s own "can't happen" guard already used.
+
+Tests (14 new: 5 in `tests/test_model_selection_agent.py` -- accept-first-try, revise-then-
+accept, abstain-after-exhausting-the-budget, an `ambiguous` verdict also triggering a revision
+not acceptance, and the catalog-coverage check; 9 in `tests/test_model_selection_eval.py` --
+golden-set shape, golden-set-vs-catalog drift guard, both free metrics' pass/fail/abstain cases,
+both `reasoning_grounded` judge cases). All against `FakeMessagesResource`, no network, no API
+key, same convention as `tests/test_rag_corrective.py`.
+
+Updated `docs/CODE_MAP.md`: new "Model Selection Agent" section; `src/copilot/agents/` moved
+out of "Not yet started."
+
+**Metrics:** 299 tests pass (was 285). ruff and mypy (strict) clean across the whole repo
+(66 source files, up from 61).
+
+**Costs:** $0 -- no real LLM call made this sitting (no key available); every test runs against
+the fake Anthropic SDK.
+
+**Day 5 is now complete: all 6 steps shipped.** Open for Day 6: the multi-agent system in
+LangGraph that actually calls these tools (forecast, inventory, risk classifier, model
+selection) as agent tools rather than standalone functions.

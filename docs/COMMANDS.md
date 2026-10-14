@@ -156,3 +156,17 @@ No new dependency from this step -- `scikit-learn`/`shap`/`xgboost` were already
 steps-1-&-4 commit; only new `[[tool.mypy.overrides]]` entries for `shap`/`sklearn.*` (no inline
 types for the pinned versions). `scripts/train_risk_classifier.py` is the "run on your machine"
 item for steps 2-3, same never-in-chat convention as every other real-data script.
+
+## Day 5 (step 6: Model Selection Agent, Addendum A1)
+
+| # | What this step does | Command | What each part does | Expected result |
+|---|---|---|---|---|
+| 1 | Run every check | `uv run ruff check . && uv run mypy && uv run pytest -q` | lint, strict type-check, tests, in that order | "All checks passed!" / "Success, no issues" / "299 passed" |
+| 2 | Real agent run, one requirement (needs your `ANTHROPIC_API_KEY`) | `uv run python -c "from copilot.agents.model_selection import ModelSelectionAgent; from copilot.llm.client import LLMClient; print(ModelSelectionAgent(LLMClient()).select('forecast next quarter portfolio demand'))"` | Runs the real propose -> critique loop through the Anthropic API | A `ModelSelectionResult` with `task_type='forecasting'`, `model_family` one of `ets`/`naive`, and real cost/latency figures |
+| 3 | Full eval over the 8-question golden set | `uv run python scripts/run_model_selection_eval.py` | Runs the agent for real on every golden requirement, scores `task_type_correct`/`model_family_acceptable` for free | Per-question lines + mean scores; `--quality` adds the one LLM-judged `reasoning_grounded` call per question |
+
+No new dependency from this step -- `langgraph` was already added for Day 4's Corrective RAG
+loop. Unlike every other Day 5 tool, this one needs a real `ANTHROPIC_API_KEY` for every single
+run (no free half: producing even one result means running the propose/critique LLM loop), so
+commands #2-#3 are the "run on your machine" items here, same convention as the effort/
+tokenization labs.

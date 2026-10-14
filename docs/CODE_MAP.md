@@ -408,11 +408,47 @@ each one's result type); `scripts/train_risk_classifier.py` calls `log_classifie
 
 ---
 
+## Model Selection Agent -- Addendum A1 (Day 5 step 6)
+
+### `src/copilot/agents/model_selection.py` — `ModelSelectionAgent`
+LangGraph propose -> critique -> revise -> abstain loop, same shape as
+`copilot.rag.corrective.CorrectiveRagService` applied to picking a model instead of grounding
+an answer -- the direct precedent Addendum A1 names. Picks from a fixed, closed
+`MODEL_CATALOG` (never invents a model family): `random_forest`/`xgboost` and `ets`/`naive` are
+backed by real tools already built here (`copilot.ml.risk_classifier`, `copilot.ml.forecast`);
+`kmeans`/`logistic_regression`/`linear_regression` are catalog entries only, not yet
+implemented as tools. The "revise" step is pure bookkeeping (no LLM call) -- unlike
+`CorrectiveRagService`'s "rewrite" step, which needs an LLM to creatively reformulate a search
+query, revision here only has to forward the critique's already-structured
+`concerns`/`suggested_model_family` into the next proposal.
+**Takes in:** a plain-text data-science requirement.
+**Gives out:** a `ModelSelectionResult` -- accepted `task_type`/`model_family`/`reasoning`, or
+an explicit abstention + reason, plus cost/latency/call accounting.
+**Talks to:** `copilot.llm.client`/`copilot.llm.prompts` (`model_selection_propose`/`_critique`
+v1.yaml); `copilot.evals.model_selection_metrics`/`model_selection_quality` (the eval harness);
+`scripts/run_model_selection_eval.py`.
+
+### `src/copilot/evals/model_selection_golden.py`, `model_selection_metrics.py`, `model_selection_quality.py`
+The Day 5 step 6 eval harness, same free/judged split as the RAG harness. `model_selection_golden.py`:
+8 requirements (`evals/datasets/model_selection_golden_v1.jsonl`), 2 per task type, each naming
+an `expected_task_type` and a *set* of `acceptable_model_families` (not one exemplar -- the
+catalog genuinely offers more than one reasonable pick for classification/forecasting).
+`model_selection_metrics.py`: `task_type_correct`/`model_family_acceptable` -- free, pure
+catalog-membership checks, no LLM needed. `model_selection_quality.py`: `reasoning_grounded` --
+the one LLM-judge call (Addendum A1's "evaluated with LLM evals"), scoring whether the agent's
+final reasoning is actually grounded in what the requirement said versus generic ML boilerplate
+that a free check can't tell apart from real grounding.
+**Talks to:** `copilot.agents.model_selection` (`ModelSelectionResult`, `all_model_families`);
+`copilot.evals.evaluators` (reused `EvalScore`); `copilot.llm.client`/`copilot.llm.prompts`
+(`model_selection_judge` v1.yaml); `scripts/run_model_selection_eval.py`.
+
+---
+
 ## Not yet started (empty package markers only)
-`src/copilot/agents/`, `src/copilot/dl/`, `src/copilot/mcp/`, `src/copilot/nlp/`,
-`src/copilot/extract/`, `src/copilot/observability/`, `src/copilot/ui/` — folders exist with an
-`__init__.py` so imports work later; no real code yet. (`src/copilot/rag/` and `src/copilot/ml/`
-have moved to the sections above.)
+`src/copilot/dl/`, `src/copilot/mcp/`, `src/copilot/nlp/`, `src/copilot/extract/`,
+`src/copilot/observability/`, `src/copilot/ui/` — folders exist with an `__init__.py` so
+imports work later; no real code yet. (`src/copilot/rag/`, `src/copilot/ml/`, and
+`src/copilot/agents/` have moved to the sections above.)
 
 ---
 
@@ -428,6 +464,7 @@ have moved to the sections above.)
 | `scripts/run_tokenization_lab.py` | `ANTHROPIC_API_KEY` + network | real LLM calls + local tokenizer downloads |
 | `scripts/build_rag_index.py` | network (no API key) | downloads the embedding model, builds `data/chroma/` |
 | `scripts/train_risk_classifier.py` | your real `vw_PortfolioHealth` export (CSV/XLSX) | real RF/XGBoost leaky-vs-safe accuracy/F1 + SHAP drivers, appends to `run_log.csv` |
+| `scripts/run_model_selection_eval.py` | `ANTHROPIC_API_KEY` (every run, not just `--quality`) | real Model Selection Agent runs over the 8-question golden set; `--quality` adds the LLM-judged reasoning check |
 
 ## Tests (`tests/*.py`)
 One test file per module above, named `test_<module>.py` — not documented individually here since

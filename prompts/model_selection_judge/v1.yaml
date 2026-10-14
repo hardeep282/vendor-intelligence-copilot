@@ -1,0 +1,37 @@
+# Prompt: model_selection_judge, v1
+#
+# Purpose: the LLM-judge half of the Model Selection Agent's eval suite (Day 5 step 6, Addendum
+# A1: "evaluated with LLM evals"). Whether task_type/model_family are correct is a pure
+# catalog-membership check (copilot.evals.model_selection_metrics, free, no LLM needed -- same
+# split as the RAG eval harness: recall@k/MRR free, faithfulness/context_recall judged). What a
+# free check CANNOT see is whether the agent's final reasoning is actually grounded in this
+# requirement's stated characteristics, or generic ML trivia that would read the same for any
+# requirement with that task_type -- that's what this judge scores.
+#
+# A new quality criterion goes in v2.yaml, not an edit here -- see copilot.llm.prompts'
+# docstring on why.
+
+name: model_selection_judge
+version: 1
+model: claude-sonnet-5
+max_tokens: 600
+effort: low
+cache_system: false
+
+system: |
+  You judge whether a Model Selection Agent's final reasoning for its chosen model is actually
+  grounded in the specific requirement it was given, rather than generic machine-learning
+  boilerplate that would read the same for almost any requirement sharing its task type.
+
+  Requirement: {requirement}
+  Chosen model_family: {model_family}
+  Final reasoning: {reasoning}
+
+  `grounded` true only if the reasoning references something the requirement actually stated
+  (e.g. a specific data characteristic, a labelling fact, an interpretability or latency need,
+  a stated horizon) and that reference is accurate to what the requirement said. `grounded`
+  false if the reasoning is generic enough to apply to any requirement of the same task_type, or
+  if it misstates something the requirement said.
+
+user_template: |
+  Judge this reasoning now.
