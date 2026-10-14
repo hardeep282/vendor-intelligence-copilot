@@ -1,6 +1,6 @@
 # Project Progress: Vendor Intelligence Copilot
 
-Last updated: Wed 14 Oct 2026 (Day 3 of the 10-day sprint, sprint plan v3, in progress)
+Last updated: Wed 14 Oct 2026 (Day 4 of the 10-day sprint, sprint plan v3, in progress)
 
 ## Sprint status
 
@@ -9,7 +9,7 @@ Last updated: Wed 14 Oct 2026 (Day 3 of the 10-day sprint, sprint plan v3, in pr
 | 1 | Foundations, data, golden set | Build done; repo pushed to GitHub (14 Oct) |
 | 2 | Production skeleton live | Code done and tested. Waiting on you: AWS resources, domain, GitHub variables |
 | 3 | LLM service, text-to-SQL, effort and tokenization labs | Build done: 8 of 9 steps shipped (step 7 skipped, see below) |
-| 4 | RAG and advanced RAG | Not started |
+| 4 | RAG and advanced RAG | In progress: 3 of 7 steps shipped |
 | 5 | ML tools for the agents | Not started |
 | 6 | Multi-agent system in LangGraph | Not started |
 | 7 | Guardian, guardrails, approvals | Not started |
@@ -47,11 +47,23 @@ Step 8 of today's plan is now an **effort lab**: same question, same metrics (ex
 accuracy, grounding, output diversity, latency, cost), `effort` swept across its five values
 instead of 3 temperatures x 5 runs. Full writeup: `docs/adr/005-llm-provider.md`.
 
+## Day 4 checklist (sprint doc v3 D4)
+
+| # | Item | Status |
+|---|---|---|
+| 1 | Knowledge docs + 8-10 synthetic vendor contracts | **Done** -- found already built uncommitted at the start of this chat (`knowledge/`), verified against the live disclosure policy and committed (10 contracts, 4 methodology docs) |
+| 2 | Heading-aware chunking with doc type/vendor/version/data-class/role metadata | **Done** (`copilot.rag.chunking`; 14 docs -> 119 chunks) |
+| 3 | Local sentence-transformers embeddings; Chroma collection with idempotent upserts | **Done** (`copilot.rag.embeddings`, `copilot.rag.store`; real model run needs your machine -- `scripts/build_rag_index.py`) |
+| 4 | Hybrid retrieval: BM25 + vectors fused with RRF; cross-encoder reranker | Not started (reranker is this step's cut-first item) |
+| 5 | Permission filter inside the vector query | Not started |
+| 6 | Corrective RAG loop in LangGraph | Not started |
+| 7 | 20 labelled questions: recall@5, MRR, Ragas | Not started |
+
 ## Results
 
 | Metric | Baseline | Current | Notes |
 |---|---|---|---|
-| Tests passing | 33 | 148 | `uv run pytest -q`; +12 `copilot.llm`, +12 prompts + `InsightService`, +29 SQL validator, +16 schema/examples/text-to-SQL service, +22 evaluators/langsmith_sync, +10 golden v2, +4 effort lab, +5 tokenization lab, +3 evaluator column-name fix |
+| Tests passing | 33 | 184 | `uv run pytest -q`; +12 `copilot.llm`, +12 prompts + `InsightService`, +29 SQL validator, +16 schema/examples/text-to-SQL service, +22 evaluators/langsmith_sync, +10 golden v2, +4 effort lab, +5 tokenization lab, +3 evaluator column-name fix, +10 rag corpus, +9 chunking, +7 embeddings, +10 store |
 | Golden questions | 40 (27 dev, 10 test, 3 adversarial) | 46 (27 dev, 16 test, 3 adversarial) | golden v2 adds the 6 text-to-SQL trap questions from the spec; v1 stays frozen at 40 for history |
 | Execution accuracy, grounding, leakage rate | n/a | evaluators built + tested; no end-to-end run yet | `copilot.evals.evaluators.execution_accuracy`/`leakage_free`, 17 tests pass; running them against real `TextToSqlService` output needs your API key, same as the effort/tokenization labs |
 | SQL validator: structural + semantic + coverage rules | n/a | 29/29 tests pass, 0 false positives on 33 real golden queries | every trap in `docs/specs/text_to_sql_safety.md`'s trap table has a BLOCK test and an ALLOW test |
@@ -61,12 +73,18 @@ instead of 3 temperatures x 5 runs. Full writeup: `docs/adr/005-llm-provider.md`
 | Tokenization lab: provider vs. tiktoken vs. HF, cost/1000 req | n/a | provider 1889.2 tok avg; tiktoken -41.5% (1092.2); HF gpt2 -32.6% (1252.8); $/1000req: $5.28 / $3.68 / $4.01 | run on your machine, 14 Oct; both local tokenizers would make you underestimate the real cost by a third to over 40% |
 | Effort lab real sweep (3 questions x 5 effort levels) | n/a | 2 runs: $0.11408 then $0.11907, exec_acc = 0.67 both times (gq-045 scoring 0 every time, root cause below) | run on your machine, 14 Oct; found and fixed a `max_tokens` truncation case (`text_to_sql` prompt, `800 -> 1500`) **and** a real scoring bug (below) -- `exec_acc` wasn't actually a model problem |
 | `execution_accuracy` scoring bug: required exact column-name match | n/a | fixed + 3 tests | `_row_matches()` compared rows by column-name set, so a correctly-computed answer with a different column alias (e.g. `blended_margin` vs. the golden's `blended_margin_pct`) scored 0 even though the number was right; now compares by value in column order, per the spec ("values, not just row count") |
+| Knowledge corpus (Day 4 step 1) | n/a | 14 docs: 4 methodology-family (public/internal) + 10 synthetic contracts (confidential) | recovered from an uncommitted working-tree state, verified against the live disclosure policy before committing |
+| Chunking (Day 4 step 2) | n/a | 14 docs -> 119 chunks (16-1100 chars, avg 260) | heading-aware, by data_class: confidential 80 / public 31 / internal 8 |
+| Embeddings + Chroma store (Day 4 step 3) | n/a | idempotency verified end to end (119 embedded first run, 0 embedded / 119 unchanged second run against unchanged chunks, via FakeEmbedder + a temp Chroma dir) | real `all-MiniLM-L6-v2` run still needs your machine -- `scripts/build_rag_index.py` |
 
 ## Decisions
 
 ADR-000 prompt corrections · ADR-001 separate repo · ADR-002 licence-safe snapshot ·
-ADR-003 EC2 + Compose runtime · ADR-004 secrets in SSM, OIDC for CI · **ADR-005 (new, 14 Oct):
-direct Anthropic API, not Bedrock, for now -- and the temperature/effort correction above.**
+ADR-003 EC2 + Compose runtime · ADR-004 secrets in SSM, OIDC for CI · ADR-005: direct Anthropic
+API, not Bedrock, for now -- and the temperature/effort correction above. No new ADR yet for
+Day 4 -- the embedding model (local sentence-transformers) and vector store (Chroma) both just
+follow the sprint doc's already-named stack rather than being a real build-vs-buy decision with
+alternatives measured against it.
 
 ## Costs to date
 
@@ -81,17 +99,13 @@ None yet. Target: `https://api.vendor.<domain>/health`.
 
 ## Next step
 
-Me: the effort lab's stuck-at-`0.67` thread is resolved -- the per-question breakdown traced
-it to `gq-045` specifically, and the real cause turned out to be a bug in the evaluator's
-scoring code, not the model's SQL: `execution_accuracy` required an exact column-name match,
-so a correctly-computed answer under a different column alias scored 0 anyway. Fixed and
-tested (148 tests pass); see BUILD_LOG for the full story. A third re-run of
-`scripts/run_effort_lab.py` would now give a real, trustworthy accuracy number, but isn't
-urgent -- the bug is understood and fixed either way. Day 4 (RAG and advanced RAG) is ready
-to start whenever you want to continue the sprint. You: optionally re-run
-`scripts/run_effort_lab.py` once more for a clean number; a real `TextToSqlService` call
-(same pattern as the `InsightService` first-call test) also still hasn't been run if you
-want that logged. Also still open: Docker Desktop install/engine status (Day 2's actual
-`docker build` has not run
-yet), and AWS resources, domain, GitHub variables from
-Day 2.
+Me: continuing Day 4 build -- steps 4-7 next (hybrid BM25+vector retrieval with RRF and a
+cross-encoder reranker, the permission filter inside the vector query, the Corrective RAG loop
+in LangGraph, and the recall@5/MRR/Ragas eval on 20 labelled questions). You: run
+`scripts/build_rag_index.py` on your machine whenever convenient to get the real embedding
+index built (needs no API key, just internet access for the one-time model download) -- not
+blocking, step 4's retrieval-quality work can be developed and tested against FakeEmbedder in
+the meantime, same as the rest of Day 4 so far. Also still open, carried from earlier days and
+not urgent: a third re-run of `scripts/run_effort_lab.py` for a clean accuracy number; a real
+`TextToSqlService` call; Docker Desktop install/engine status (Day 2's actual `docker build`
+has not run yet); AWS resources, domain, GitHub variables from Day 2.

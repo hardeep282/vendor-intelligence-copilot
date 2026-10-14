@@ -453,3 +453,66 @@ False   # same value, different alias -- should have been True
   logged, though not urgent.
 
 **Metrics:** 148 tests pass (+3). ruff and mypy clean across the whole repo.
+
+## 2026-10-14 · Day 4 steps 1-3: knowledge corpus, chunking, embeddings + Chroma store
+
+**Covered:**
+
+- **Found and recovered uncommitted Day 4 step 1.** The working tree at the start of this chat
+  already had a complete, tested knowledge corpus (`knowledge/{data_dictionary,
+  metric_definitions,decision_log,methodology}.md` + 10 synthetic vendor contracts in
+  `knowledge/contracts/`) and `copilot.rag.corpus` (frontmatter + body parser,
+  `check_corpus_against_policy` drift check) with 10 passing tests -- built in an earlier
+  session but never staged or pushed. `docs/PROJECT_PROGRESS.md` and `docs/HANDOFF.md` both
+  said Day 4 was "Not started", which was wrong. Verified the files against the live
+  `policies/disclosure.yaml` and the full check suite before trusting them, then committed as
+  a correction (`5cbf949`) rather than silently redoing the work or leaving it stranded.
+- **Step 2: heading-aware chunking** (`copilot.rag.chunking`). Splits at every Markdown heading
+  (the real semantic boundaries in this hand-curated corpus -- see the module docstring for why
+  fixed-size/semantic chunking were rejected), re-splitting by paragraph with overlap only when
+  one section runs over ~1000 chars. `chunk_id` is stable across re-chunks of unchanged content;
+  `content_hash` is a pure function of chunk text, used by step 3's idempotent upsert.
+- **Step 3: local embeddings + Chroma store** (`copilot.rag.embeddings`, `copilot.rag.store`).
+  `SentenceTransformerEmbedder` wraps the local `all-MiniLM-L6-v2` model (no API key, no
+  per-call cost); `FakeEmbedder` is a deterministic no-network stand-in used by every test.
+  `ChunkStore.upsert` is keyed by `content_hash`, not `chunk_id`, so a full rebuild skips every
+  unchanged chunk. `scripts/build_rag_index.py` runs the real pipeline on your machine (needs
+  no API key, just internet access to the Hugging Face Hub for the model download).
+- Updated `docs/CODE_MAP.md` with the new RAG/Knowledge layer section, per its own standing
+  rule, and moved `src/copilot/rag/` out of the "not yet started" list.
+
+**Mistakes and fixes:**
+
+- First version of `chunking._split_oversized` packed the heading line as if it were just
+  another paragraph, so a single over-long section produced an orphaned chunk containing only
+  its heading, plus a second chunk with the heading duplicated into the content. Caught by a
+  test expecting one chunk for one oversized paragraph, got three. Fixed by splitting the
+  heading line out of the content before packing and re-prefixing it onto every resulting piece.
+- `SentenceTransformerEmbedder`'s dimension-mismatch guard originally checked the loaded model's
+  dimension *after* loading it, which meant the only way to test the guard would have been a
+  real network call to the Hugging Face Hub (blocked in this sandbox). Tested instead by
+  monkeypatching a fake `sentence_transformers` module into `sys.modules`, so the guard logic is
+  covered without ever reaching the network -- and a separate test confirms the real embedder
+  never loads anything on construction, only on the first `embed()` call.
+- `chromadb.EphemeralClient()`'s backing storage turned out to be process-wide, keyed by
+  collection name, not isolated per client instance -- early versions of the store tests all
+  wrote to a collection literally named `"test-collection"` and saw each other's chunks. Fixed
+  by giving every test fixture a unique `uuid4`-suffixed collection name.
+- Several `ruff` findings on the first pass of `store.py`: two bare `assert` statements doing
+  type-narrowing in production code (`S101` -- asserts are for tests, not runtime type guards;
+  replaced with `typing.cast`, since this module is trusted to only read back metadata it wrote
+  itself) and three `zip()` calls without `strict=` (`B905`; added `strict=True` since every one
+  of those pairs must be equal length or something is already wrong upstream).
+
+**Metrics:** 184 tests pass (+36 over the Day 3 handoff's 148: +10 corpus, +9 chunking, +7
+embeddings, +10 store). ruff and mypy (strict) clean across the whole repo. Snapshot rebuilt
+fresh from the public analytics repo's workbook: 126-row vendor tables, 1,400-row vendor-month
+demand, 399-row SKU health mix -- matches the canonical figures, no drift.
+
+**Costs:** $0 -- nothing in Day 4 steps 1-3 calls a paid API; `SentenceTransformerEmbedder` is
+local and free once its weights are downloaded.
+
+**Open:** steps 4-7 of Day 4 (hybrid BM25+vector retrieval with RRF, the permission filter
+inside the vector query, the Corrective RAG loop in LangGraph, and the recall@5/MRR/Ragas eval
+on 20 labelled questions) still ahead. `scripts/build_rag_index.py` has not been run for real
+yet -- needs your machine, per the pattern above.

@@ -195,10 +195,68 @@ The FastAPI HTTP entry point. Day 2 walking skeleton: `/health` says the process
 
 ---
 
+## RAG / Knowledge layer — the Knowledge agent's retrieval stack (Day 4)
+
+### `knowledge/*.md`, `knowledge/contracts/*.md`
+The RAG source corpus, not code: 4 methodology-family docs (data dictionary, metric definitions,
+decision log, methodology — `public`/`internal`) + 10 synthetic vendor supply-agreement summaries
+(`confidential`), each headed `SYNTHETIC` and stating no real contract exists. Every doc opens with
+YAML frontmatter (`doc_type`, `vendor`, `version`, `data_class`, `allowed_roles`).
+**Talks to:** `copilot.rag.corpus` is the only code that reads these.
+
+### `src/copilot/rag/corpus.py`
+Parses every knowledge doc's frontmatter + Markdown body into a typed `KnowledgeDoc`.
+`check_corpus_against_policy()` recomputes each doc's expected `allowed_roles` from the live
+disclosure policy and fails loudly if a doc's hand-authored roles have drifted from it.
+**Takes in:** the `knowledge/` directory.
+**Gives out:** `list[KnowledgeDoc]`.
+**Talks to:** `copilot.guardrails.policy` for `DataClass`/`Role` and the drift check;
+`copilot.rag.chunking` reads its output.
+
+### `src/copilot/rag/chunking.py`
+Splits each `KnowledgeDoc`'s body into `Chunk`s at every Markdown heading (the real semantic
+boundaries in this hand-curated corpus), re-splitting by paragraph (with overlap) only if one
+section runs over ~1000 chars — comfortably under the embedder's truncation point. Carries the
+doc's permission metadata (`data_class`, `allowed_roles`) onto every chunk.
+**Takes in:** `list[KnowledgeDoc]`.
+**Gives out:** `list[Chunk]`, each with a stable `chunk_id` and a `content_hash` of its text.
+**Talks to:** `copilot.rag.store` reads its output; `copilot.rag.corpus` for the input type.
+
+### `src/copilot/rag/embeddings.py`
+`Embedder` protocol + `SentenceTransformerEmbedder` (local `all-MiniLM-L6-v2`, 384-dim, lazy-loaded
+so constructing it never triggers a download) + `FakeEmbedder` (deterministic, no network — used by
+every test in this repo). The real model's weights come from the Hugging Face Hub, which this build
+sandbox's proxy blocks, so the real embedding run is `scripts/build_rag_index.py` on your machine.
+**Takes in:** chunk text (or a query string).
+**Gives out:** one float vector per text.
+**Talks to:** `copilot.rag.store.ChunkStore.upsert`/future retrieval code call `embed()`.
+
+### `src/copilot/rag/store.py`
+`ChunkStore` wraps one Chroma collection (`PersistentClient`, `data/chroma/` — gitignored, same
+never-commit-derived-data rule as the Parquet snapshot). `upsert()` is keyed by each chunk's
+`content_hash`, not its `chunk_id`, so a full corpus rebuild skips every chunk whose text hasn't
+actually changed. `query()` is plain vector search with no permission filter and no BM25 fusion yet
+— step 4 (hybrid retrieval) and step 5 (permission filter, inside the vector query) both wrap this.
+**Takes in:** `list[Chunk]` + an `Embedder` (for `upsert`); a query vector (for `query`).
+**Gives out:** an `UpsertReport` (embedded vs. already-current counts); nearest-chunk tuples.
+**Talks to:** `copilot.rag.embeddings` for vectors; `copilot.guardrails.policy`'s `DataClass`/`Role`
+types for the metadata it stores and reads back.
+
+### `scripts/build_rag_index.py`
+Loads the corpus, checks it against the live disclosure policy, chunks it, embeds with the real
+local model, and upserts into `data/chroma/` — prints how many chunks were actually (re-)embedded
+vs. already up to date.
+**Needs:** nothing but normal internet access (no API key — the model is local and free to run).
+**Talks to:** every `copilot.rag.*` module above, in pipeline order.
+
+---
+
 ## Not yet started (empty package markers only, Day 4+)
-`src/copilot/rag/`, `src/copilot/ml/`, `src/copilot/agents/`, `src/copilot/dl/`, `src/copilot/mcp/`,
-`src/copilot/nlp/`, `src/copilot/extract/`, `src/copilot/observability/`, `src/copilot/ui/` — folders
-exist with an `__init__.py` so imports work later; no real code yet.
+`src/copilot/ml/`, `src/copilot/agents/`, `src/copilot/dl/`, `src/copilot/mcp/`, `src/copilot/nlp/`,
+`src/copilot/extract/`, `src/copilot/observability/`, `src/copilot/ui/` — folders exist with an
+`__init__.py` so imports work later; no real code yet. (`src/copilot/rag/` has moved to the section
+above, steps 4–7 still ahead: hybrid BM25+vector retrieval, the permission filter inside the vector
+query, the Corrective RAG loop, and the recall/MRR/Ragas eval.)
 
 ---
 
@@ -212,6 +270,7 @@ exist with an `__init__.py` so imports work later; no real code yet.
 | `scripts/push_golden_to_langsmith.py` | `LANGSMITH_API_KEY` | syncs the golden set to LangSmith |
 | `scripts/run_effort_lab.py` | `ANTHROPIC_API_KEY` | real LLM calls, effort sweep |
 | `scripts/run_tokenization_lab.py` | `ANTHROPIC_API_KEY` + network | real LLM calls + local tokenizer downloads |
+| `scripts/build_rag_index.py` | network (no API key) | downloads the embedding model, builds `data/chroma/` |
 
 ## Tests (`tests/*.py`)
 One test file per module above, named `test_<module>.py` — not documented individually here since

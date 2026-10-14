@@ -54,3 +54,23 @@ No AWS, Anthropic or LangSmith key was used for any of the above -- step 1's tes
 against a fake SDK (`tests/fakes/anthropic_fakes.py`). Commands that need a real `ANTHROPIC_API_KEY`
 (the effort lab, the tokenization lab, the first InsightService run against the golden set) are
 still to come later in Day 3 and run on your machine with your dev key, per `docs/HANDOFF.md`.
+
+## Day 4 (steps 1-3: knowledge corpus, chunking, embeddings + Chroma store)
+
+| # | What this step does | Command | What each part does | Expected result |
+|---|---|---|---|---|
+| 1 | Rebuild the licence-safe snapshot in a fresh clone | `uv sync` then `uv run python scripts/build_snapshot.py "<path to Vendor_Summary.xlsx>"` | `uv sync` makes `.venv` match the lockfile; the builder re-derives the snapshot (never committed) | 11 table names with row counts |
+| 2 | Add the embeddings and vector-store dependencies | `uv add sentence-transformers chromadb` | Resolves and locks `sentence-transformers` (local embedder), `chromadb` (vector store), and their transitive deps (torch, transformers, onnxruntime) against pinned Python 3.12 | `uv.lock` updated; `+ sentence-transformers==...`, `+ chromadb==...` in the output |
+| 3 | Run every check | `uv run ruff check . && uv run mypy && uv run pytest -q` | lint, strict type-check, tests, in that order | "All checks passed!" / "Success" / "184 passed" |
+| 4 | Build the real RAG index (your machine, not this chat) | `uv run python scripts/build_rag_index.py` | Loads `knowledge/`, chunks it, downloads and runs `all-MiniLM-L6-v2` locally, upserts into `data/chroma/` | First run: N chunks embedded, 0 unchanged. Re-run after no edits: 0 embedded, N unchanged |
+
+Steps 1-3 of Day 4 (the knowledge corpus and chunker in particular) were found already built,
+tested and passing in the working tree at the start of this chat, but had never been committed --
+`docs/PROJECT_PROGRESS.md` and `docs/HANDOFF.md` both said Day 4 was "Not started". Verified
+against the live disclosure policy and committed as a correction rather than rebuilt or left
+stranded; see `docs/BUILD_LOG.md`.
+
+`scripts/build_rag_index.py` needs no API key (the embedding model is local and free to run), but
+its first run downloads ~90MB from the Hugging Face Hub -- huggingface.co is outside this build
+sandbox's proxy allowlist (same wall Day 3 hit for `tiktoken`/HF tokenizer downloads), so this one
+runs on your machine, like the Day 3 effort/tokenization labs.
