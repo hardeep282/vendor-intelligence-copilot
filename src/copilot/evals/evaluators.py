@@ -46,7 +46,18 @@ def _values_match(got: Any, want: Any) -> bool:
 
 
 def _row_matches(got: dict[str, Any], want: dict[str, Any]) -> bool:
-    return set(got) == set(want) and all(_values_match(got[k], want[k]) for k in want)
+    """Compare by VALUE, in column order -- not by column name. The spec defines execution
+    accuracy as "values, not just row count" (docs/specs/text_to_sql_safety.md), and a correct
+    query is free to alias a computed column however it likes (`blended_margin_pct` vs
+    `BlendedMarginPct` vs no alias at all) without being a wrong answer. `run_rows()` builds
+    each row dict from the cursor's column order, and Python dicts preserve insertion order, so
+    `.values()` here is exactly "the columns in SELECT order" for both sides.
+    """
+    got_values = list(got.values())
+    want_values = list(want.values())
+    if len(got_values) != len(want_values):
+        return False
+    return all(_values_match(g, w) for g, w in zip(got_values, want_values, strict=True))
 
 
 def rows_match(

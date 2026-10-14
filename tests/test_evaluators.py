@@ -80,6 +80,22 @@ def test_rows_match_different_lengths():
     assert not rows_match([{"a": 1}], [{"a": 1}, {"a": 2}])
 
 
+def test_rows_match_ignores_column_name_when_value_is_right():
+    # A correct query can alias a computed column however it likes -- the spec defines
+    # execution accuracy as "values, not just row count" (docs/specs/text_to_sql_safety.md),
+    # not an exact column-name match. Caught for real on 14 Oct: a model wrote correct SQL for
+    # the margin trap question but scored 0 anyway because its alias didn't match the golden's.
+    assert rows_match([{"BlendedMarginPct": 28.72}], [{"blended_margin_pct": 28.72}])
+
+
+def test_rows_match_still_fails_on_wrong_value_regardless_of_column_name():
+    assert not rows_match([{"BlendedMarginPct": 5.31}], [{"blended_margin_pct": 28.72}])
+
+
+def test_rows_match_fails_when_row_has_a_different_number_of_columns():
+    assert not rows_match([{"a": 1, "b": 2}], [{"a": 1}])
+
+
 def test_rows_match_both_none_is_a_match():
     assert rows_match(None, None)
 

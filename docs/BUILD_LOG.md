@@ -412,10 +412,44 @@ generator, stays skipped per the sprint doc's own "likely cut" flag).
   question failing every time behind an unchanging-looking number) -- next real run will
   show exactly which question is wrong and whether the `max_tokens` fix resolved it.
 
-**Open:** the `max_tokens` fix and the per-question breakdown are both unverified against
-real behaviour yet -- next step is you re-running `scripts/run_effort_lab.py` (same ~$0.11)
-so we can see, per question, whether `exec_acc` is still stuck and which question it is.
-
 **Metrics:** 145 tests pass still (no new tests this entry -- the changes are a prompt
 constant and a print statement, both exercised by the real run above rather than new unit
 tests). ruff and mypy clean.
+
+## 2026-10-14 · Real bug found: execution_accuracy required an exact column-name match
+
+**Covered:** you re-ran `scripts/run_effort_lab.py` after the `max_tokens` fix above (15
+calls, $0.11907). The `max_tokens` fix worked -- no more truncation/repair warnings -- but
+`gq-045` (the blended-margin trap question) still scored `exec_acc = 0.00` at every effort
+level, while `gq-001` and `gq-042` scored `1.00` every time. The per-question breakdown
+(added in the previous entry) made this visible: `gq-045`'s SQL was
+`SELECT ROUND(100 * SUM(TotalGrossProfit) / SUM(TotalRevenue) ...` -- correct, the same ratio
+the golden answer uses, just with its own column alias instead of the golden's
+`blended_margin_pct`.
+
+The real bug was in `_row_matches()` (`copilot.evals.evaluators`, written Day 3 step 6):
+it required `set(got) == set(want)` -- the *column names* had to match exactly, not just the
+values. The spec this evaluator is supposed to implement
+(`docs/specs/text_to_sql_safety.md`: "result-set match against the golden `expected_rows`
+(**values**, not just row count)") never says column names must match, and a correct SQL
+query is free to alias a computed column however it likes. Confirmed locally (no API call
+needed) before touching any code:
+```python
+>>> rows_match([{"blended_margin": 28.72}], [{"blended_margin_pct": 28.72}])
+False   # same value, different alias -- should have been True
+```
+
+**Mistakes and fixes:**
+- `_row_matches()` now compares **values in column order**, not by column-name set --
+  `run_rows()` builds each row dict from the cursor's column order and Python dicts preserve
+  insertion order, so `.values()` on both sides is exactly "the columns in SELECT order."
+  Row-length mismatch (different number of columns) still correctly fails, since that's a
+  real shape difference, not an aliasing difference. 3 new tests added, including one that
+  reproduces the exact 14 Oct failure (`blended_margin` vs. `blended_margin_pct`, same value)
+  and one guarding that a genuinely wrong value still fails regardless of its column name.
+- This was a scoring-harness bug, not a text-to-SQL bug -- the effort lab's `exec_acc = 0.67`
+  was an artifact of the eval code being wrong, not of the model answering wrong. Worth
+  re-running `scripts/run_effort_lab.py` once more to get a real (fixed) accuracy number
+  logged, though not urgent.
+
+**Metrics:** 148 tests pass (+3). ruff and mypy clean across the whole repo.

@@ -51,7 +51,7 @@ instead of 3 temperatures x 5 runs. Full writeup: `docs/adr/005-llm-provider.md`
 
 | Metric | Baseline | Current | Notes |
 |---|---|---|---|
-| Tests passing | 33 | 145 | `uv run pytest -q`; +12 `copilot.llm`, +12 prompts + `InsightService`, +29 SQL validator, +16 schema/examples/text-to-SQL service, +22 evaluators/langsmith_sync, +10 golden v2, +4 effort lab, +5 tokenization lab |
+| Tests passing | 33 | 148 | `uv run pytest -q`; +12 `copilot.llm`, +12 prompts + `InsightService`, +29 SQL validator, +16 schema/examples/text-to-SQL service, +22 evaluators/langsmith_sync, +10 golden v2, +4 effort lab, +5 tokenization lab, +3 evaluator column-name fix |
 | Golden questions | 40 (27 dev, 10 test, 3 adversarial) | 46 (27 dev, 16 test, 3 adversarial) | golden v2 adds the 6 text-to-SQL trap questions from the spec; v1 stays frozen at 40 for history |
 | Execution accuracy, grounding, leakage rate | n/a | evaluators built + tested; no end-to-end run yet | `copilot.evals.evaluators.execution_accuracy`/`leakage_free`, 17 tests pass; running them against real `TextToSqlService` output needs your API key, same as the effort/tokenization labs |
 | SQL validator: structural + semantic + coverage rules | n/a | 29/29 tests pass, 0 false positives on 33 real golden queries | every trap in `docs/specs/text_to_sql_safety.md`'s trap table has a BLOCK test and an ALLOW test |
@@ -59,7 +59,8 @@ instead of 3 temperatures x 5 runs. Full writeup: `docs/adr/005-llm-provider.md`
 | LLM client: retries, repair loop, caching, no-temperature guard | n/a | Tested | against a fake SDK, no API key used (`tests/test_llm_client.py`) |
 | First real LLM call (`InsightService`, DIAGEO, viewer role) | n/a | $0.01127, 7.31s, 1 attempt, 0 repairs | run on your machine, 14 Oct; caught and fixed a `max_tokens` truncation bug (see BUILD_LOG) |
 | Tokenization lab: provider vs. tiktoken vs. HF, cost/1000 req | n/a | provider 1889.2 tok avg; tiktoken -41.5% (1092.2); HF gpt2 -32.6% (1252.8); $/1000req: $5.28 / $3.68 / $4.01 | run on your machine, 14 Oct; both local tokenizers would make you underestimate the real cost by a third to over 40% |
-| Effort lab real sweep (3 questions x 5 effort levels) | n/a | $0.11408 total; exec_acc = 0.67 at every effort level (same question failing each time -- being investigated) | run on your machine, 14 Oct; caught a second `max_tokens`-truncation case (`text_to_sql` prompt, `800 -> 1500`), same bug shape as the InsightService one above |
+| Effort lab real sweep (3 questions x 5 effort levels) | n/a | 2 runs: $0.11408 then $0.11907, exec_acc = 0.67 both times (gq-045 scoring 0 every time, root cause below) | run on your machine, 14 Oct; found and fixed a `max_tokens` truncation case (`text_to_sql` prompt, `800 -> 1500`) **and** a real scoring bug (below) -- `exec_acc` wasn't actually a model problem |
+| `execution_accuracy` scoring bug: required exact column-name match | n/a | fixed + 3 tests | `_row_matches()` compared rows by column-name set, so a correctly-computed answer with a different column alias (e.g. `blended_margin` vs. the golden's `blended_margin_pct`) scored 0 even though the number was right; now compares by value in column order, per the spec ("values, not just row count") |
 
 ## Decisions
 
@@ -80,19 +81,17 @@ None yet. Target: `https://api.vendor.<domain>/health`.
 
 ## Next step
 
-Me: one open thread from today's real runs -- the effort lab's `exec_acc` came back `0.67`
-at every effort level (identical 5 times), which points at one specific question failing
-every time rather than randomness. Already fixed one likely cause (`text_to_sql` prompt's
-`max_tokens` was `800`, too tight at higher effort -- raised to `1500`, same bug shape as the
-`vendor_insight` fix on 13 Oct) and added a per-question breakdown to
-`scripts/run_effort_lab.py`'s output so the next run names the exact question. Waiting on
-you to re-run it (same ~$0.11) so we can confirm the fix and see which question it was.
-After that: Day 4 (RAG and advanced RAG) whenever you're ready to continue the sprint.
-You: `git pull`, then `uv run python scripts/run_effort_lab.py` again and paste back the new
-per-question table. Two scripts from the previous batch are still outstanding too --
-`scripts/push_golden_to_langsmith.py` and `scripts/run_tokenization_lab.py` are both done
-(results logged above); only a real `TextToSqlService` call (same pattern as the
-`InsightService` first-call test) hasn't been run yet, if you want that logged too. Also
-still open: Docker Desktop install/engine status (Day 2's actual `docker build` has not run
+Me: the effort lab's stuck-at-`0.67` thread is resolved -- the per-question breakdown traced
+it to `gq-045` specifically, and the real cause turned out to be a bug in the evaluator's
+scoring code, not the model's SQL: `execution_accuracy` required an exact column-name match,
+so a correctly-computed answer under a different column alias scored 0 anyway. Fixed and
+tested (148 tests pass); see BUILD_LOG for the full story. A third re-run of
+`scripts/run_effort_lab.py` would now give a real, trustworthy accuracy number, but isn't
+urgent -- the bug is understood and fixed either way. Day 4 (RAG and advanced RAG) is ready
+to start whenever you want to continue the sprint. You: optionally re-run
+`scripts/run_effort_lab.py` once more for a clean number; a real `TextToSqlService` call
+(same pattern as the `InsightService` first-call test) also still hasn't been run if you
+want that logged. Also still open: Docker Desktop install/engine status (Day 2's actual
+`docker build` has not run
 yet), and AWS resources, domain, GitHub variables from
 Day 2.
