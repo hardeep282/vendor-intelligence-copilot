@@ -7,6 +7,7 @@ requires-python = ">=3.12"
 dependencies = [
     "anthropic>=0.75.0",
     "boto3>=1.43.112",
+    "chromadb>=1.5.9",
     "duckdb",
     "fastapi>=0.143.0",
     "langsmith>=0.3.0",
@@ -15,6 +16,7 @@ dependencies = [
     "pydantic",
     "pydantic-settings",
     "pyyaml",
+    "sentence-transformers>=6.1.0",
     "sqlglot>=27.0.0",
     "tenacity>=9.0.0",
     "tiktoken>=0.9.0",

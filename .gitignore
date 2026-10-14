@@ -16,6 +16,9 @@ __pycache__/
 data/snapshot/*.parquet
 data/snapshot/*.duckdb
 data/private/
+# Chroma vector store: rebuilt locally by scripts/build_rag_index.py from knowledge/, same
+# never-commit-derived-data rule as the snapshot above.
+data/chroma/
 *.xlsx
 *.csv
 
