@@ -186,6 +186,57 @@ def _check_semantics(statement: exp.Expression, rules: SqlRules) -> list[Violati
     return violations
 
 
+_COVERAGE_COLUMNS = {"salesyear": "years", "salesmonth": "months"}
+
+
+def _literal_ints(node: exp.Expression) -> list[int] | None:
+    """Integer value(s) a literal or a tuple of literals holds, or None if it isn't one."""
+    if isinstance(node, exp.Literal) and node.is_int:
+        return [int(node.this)]
+    if isinstance(node, exp.Tuple):
+        values = [_literal_ints(e) for e in node.expressions]
+        if all(v is not None for v in values):
+            return [n for v in values for n in (v or [])]
+    return None
+
+
+def _check_coverage(statement: exp.Expression, rules: SqlRules) -> list[Violation]:
+    """Layer 3: a filter entirely outside the data's actual year/month range would silently
+    return 0 rows -- catch that before execution rather than let an empty result pass as
+    a real answer (docs/specs/text_to_sql_safety.md's "data coverage" trap)."""
+    violations: list[Violation] = []
+    for comparison in statement.find_all(exp.EQ, exp.In, exp.Between):
+        column = next(
+            (c for c in comparison.find_all(exp.Column) if c.name.lower() in _COVERAGE_COLUMNS),
+            None,
+        )
+        if column is None:
+            continue
+        allowed = set(rules.data_coverage[_COVERAGE_COLUMNS[column.name.lower()]])
+
+        if isinstance(comparison, exp.EQ):
+            other = comparison.right if comparison.left is column else comparison.left
+            queried = _literal_ints(cast("exp.Expression", other))
+        elif isinstance(comparison, exp.In):
+            queried = _literal_ints(exp.Tuple(expressions=comparison.args.get("expressions", [])))
+        else:  # exp.Between
+            lo, hi = _literal_ints(comparison.args["low"]), _literal_ints(comparison.args["high"])
+            queried = list(range(lo[0], hi[0] + 1)) if lo and hi and lo[0] <= hi[0] else None
+
+        if queried and not (set(queried) & allowed):
+            violations.append(
+                Violation(
+                    code="sql_coverage_out_of_range",
+                    message=(
+                        f"'{comparison.sql()}' filters {column.name} to {sorted(set(queried))}, "
+                        f"entirely outside the data's coverage ({sorted(allowed)}) -- this would "
+                        "return 0 rows, not a real answer; say the data doesn't cover this instead"
+                    ),
+                )
+            )
+    return violations
+
+
 def _apply_limit(statement: exp.Expression) -> tuple[exp.Expression, bool]:
     """Cap (or inject) LIMIT at MAX_LIMIT. Returns the possibly-modified statement and whether
     the cap actually changed anything, so the caller can tell the person their result was capped."""
@@ -253,6 +304,10 @@ def validate(
         return ValidationResult(ok=False, sql=sql, violations=violations)
 
     violations = _check_semantics(statement, rules)
+    if violations:
+        return ValidationResult(ok=False, sql=sql, violations=violations)
+
+    violations = _check_coverage(statement, rules)
     if violations:
         return ValidationResult(ok=False, sql=sql, violations=violations)
 

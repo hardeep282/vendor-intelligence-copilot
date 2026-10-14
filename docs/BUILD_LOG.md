@@ -211,3 +211,45 @@ correct form is allowed" test so the rule doesn't over-block.
   the one point the value is actually used, rather than loosening every helper's signature.
 
 **Metrics:** 82 tests pass (+23 for the validator: 59 -> 82). ruff and mypy clean.
+
+## 2026-10-14 · Day 3, step 4 · Text-to-SQL: schema linking, retrieved examples, self-correction
+
+**Covered:** `copilot.sql.service.TextToSqlService.answer(question, role)` -- one business
+question in, either real rows or an explicit abstention out. Three new pieces feed it:
+
+- **`copilot.sql.schema`** builds the prompt's schema card straight from
+  `data/snapshot/MANIFEST.json` (the real column list) filtered through `disclosure.yaml`'s
+  role rules -- a viewer is never even shown a table it can't read, so the model can't write
+  SQL against it in the first place. `MeetsMinK` (our own bookkeeping column) is stripped.
+- **`copilot.sql.examples`** retrieves the 3 most lexically similar question/SQL pairs from
+  the 40-question golden set (Jaccard overlap on tokens, no embeddings -- 40 rows doesn't
+  justify a vector index) to show as few-shot examples, restricted to a role no more
+  privileged than the caller's so an example never teaches a viewer an analyst-only query shape.
+- **`copilot.sql.service`** wires the schema card + examples + the data-coverage rules into
+  `prompts/text_to_sql/v1.yaml`, asks for forced structured output (`sql`, `assumptions`,
+  `abstain_reason`), and runs the result through `copilot.sql.validator.validate()` before
+  ever executing it. A rejected query's exact violation codes are fed back as the next user
+  turn (layer 4, "self-correction"); after `MAX_SELF_CORRECTIONS = 2` failed retries the
+  service abstains with the last violation instead of ever running unsafe or wrong-shaped SQL.
+
+Added a sixth layer to the validator while building this (layer 3, "data coverage" in the
+spec): `_check_coverage()` catches an `=`/`IN`/`BETWEEN` filter on `SalesYear`/`SalesMonth`
+that falls entirely outside what the data covers (2024, months 1-12) -- the exact "what was
+revenue in Q1 2025" trap from the spec's trap table -- before it can silently return 0 rows.
+
+**Verification, not just unit tests:** ran `validate()` against all 33 real SQL-bearing golden
+questions (role and SQL exactly as recorded in `evals/datasets/golden_v1.jsonl`) -- **0 false
+positives**: every already-correct, already-verified golden query still passes every layer.
+Also ran `build_schema_card()`/`retrieve_examples()` against the real snapshot and golden set
+(no LLM call) to confirm the wiring works outside the test fakes, not just inside them.
+
+**Mistakes and fixes:**
+- Same mypy pattern as `InsightService`: `LLMClient.structured()`'s generic return type
+  (`tuple[T, CallMetrics]`) didn't narrow to `tuple[SqlGeneration, CallMetrics]` automatically.
+  Same fix -- `cast()` at the one call site.
+- `_check_coverage()`'s first draft only handled `=`. Extended to `IN` and `BETWEEN` once the
+  "2025 and 2026" / range-filter cases were written as tests, so a model that wrote
+  `SalesYear IN (2025, 2026)` or `BETWEEN 2025 AND 2026` wouldn't slip past an `=`-only check.
+
+**Metrics:** 104 tests pass (+22 from step 5's 82: +6 coverage-layer validator tests, +5
+schema, +7 examples, +4 service). ruff and mypy clean across the whole repo.

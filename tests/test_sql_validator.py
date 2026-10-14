@@ -181,3 +181,47 @@ def test_non_select_root_is_rejected(policy, rules):
     result = validate("INSERT INTO vendor_revenue_summary VALUES (1)", "analyst", policy, rules)
     assert not result.ok
     assert result.violations[0].code in {"sql_root_not_select", "sql_statement_not_allowed"}
+
+
+# -- Layer 3: data coverage ------------------------------------------------------------------
+
+
+def test_blocks_filter_entirely_outside_coverage(policy, rules):
+    sql = "SELECT SUM(MonthlyRevenue) FROM vendor_monthly_demand WHERE SalesYear = 2025"
+    result = validate(sql, "analyst", policy, rules)
+    assert not result.ok
+    assert result.violations[0].code == "sql_coverage_out_of_range"
+
+
+def test_allows_filter_inside_coverage(policy, rules):
+    sql = "SELECT SUM(MonthlyRevenue) FROM vendor_monthly_demand WHERE SalesYear = 2024"
+    result = validate(sql, "analyst", policy, rules)
+    assert result.ok
+
+
+def test_blocks_in_list_entirely_outside_coverage(policy, rules):
+    sql = "SELECT * FROM vendor_monthly_demand WHERE SalesYear IN (2025, 2026)"
+    result = validate(sql, "analyst", policy, rules)
+    assert not result.ok
+    assert result.violations[0].code == "sql_coverage_out_of_range"
+
+
+def test_allows_in_list_partially_inside_coverage(policy, rules):
+    # Partial overlap: 2024 is real, 2025 just returns nothing for that half -- not a trap.
+    sql = "SELECT * FROM vendor_monthly_demand WHERE SalesYear IN (2024, 2025)"
+    result = validate(sql, "analyst", policy, rules)
+    assert result.ok
+
+
+def test_blocks_month_filter_outside_coverage(policy, rules):
+    sql = "SELECT * FROM vendor_monthly_demand WHERE SalesMonth = 13"
+    result = validate(sql, "analyst", policy, rules)
+    assert not result.ok
+    assert result.violations[0].code == "sql_coverage_out_of_range"
+
+
+def test_blocks_between_range_entirely_outside_coverage(policy, rules):
+    sql = "SELECT * FROM vendor_monthly_demand WHERE SalesYear BETWEEN 2025 AND 2026"
+    result = validate(sql, "analyst", policy, rules)
+    assert not result.ok
+    assert result.violations[0].code == "sql_coverage_out_of_range"
