@@ -142,3 +142,17 @@ No new "run on your machine" item from this step -- unlike every earlier day, bo
 tool and the inventory tools compute real, final numbers in this session, because
 `portfolio_monthly_demand`/`vendor_monthly_demand` are already licence-safe aggregates (no API
 key or raw SKU data needed, just the snapshot already built in step 2).
+
+## Day 5 (steps 2-3 & 5: SKU risk classifier + CSV run-log)
+
+| # | What this step does | Command | What each part does | Expected result |
+|---|---|---|---|---|
+| 1 | Run every check | `uv run ruff check . && uv run mypy && uv run pytest -q` | lint, strict type-check, tests, in that order | "All checks passed!" / "Success, no issues" / "285 passed" |
+| 2 | Compare leaky vs. leakage-safe models, on synthetic data (no API key, no real SKU data) | `uv run python -c "from copilot.ml.risk_classifier import make_synthetic_skus, compare_models; df = make_synthetic_skus(n=2000, seed=42); [print(k, v.accuracy, v.f1) for k, v in compare_models(df).items()]"` | Builds the synthetic fixture and runs all 4 combinations (RF/XGBoost x leaky/safe) on one split | leaky accuracy/F1 higher than safe for both model families (RF ~0.834/0.291 -> ~0.820/0.211; XGBoost ~0.898/0.667 -> ~0.886/0.596) |
+| 3 | Real run against your own `vw_PortfolioHealth` export | `uv run python scripts/train_risk_classifier.py path/to/export.csv` | Loads your real export, derives `is_at_risk` from `HealthStatus`, runs `compare_models()`, prints the leaky-vs-safe differential + top SHAP drivers, appends every result to `run_log.csv` | Real accuracy/F1 numbers to replace the synthetic ones quoted in `docs/BUILD_LOG.md`/`docs/PROJECT_PROGRESS.md` |
+| 4 | Inspect the run-log | `cat run_log.csv` (or open in Excel/pandas) | Plain CSV, one row per tool call, `params`/`metrics` JSON-encoded into single cells | A row per `forecast_demand`/`compute_inventory_plan`/`classify_sku_risk` call made with `copilot.ml.run_log`'s `log_*_run()` builders |
+
+No new dependency from this step -- `scikit-learn`/`shap`/`xgboost` were already added in the
+steps-1-&-4 commit; only new `[[tool.mypy.overrides]]` entries for `shap`/`sklearn.*` (no inline
+types for the pinned versions). `scripts/train_risk_classifier.py` is the "run on your machine"
+item for steps 2-3, same never-in-chat convention as every other real-data script.

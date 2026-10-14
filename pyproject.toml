@@ -87,6 +87,12 @@ ignore_missing_imports = true
 module = ["statsforecast.*", "xgboost.*"]
 ignore_missing_imports = true
 
+[[tool.mypy.overrides]]
+# shap and this scikit-learn version ship no py.typed marker either -- same reasoning as
+# statsforecast/xgboost above: a large surface, a handful of calls, not worth hand-stubbing.
+module = ["shap", "sklearn.*"]
+ignore_missing_imports = true
+
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 pythonpath = ["src"]

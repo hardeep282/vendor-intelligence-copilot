@@ -373,6 +373,39 @@ ordering and holding costs) or a `ForecastResult` via `demand_stats_from_backtes
 **Talks to:** `copilot.ml.forecast` (`ForecastResult`), `scipy.stats.norm` (service level ->
 z-score). Will be a LangGraph tool for the Inventory Planning agent (Day 6).
 
+### `src/copilot/ml/risk_classifier.py` — `classify_sku_risk` (Random Forest + XGBoost) *(day: 5, isNew: true)*
+SKU risk classifier for ADR-000 item 1: predicts `is_at_risk` (HealthStatus `Loss Making`/
+`At Risk`) from operational features, leaking-feature-excluded by construction. `LEAKING_FEATURES`
+excludes `ProfitMargin`/`MarkupPct`/`NetMarginAfterExcisePct` (the real view's margin family that
+produces the label) **and** `SalesToPurchaseRatio` -- confirmed algebraically equal to
+`StockTurnover * (1 + MarkupPct)`, so it re-derives `ProfitMargin` even though it isn't itself a
+raw margin column; found by running the leaky/safe comparison and seeing it dominate the safe
+model's SHAP drivers when left in. `make_synthetic_skus()` builds a fixture from one shared latent
+"SKU health" factor `z`, with `ProfitMargin` thresholded directly (plus 3% label noise) so the
+leakage story is real, not just labelled -- real per-SKU data stays out of this repo (licence
+guard; `docs/RAID.md` R1).
+**Takes in:** a SKU-row DataFrame with `vw_PortfolioHealth` column names + `HealthStatus`.
+**Gives out:** `ClassifierResult` -- accuracy, F1, calibration curve, and (Random Forest only)
+SHAP-ranked top drivers; `compare_models()` runs all 4 combinations (RF/XGBoost x leaky/safe) on
+one split.
+**Talks to:** `sklearn.ensemble.RandomForestClassifier`, `xgboost.XGBClassifier`,
+`shap.TreeExplainer`. Will be a LangGraph tool for the Forecasting & Risk agent (Day 6).
+**Real-data run:** `scripts/train_risk_classifier.py` on your own `vw_PortfolioHealth` export --
+this module's own numbers (synthetic fixture, n=2000) are RF accuracy 0.834->0.820 / F1
+0.291->0.211 and XGBoost accuracy 0.898->0.886 / F1 0.667->0.596 (leaky -> leakage-safe); the
+direction (leakage inflates both) is the real finding, the exact figures are not — synthetic data.
+
+### `src/copilot/ml/run_log.py` *(day: 5, isNew: true)*
+CSV run-log for all three ML tools -- MLflow was cut-first per the sprint doc; this is the
+plain-CSV replacement. One `log_*_run()` builder per tool flattens its result into a flat
+`RunLogEntry` row (`params`/`metrics` JSON-encoded into single cells) and appends it, writing the
+header on first use.
+**Takes in:** a `ForecastResult` / `InventoryPlan` / `ClassifierResult` + a CSV path.
+**Gives out:** nothing returned to the caller beyond the `RunLogEntry` written; the file itself is
+the record.
+**Talks to:** `copilot.ml.forecast`, `copilot.ml.inventory`, `copilot.ml.risk_classifier` (reads
+each one's result type); `scripts/train_risk_classifier.py` calls `log_classifier_run()`.
+
 ---
 
 ## Not yet started (empty package markers only)
@@ -394,6 +427,7 @@ have moved to the sections above.)
 | `scripts/run_effort_lab.py` | `ANTHROPIC_API_KEY` | real LLM calls, effort sweep |
 | `scripts/run_tokenization_lab.py` | `ANTHROPIC_API_KEY` + network | real LLM calls + local tokenizer downloads |
 | `scripts/build_rag_index.py` | network (no API key) | downloads the embedding model, builds `data/chroma/` |
+| `scripts/train_risk_classifier.py` | your real `vw_PortfolioHealth` export (CSV/XLSX) | real RF/XGBoost leaky-vs-safe accuracy/F1 + SHAP drivers, appends to `run_log.csv` |
 
 ## Tests (`tests/*.py`)
 One test file per module above, named `test_<module>.py` — not documented individually here since

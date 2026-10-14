@@ -895,3 +895,84 @@ already-cloned analytics repo and `uv sync`'s package downloads.
 
 **Open:** steps 2-3 (risk classifier + XGBoost comparison) and step 6 (Model Selection Agent)
 still ahead for Day 5.
+
+## 2026-10-14 · Day 5 steps 2-3 & 5 · SKU risk classifier + CSV run-log
+
+**Covered:** `copilot.ml.risk_classifier` -- Random Forest + XGBoost SKU risk classifier,
+leakage-safe by construction, with calibration curve + SHAP top drivers; `copilot.ml.run_log` --
+the CSV run-log (step 5; MLflow cut-first per sprint doc); `scripts/train_risk_classifier.py` for
+the real `vw_PortfolioHealth` export, same never-in-chat convention as the other real-data
+scripts.
+
+**The leakage story, and the bug that initially hid it:** ADR-000 item 1 names `ProfitMargin` as
+a leak -- the real view derives `HealthStatus` from a bucketed `ProfitMargin`, so a model that
+sees `ProfitMargin` is reading the label-generating rule back off the number, not predicting
+anything. `LEAKING_FEATURES` excludes it plus `MarkupPct`/`NetMarginAfterExcisePct` (same margin
+family) for the "leakage-safe" feature set.
+
+First two synthetic-data attempts produced **no accuracy/F1 difference at all** between the
+leaky and safe fits -- the whole point of this module's docstring story wasn't showing up:
+1. First fixture labelled `at_risk` via `(profit_margin < 0.08) | (stock_turnover < 0.5)`.
+   `StockTurnover` (always in the "safe" set) alone was already near-perfectly predictive
+   through its direct presence in the OR, completely overshadowing any margin-specific signal.
+   Fixed by rebuilding the fixture around one shared latent "SKU health" factor `z`, with
+   `ProfitMargin` carrying `z` plus its own idiosyncratic noise and the label thresholded
+   *directly and only* on that noisy margin value (plus 3% label-flip noise) -- removing
+   `StockTurnover` from the label rule entirely.
+2. Leaky and safe fits were **still identical** after that rebuild. Root cause: `ActualPrice =
+   PurchasePrice / (1 - ProfitMargin)` is an exact algebraic function of `ProfitMargin`, and
+   `SalesToPurchaseRatio = TotalSalesDollars / TotalPurchaseDollars` reduces (once
+   `TotalSalesQty ~= TotalPurchaseQty * StockTurnover` is substituted in) to
+   `StockTurnover * (1 + MarkupPct)` -- a near-exact proxy for `ProfitMargin` that was sitting in
+   `NUMERIC_FEATURES` but not in `LEAKING_FEATURES`, so it was present in *both* the leaky and
+   "safe" feature sets and fully substituted for the excluded column. Fixed by adding
+   `SalesToPurchaseRatio` to `LEAKING_FEATURES`. Confirmed by re-running the comparison: RF
+   accuracy 0.834 -> 0.820, F1 0.291 -> 0.211; XGBoost accuracy 0.898 -> 0.886, F1 0.667 -> 0.596
+   (leaky -> leakage-safe) -- a real, directionally-correct differential, and the safe model's
+   SHAP drivers no longer include any margin proxy by name.
+
+**Why this matters beyond this one fixture:** a feature excluded from a model's *literal* column
+list can still leak the excluded signal back in through an algebraic combination of columns that
+individually look unrelated to it. "Not in the leaky list" isn't sufficient; the feature actually
+has to be checked for reconstructing the excluded one, which is why this got caught by running
+the comparison and inspecting SHAP drivers rather than by code review alone.
+
+**Also caught along the way:** SHAP's return shape for a binary `RandomForestClassifier`
+differs by `shap`/`sklearn` version -- some combinations return a `list` of per-class arrays,
+this pinned combination (`shap==0.53.0`, `sklearn==1.9.1`) returns one 3D
+`(n_samples, n_features, n_classes)` array instead. Confirmed by direct inspection before fixing;
+`train_and_evaluate()` now dispatches on both shapes so a future `shap` upgrade doesn't silently
+break SHAP output.
+
+**New dependency surface:** no new packages (scikit-learn/shap/xgboost were already added in
+the steps-1-&-4 commit); added `[[tool.mypy.overrides]]` for `shap` and `sklearn.*`, which ship
+no inline types for the pinned versions -- same `ignore_missing_imports` reasoning already on
+record for `rank_bm25`/`scipy.stats`/`statsforecast`/`xgboost`.
+
+**CSV run-log (step 5):** `copilot.ml.run_log.append_run_log()` appends one flat row per tool
+call (`timestamp`, `tool`, `model`, JSON-encoded `params`/`metrics`) to a plain CSV, writing the
+header on first use. One `log_*_run()` builder per ML tool. Deliberately not MLflow or a
+database -- three tools called a handful of times a day don't need a tracking server; a CSV
+`pandas.read_csv` or Excel opens directly is the honest-sized tool. `run_log.csv` is covered by
+the existing blanket `*.csv` gitignore rule.
+
+**Real-data script:** `scripts/train_risk_classifier.py` loads a CSV/XLSX export with the real
+`vw_PortfolioHealth` column names, derives `is_at_risk` from `HealthStatus`, runs
+`compare_models()`, prints the leaky-vs-safe differential and top SHAP drivers, and appends every
+result to a run-log CSV. Smoke-tested in this sitting against a synthetic CSV (not the real
+sheet, which never enters this session) to confirm the CLI, column-validation, and run-log wiring
+all work end to end.
+
+Updated `docs/CODE_MAP.md`: new entries for `copilot.ml.risk_classifier` and `copilot.ml.run_log`
+in the "ML tools" section, and `scripts/train_risk_classifier.py` added to the "scripts you run
+on your own machine" table.
+
+Tests (18 new: 12 in `tests/test_ml_risk_classifier.py`, 6 in `tests/test_ml_run_log.py`).
+
+**Metrics:** 285 tests pass (was 267). ruff and mypy (strict) clean across the whole repo
+(61 source files, up from 58).
+
+**Costs:** $0 -- synthetic fixture only, no LLM call, no API key, no network access beyond
+`uv sync`'s package downloads (none needed this sitting -- no new dependencies).
+
+**Open:** step 6 (Model Selection Agent, Addendum A1) is the only Day 5 item left.

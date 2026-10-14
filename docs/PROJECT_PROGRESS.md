@@ -1,6 +1,7 @@
 # Project Progress: Vendor Intelligence Copilot
 
-Last updated: Wed 14 Oct 2026 (Day 5 of the 10-day sprint, sprint plan v3, in progress)
+Last updated: Wed 14 Oct 2026 (Day 5 of the 10-day sprint, sprint plan v3, in progress -- steps
+1-5 of 6 shipped; step 6 (Model Selection Agent) ahead)
 
 ## Sprint status
 
@@ -10,7 +11,7 @@ Last updated: Wed 14 Oct 2026 (Day 5 of the 10-day sprint, sprint plan v3, in pr
 | 2 | Production skeleton live | Code done and tested. Waiting on you: AWS resources, domain, GitHub variables |
 | 3 | LLM service, text-to-SQL, effort and tokenization labs | Build done: 8 of 9 steps shipped (step 7 skipped, see below) |
 | 4 | RAG and advanced RAG | Build done: 7 of 7 steps shipped |
-| 5 | ML tools for the agents | Build in progress: steps 1 & 4 of 6 shipped |
+| 5 | ML tools for the agents | Build in progress: steps 1, 2, 3, 4, 5 of 6 shipped |
 | 6 | Multi-agent system in LangGraph | Not started |
 | 7 | Guardian, guardrails, approvals | Not started |
 | 8 | Product, API keys, latency budget, evals in CI, release v0.1 | Not started |
@@ -77,10 +78,10 @@ later as a third stage without changing `copilot.rag.retrieval`'s contract.
 | # | Item | Status |
 |---|---|---|
 | 1 | Forecast tool: ETS vs naive, WAPE/MASE/bias on a rolling backtest | **Done, real numbers run in this sitting** (`copilot.ml.forecast`, `copilot.ml.metrics`) -- see below |
-| 2 | SKU risk classifier: sklearn Pipeline (Random Forest), leakage-safe features, calibration, SHAP | Not started |
-| 3 | XGBoost comparison on the same split | Not started |
+| 2 | SKU risk classifier: sklearn Pipeline (Random Forest), leakage-safe features, calibration, SHAP | **Done, synthetic fixture run in this sitting** (`copilot.ml.risk_classifier`) -- see below |
+| 3 | XGBoost comparison on the same split | **Done** (`copilot.ml.risk_classifier.compare_models()`) -- see below |
 | 4 | Inventory tools: safety stock, reorder point, EOQ | **Done, real numbers run in this sitting** (`copilot.ml.inventory`) -- see below |
-| 5 | Pydantic schemas + unit tests for every tool; run-log (MLflow cut, CSV instead per sprint doc) | Schemas + tests done for steps 1 & 4 (built into the same files, not separately); CSV run-log not yet started -- rolled into steps 2-3 |
+| 5 | Pydantic schemas + unit tests for every tool; run-log (MLflow cut, CSV instead per sprint doc) | **Done** -- schemas + tests for all 3 tools; CSV run-log (`copilot.ml.run_log`) |
 | 6 | Model Selection Agent (Addendum A1): LangGraph propose -> critique -> revise, LLM-judge eval | Not started |
 
 **Why steps 1 & 4 and not 2-3 first:** `portfolio_monthly_demand`/`vendor_monthly_demand` are
@@ -94,11 +95,23 @@ project (effort lab, tokenization lab, RAG index): pipeline code and tests built
 real against clearly-synthetic SKU fixtures now, with a script for a real run against the
 licensed `vw_PortfolioHealth` sheet on your machine for real accuracy/F1 numbers.
 
+**Steps 2-3-5, done:** `copilot.ml.risk_classifier` builds a leakage-safe Random Forest +
+XGBoost comparison (`compare_models()`, 4 combinations: RF/XGBoost x leaky/leakage-safe on one
+split), tested against `make_synthetic_skus()` -- a fixture built from one shared latent "SKU
+health" factor so the leakage story is real, not just labelled. Two rounds of debugging were
+needed before the leaky-vs-safe differential actually showed up (see `docs/BUILD_LOG.md`'s
+2026-10-14 entry); the second round found that `SalesToPurchaseRatio` algebraically reconstructs
+`ProfitMargin` (`= StockTurnover * (1 + MarkupPct)`) even though it isn't itself a raw margin
+column, and had to be added to `LEAKING_FEATURES`. `copilot.ml.run_log` is the CSV run-log (step
+5, MLflow cut-first per the sprint doc) all three ML tools now log to.
+`scripts/train_risk_classifier.py` is the real-data counterpart, same never-in-chat convention
+as the other real-data scripts.
+
 ## Results
 
 | Metric | Baseline | Current | Notes |
 |---|---|---|---|
-| Tests passing | 33 | 267 | `uv run pytest -q`; +12 `copilot.llm`, +12 prompts + `InsightService`, +29 SQL validator, +16 schema/examples/text-to-SQL service, +22 evaluators/langsmith_sync, +10 golden v2, +4 effort lab, +5 tokenization lab, +3 evaluator column-name fix, +10 rag corpus, +9 chunking, +7 embeddings, +10 store, +12 retrieval (BM25 + RRF), +2 store `where` filter, +10 permission filter, +6 corrective RAG, +19 eval harness (golden/metrics/quality), +12 ml metrics, +10 forecast tool, +12 inventory tools |
+| Tests passing | 33 | 285 | `uv run pytest -q`; +12 `copilot.llm`, +12 prompts + `InsightService`, +29 SQL validator, +16 schema/examples/text-to-SQL service, +22 evaluators/langsmith_sync, +10 golden v2, +4 effort lab, +5 tokenization lab, +3 evaluator column-name fix, +10 rag corpus, +9 chunking, +7 embeddings, +10 store, +12 retrieval (BM25 + RRF), +2 store `where` filter, +10 permission filter, +6 corrective RAG, +19 eval harness (golden/metrics/quality), +12 ml metrics, +10 forecast tool, +12 inventory tools, +12 risk classifier, +6 run-log |
 | Golden questions | 40 (27 dev, 10 test, 3 adversarial) | 46 (27 dev, 16 test, 3 adversarial) | golden v2 adds the 6 text-to-SQL trap questions from the spec; v1 stays frozen at 40 for history |
 | Execution accuracy, grounding, leakage rate | n/a | evaluators built + tested; no end-to-end run yet | `copilot.evals.evaluators.execution_accuracy`/`leakage_free`, 17 tests pass; running them against real `TextToSqlService` output needs your API key, same as the effort/tokenization labs |
 | SQL validator: structural + semantic + coverage rules | n/a | 29/29 tests pass, 0 false positives on 33 real golden queries | every trap in `docs/specs/text_to_sql_safety.md`'s trap table has a BLOCK test and an ALLOW test |
@@ -117,6 +130,8 @@ licensed `vw_PortfolioHealth` sheet on your machine for real accuracy/F1 numbers
 | RAG eval harness (Day 4 step 7) | n/a | 19/19 tests pass; 20/20 golden questions verified to resolve to exactly one real chunk against the live corpus; recall@5/MRR run for real end to end with `FakeEmbedder` (mean recall@5 0.40, MRR 0.258 -- expected to be noise-level since `FakeEmbedder` isn't semantic, see below) | real embedding-model numbers and the `--quality` (faithfulness/context_recall) run both need `scripts/run_rag_eval.py` on your machine |
 | Forecast tool (Day 5 step 1), portfolio, real run | n/a | 22/22 tests pass; real backtest: ETS WAPE 0.1153, MASE 1.516, bias -63,673; naive WAPE 0.1153, MASE 1.516, bias -63,671 (essentially tied -- AutoETS's trend reduces to ~none on this series); naive chosen by WAPE tiebreak | matches the analytics repo's own `forecast_backtest.py` "portfolio naive 11.8%" baseline as a sanity check; full reasoning in `docs/BUILD_LOG.md` |
 | Inventory tools (Day 5 step 4), real run from the forecast above | n/a | 12/12 tests pass; real plan (3-month horizon, 1-period lead time, 95% service level, $500/order, $0.50/unit/yr holding): mean demand/period 3,758,005, std dev 363,277, safety stock 597,537, reorder point 4,355,542, EOQ 300,320 | caught and fixed a bug before shipping: std dev must come from historical variability, not variance across a (possibly flat) forecast -- see `docs/BUILD_LOG.md` |
+| SKU risk classifier (Day 5 steps 2-3), synthetic fixture run | n/a | 12/12 tests pass; n=2000: RF accuracy 0.834 -> 0.820, F1 0.291 -> 0.211; XGBoost accuracy 0.898 -> 0.886, F1 0.667 -> 0.596 (leaky -> leakage-safe) | leakage inflates both models' scores in the expected direction; `SalesToPurchaseRatio` had to be added to `LEAKING_FEATURES` after it was found reconstructing `ProfitMargin` algebraically -- see `docs/BUILD_LOG.md`. Synthetic data, so direction is the finding, not the exact figures |
+| CSV run-log (Day 5 step 5) | n/a | 6/6 tests pass; smoke-tested end to end via `scripts/train_risk_classifier.py` against a synthetic CSV | MLflow cut-first per sprint doc; `run_log.csv` covered by the existing blanket `*.csv` gitignore rule |
 
 ## Decisions
 
@@ -143,11 +158,12 @@ None yet. Target: `https://api.vendor.<domain>/health`.
 
 ## Next step
 
-Me: Day 5 steps 1 & 4 (forecast + inventory tools) are built and run for real -- continuing now
-with steps 2-3 (risk classifier + XGBoost comparison, pipeline built against synthetic SKU
-fixtures) and step 6 (Model Selection Agent). You: nothing blocking from Day 5 yet -- the
-synthetic-fixture classifier script for your machine will land with steps 2-3. Carried forward,
-still open and not urgent: `scripts/build_rag_index.py` + `scripts/run_rag_eval.py` (Day 4, real
-embedding index and recall@5/MRR), a third re-run of `scripts/run_effort_lab.py`, a real
-`TextToSqlService` call, Docker Desktop install/engine status, AWS resources, domain, GitHub
-variables from Day 2.
+Me: Day 5 steps 1, 2, 3, 4 & 5 are all built and run for real (or against synthetic data where
+licence rules require it) -- continuing now with step 6, the Model Selection Agent (Addendum
+A1): a LangGraph propose -> critique -> revise flow, following the `CorrectiveRagService`
+pattern from Day 4, evaluated with an LLM judge. You: run `scripts/train_risk_classifier.py`
+against your real `vw_PortfolioHealth` export whenever convenient, for the real accuracy/F1
+numbers to replace the synthetic ones in this doc. Carried forward, still open and not urgent:
+`scripts/build_rag_index.py` + `scripts/run_rag_eval.py` (Day 4, real embedding index and
+recall@5/MRR), a third re-run of `scripts/run_effort_lab.py`, a real `TextToSqlService` call,
+Docker Desktop install/engine status, AWS resources, domain, GitHub variables from Day 2.
