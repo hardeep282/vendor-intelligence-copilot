@@ -22,6 +22,7 @@ from pydantic import BaseModel
 
 from copilot.data import store
 from copilot.evals.golden import run_rows
+from copilot.guardrails.canary import canary_line
 from copilot.guardrails.policy import DisclosurePolicy, Role, load_policy
 from copilot.llm.client import Effort, LLMClient
 from copilot.llm.prompts import Prompt, load_prompt
@@ -85,8 +86,11 @@ class TextToSqlService:
         prompt = load_prompt("text_to_sql")
         schema_card = build_schema_card(self._policy, role)
         examples_block = format_examples(retrieve_examples(question, role))
-        system = prompt.render_system(
-            role=role, schema_card=schema_card, examples_block=examples_block
+        system = (
+            prompt.render_system(
+                role=role, schema_card=schema_card, examples_block=examples_block
+            )
+            + canary_line("data_analyst")
         )
         convo: list[MessageParam] = [
             {"role": "user", "content": prompt.render_user(question=question)}

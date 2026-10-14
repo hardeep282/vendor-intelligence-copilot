@@ -50,6 +50,7 @@ from pydantic import BaseModel
 from sqlglot import exp
 
 from copilot.agents.contracts import AgentResult, TaskSpec
+from copilot.guardrails.canary import canary_line
 from copilot.guardrails.policy import DataClass, DisclosurePolicy, load_policy
 from copilot.llm.client import Effort, LLMClient
 from copilot.llm.prompts import load_prompt
@@ -338,7 +339,7 @@ def run_action(spec: TaskSpec, llm: LLMClient, effort: Effort | None = None) -> 
     context = spec.constraints.get("context", spec.objective)
 
     prompt = load_prompt("action_draft")
-    system = prompt.render_system(draft_type=draft_type)
+    system = prompt.render_system(draft_type=draft_type) + canary_line("action")
     messages: list[MessageParam] = [
         {
             "role": "user",

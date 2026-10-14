@@ -36,6 +36,12 @@ class Settings(BaseSettings):
 
     # Spend control: a global daily cap in USD enforced by the input gate (Day 7).
     daily_spend_cap_usd: float = Field(default=5.0, gt=0)
+    # Input gate (Day 7 step 6): per-role requests/minute, max question length, and a kill
+    # switch that blocks every request regardless of anything else -- the one knob an operator
+    # flips first in an incident, before touching anything more surgical.
+    rate_limit_per_minute: int = Field(default=30, gt=0)
+    max_question_chars: int = Field(default=4000, gt=0)
+    kill_switch_enabled: bool = False
 
     # Build metadata: the Git commit baked into the image by CI (shown by /version).
     git_sha: str = "dev"

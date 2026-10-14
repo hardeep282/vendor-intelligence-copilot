@@ -135,6 +135,52 @@ def _check_structure(
     return violations
 
 
+def _check_cost_limit(statement: exp.Expression) -> list[Violation]:
+    """Day 7 red-team case 8 (docs/specs/text_to_sql_safety.md): a multi-table `FROM` with no
+    join key and nothing in `WHERE` that bounds it is an unbounded cross join -- block it before
+    it ever reaches the engine, rather than relying on the LIMIT cap (`_apply_limit`) alone,
+    which bounds the *output* but not the join computation that produces it.
+
+    A join missing `ON`/`USING` is only flagged when `WHERE` also fails to reference columns
+    from at least two of the tables involved -- a self-join filtered entirely through `WHERE`
+    (no explicit join key) is still bounded, and this project already has one in the golden
+    set (`gq-025`'s month-over-month comparison: `FROM portfolio_monthly_demand d,
+    portfolio_monthly_demand n WHERE d.SalesMonth = 12 AND n.SalesMonth = 11`), so a blanket
+    "every join needs ON/USING" rule would false-block a real, already-validated query.
+
+    **Known limitation, noted rather than silently left undone:** this only sees a `WHERE`
+    reference as bounding when the column is table-qualified (`d.SalesMonth`, not bare
+    `SalesMonth`) -- sqlglot can't otherwise attribute an unqualified column to one side of the
+    join. A comma-join filtered only through unqualified columns is flagged even when it
+    happens to be safe; the false-block side of that tradeoff is the one worth taking here.
+    """
+    if not isinstance(statement, exp.Select):
+        return []
+    joins = statement.args.get("joins") or []
+    unconditioned = [j for j in joins if j.args.get("on") is None and j.args.get("using") is None]
+    if not unconditioned:
+        return []
+
+    from_expr = statement.args.get("from_")  # sqlglot's own key name, not "from" (a keyword)
+    table_refs = list(from_expr.find_all(exp.Table)) if from_expr is not None else []
+    for j in unconditioned:
+        table_refs.extend(j.find_all(exp.Table))
+    aliases = {t.alias_or_name for t in table_refs}
+
+    where = statement.args.get("where")
+    where_tables = {c.table for c in where.find_all(exp.Column) if c.table} if where else set()
+
+    if len(aliases & where_tables) < 2:
+        return [
+            Violation(
+                code="sql_cost_limit",
+                message="a join with no ON/USING condition, and no WHERE filter bounding at "
+                "least two of the joined tables, is an unbounded cross join",
+            )
+        ]
+    return []
+
+
 def _check_semantics(statement: exp.Expression, rules: SqlRules) -> list[Violation]:
     violations: list[Violation] = []
     ratio_cols = {c.lower() for c in rules.ratio_columns}
@@ -300,6 +346,10 @@ def validate(
         )
 
     violations = _check_structure(statement, policy, role)
+    if violations:
+        return ValidationResult(ok=False, sql=sql, violations=violations)
+
+    violations = _check_cost_limit(statement)
     if violations:
         return ValidationResult(ok=False, sql=sql, violations=violations)
 

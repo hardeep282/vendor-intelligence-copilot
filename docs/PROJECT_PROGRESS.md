@@ -1,7 +1,7 @@
 # Project Progress: Vendor Intelligence Copilot
 
-Last updated: Thu 15 Oct 2026 (Day 6 of the 10-day sprint, sprint plan v3 -- all 7 steps
-shipped, Day 6 complete)
+Last updated: Thu 15 Oct 2026 (Day 7 of the 10-day sprint, sprint plan v3 -- all 8 steps
+shipped, Day 7 complete; injection classifier cut-first per the sprint doc)
 
 ## Sprint status
 
@@ -13,7 +13,7 @@ shipped, Day 6 complete)
 | 4 | RAG and advanced RAG | Build done: 7 of 7 steps shipped |
 | 5 | ML tools for the agents | **Build done: 6 of 6 steps shipped** |
 | 6 | Multi-agent system in LangGraph | **Build done: 7 of 7 steps shipped** |
-| 7 | Guardian, guardrails, approvals | Not started |
+| 7 | Guardian, guardrails, approvals | **Build done: 8 of 8 steps shipped** (injection classifier cut-first) |
 | 8 | Product, API keys, latency budget, evals in CI, release v0.1 | Not started |
 | 9 | Fine-tuning benchmark and MCP (MCP never cut) | Not started |
 | 10 | Package and launch the job campaign | Not started |
@@ -191,11 +191,101 @@ answer -- see the module's own docstring for why that's this step's stretch goal
 own `ANTHROPIC_API_KEY`; not run for real this sitting (same posture as every other real-key
 script in this project).
 
+## Day 7 checklist (sprint doc v3 D7)
+
+| # | Item | Status |
+|---|---|---|
+| 1 | Guardian node: role policy, audience policy, provenance from data classes, raw-row check | **Done** (`copilot.guardrails.guardian.Guardian`) |
+| 2 | Presidio PII + secret patterns; canary tokens in every agent's system prompt | **Done** (`copilot.guardrails.pii`/`canary`) |
+| 3 | ALLOW/REDACT/BLOCK/ESCALATE with reason codes + audit log | **Done** (`Guardian.review()`, `copilot.guardrails.audit_log`) |
+| 4 | Topology test: no path to END skips the Guardian | **Done** (`tests/test_orchestrator.py::test_every_path_to_end_passes_through_guardian`, asserted against the compiled graph's own edges) |
+| 5 | Action draft behind an interrupt -> Guardian -> approver approves/edits/rejects | **Done** (`Orchestrator._approval_gate`/`resume_approval()`; skips gracefully with no checkpointer) |
+| 6 | Input gate: injection heuristics, scope, length, rate limit, daily spend cap, kill switch | **Done except the classifier** (`copilot.guardrails.input_gate.InputGate`); **classifier cut-first** per the sprint doc |
+| 7 | LangSmith trace masking (anonymizer rules, hidden restricted payloads) | **Done** (`copilot.guardrails.trace_masking.mask_run_payload`, wired as `process_inputs`/`process_outputs` on `LLMClient.complete`/`.structured`) |
+| 8 | 23-case privacy-leakage suite in CI (15 + 8 SQL red-team) | **Done** (`tests/test_privacy_leakage_suite.py`, runs under plain `uv run pytest`) |
+
+**Steps 1-3, done:** `Guardian.review()` runs 8 checks cheapest-first against anything shaped
+like an `OrchestratorResult` (a `_Reviewable` Protocol, not an import of that class -- avoids a
+circular import with `orchestrator.py`): canary leak, restricted-table-name leak, raw-row-shape
+(10+ delimited lines), role policy (per `AgentResult.data_classes`), vendor-facing-audience
+(an Action draft + any other specialist's non-public data in the same answer), secrets
+(`SECRET_PATTERNS`, now in its own leaf module, `copilot.guardrails.secret_patterns`, so step 7's
+trace masking can reuse them without an import cycle), PII (`copilot.guardrails.pii.find_pii`:
+Presidio when its spaCy model is available, a regex fallback otherwise, cached so the test suite
+doesn't reload the model per call), and grounding (`not verified` -> ESCALATE, not BLOCK --
+unconfirmed-safe isn't known-unsafe). Worst-severity finding wins (`block` > `escalate` >
+`redact` > `allow`); every finding's code lands in `reason_codes` regardless. `safe_answer` is
+the real text on ALLOW, PII-redacted on REDACT, or one of two fixed generic messages on
+BLOCK/ESCALATE. `copilot.guardrails.audit_log.log_decision`/`log_approval` append one JSON line
+per Guardian verdict / approver decision to a local, gitignored `data/audit/guardian_log.jsonl`
+-- independent of LangSmith on purpose (traces can be sampled/redacted/rotated; this file is the
+compliance-grade record). Canary tokens (`copilot.guardrails.canary`, `CANARY-<AGENT>`) are
+appended to every system prompt this project builds (`data_analyst`, `action`,
+`knowledge_grade`/`_rewrite`/`_generate`, `orchestrator_plan`/`_draft`/`_verify`) -- one token
+per call site, since a leak at the draft step versus the verify step says something different
+about where it came from.
+
+**Step 4, done:** `finalize` no longer edges straight to `END` -- it edges to `guardian`, the
+only node with a path to `END` (after step 5, shared with `approval_gate`, itself only reachable
+from `guardian`). The topology test asserts this against the *compiled* graph's own
+`get_graph()` edges, not `_build_graph`'s Python source, which could silently drift from what's
+actually compiled.
+
+**Step 5, done:** an Action draft the Guardian allowed/redacted (never one it already
+BLOCKed/ESCALATEd) routes to `_approval_gate`, which calls LangGraph's `interrupt()` and pauses
+until `resume_approval(thread_id, decision, approver_role=, edited_answer=)` sends back
+`Command(resume=...)`. Confirmed with a throwaway smoke script before wiring this in:
+`interrupt()`/`Command(resume=...)` need a real checkpointer to mean anything (resuming without
+one raises `RuntimeError` from LangGraph itself) -- an `Orchestrator` built with no
+`checkpoint_path` skips the gate entirely rather than pausing on a run nothing can ever resume.
+`resume_approval()` checks `approver_role in {"approver", "admin"}` in Python *before* touching
+the graph at all. An `"edit"` decision is re-run through `self._guardian.review()` before its
+text is accepted -- an approver's edit is new, unreviewed text that could reintroduce exactly
+what the original draft didn't have.
+
+**Step 6, done except the classifier (cut-first):** `InputGate.review(question, role)` runs 6
+checks before `plan` ever runs: kill switch (`Settings.kill_switch_enabled`), input length
+(`Settings.max_question_chars`), injection heuristics (blunt phrasings -- "ignore previous
+instructions", "reveal your system prompt" -- least-privilege tools downstream are the real
+backstop against anything cleverer), scope (a small set of clearly-not-vendor-procurement
+request shapes), rate limit (`RateLimiter`, in-memory per-role sliding window, process-local by
+design), and daily spend cap (`SpendTracker`, a role's running spend today, file-backed so it
+survives a restart within the same day). Every finding is BLOCK-only (no redact/escalate on the
+input side -- there's nothing to partially salvage before a request has even started).
+`InputGate.record_spend(role, cost_usd)` is called by `Orchestrator.answer()` after a run
+finishes with its real total. `tests/conftest.py`'s autouse `_isolated_spend_log` fixture
+points every test's default `InputGate` at a throwaway spend file -- without it, dozens of
+orchestrator tests sharing the real on-disk running total tripped the cap for reasons that had
+nothing to do with what any individual test was checking (caught and fixed before this shipped).
+
+**Step 7, done:** `LLMClient.complete`/`.structured` -- the one choke point every LLM call
+already goes through -- are decorated with `process_inputs=mask_run_payload,
+process_outputs=mask_run_payload` (`copilot.guardrails.trace_masking`). Two things ruled out a
+`langsmith.Client(anonymizer=...)` threaded through every call site instead, both confirmed with
+throwaway scripts before choosing this: constructing a `Client()` eagerly calls `GET /info` over
+the network (bad to do just to attach an anonymizer), and setting a masked client as langsmith's
+own default via its `contextvars`-based context doesn't survive crossing into
+`_run_specialist`'s `ThreadPoolExecutor` worker thread (confirmed empirically -- a
+`ContextVar.set()` in the main thread is invisible there). `mask_run_payload` hides the entire
+payload if any Restricted table/view name appears anywhere in it (recursively), otherwise
+redacts PII/secrets in every string value -- masking only what's *recorded*, never the real
+return value the caller gets back.
+
+**Step 8, done:** `tests/test_privacy_leakage_suite.py` names all 23 cases from both specs and
+asserts the real mechanism that catches each one today, running as ordinary `pytest` (no
+separate eval harness). Building it surfaced and fixed one real gap: the SQL validator had no
+defence against an unbounded cross join (`docs/specs/text_to_sql_safety.md`'s "huge cross join
+(denial of service)" row) -- the existing `LIMIT 200` cap bounds the *output*, not the join
+computation that produces it. Added `_check_cost_limit` (`sql_cost_limit`): blocks a join with
+no `ON`/`USING` condition *unless* `WHERE` references columns from at least two of the joined
+tables by their table-qualified name -- verified against the real golden set first (`gq-025`'s
+genuine self-join, bounded entirely through `WHERE` with no join key, correctly still passes).
+
 ## Results
 
 | Metric | Baseline | Current | Notes |
 |---|---|---|---|
-| Tests passing | 33 | 345 | `uv run pytest -q`; +12 `copilot.llm`, +12 prompts + `InsightService`, +29 SQL validator, +16 schema/examples/text-to-SQL service, +22 evaluators/langsmith_sync, +10 golden v2, +4 effort lab, +5 tokenization lab, +3 evaluator column-name fix, +10 rag corpus, +9 chunking, +7 embeddings, +10 store, +12 retrieval (BM25 + RRF), +2 store `where` filter, +10 permission filter, +6 corrective RAG, +19 eval harness (golden/metrics/quality), +12 ml metrics, +10 forecast tool, +12 inventory tools, +12 risk classifier, +6 run-log, +5 model selection agent, +9 model selection eval, +10 agent contracts, +14 agent specialists, +12 orchestrator (plan/fan-out/draft), +2 orchestrator verifier loop, +4 orchestrator budget/checkpoint enforcement, +3 orchestrator wiring, +5 orchestrator golden set |
+| Tests passing | 33 | 440 | `uv run pytest -q`; +12 `copilot.llm`, +12 prompts + `InsightService`, +29 SQL validator, +16 schema/examples/text-to-SQL service, +22 evaluators/langsmith_sync, +10 golden v2, +4 effort lab, +5 tokenization lab, +3 evaluator column-name fix, +10 rag corpus, +9 chunking, +7 embeddings, +10 store, +12 retrieval (BM25 + RRF), +2 store `where` filter, +10 permission filter, +6 corrective RAG, +19 eval harness (golden/metrics/quality), +12 ml metrics, +10 forecast tool, +12 inventory tools, +12 risk classifier, +6 run-log, +5 model selection agent, +9 model selection eval, +10 agent contracts, +14 agent specialists, +12 orchestrator (plan/fan-out/draft), +2 orchestrator verifier loop, +4 orchestrator budget/checkpoint enforcement, +3 orchestrator wiring, +5 orchestrator golden set, +17 Guardian, +4 PII fallback, +4 canary, +4 audit log, +2 topology/end-to-end Guardian wiring, +8 approval-gate interrupt flow, +3 input-gate orchestrator wiring, +18 input gate, +8 trace masking, +4 SQL cost-limit red-team, +23 privacy-leakage suite |
 | Day 6: Verifier redraft loop, real end to end | n/a | 2/2 tests pass: a failing draft redrafts once with the verifier's feedback folded in and then passes; a draft that never passes finalizes anyway after `MAX_VERIFICATION_LOOPS` (2), flagged `verified=False` rather than looping forever | `tests/test_orchestrator.py`; real per-question numbers wait for `scripts/run_orchestrator_golden.py` on your machine |
 | Day 6: per-agent budget enforcement, real end to end | n/a | 2/2 tests pass: a specialist that outlives `max_latency_s` becomes `status="failed"` (Orchestrator stops waiting, can't force the thread to stop); a specialist that overruns `max_cost_usd` is downgraded `ok` -> `partial` with the overage named in `gaps` | `tests/test_orchestrator.py` |
 | Day 6: SQLite checkpointer, real end to end | n/a | 1/1 test: a run's state is actually queryable from the checkpoint file by `thread_id` afterwards | `tests/test_orchestrator.py` |
@@ -221,6 +311,12 @@ script in this project).
 | SKU risk classifier (Day 5 steps 2-3), synthetic fixture run | n/a | 12/12 tests pass; n=2000: RF accuracy 0.834 -> 0.820, F1 0.291 -> 0.211; XGBoost accuracy 0.898 -> 0.886, F1 0.667 -> 0.596 (leaky -> leakage-safe) | leakage inflates both models' scores in the expected direction; `SalesToPurchaseRatio` had to be added to `LEAKING_FEATURES` after it was found reconstructing `ProfitMargin` algebraically -- see `docs/BUILD_LOG.md`. Synthetic data, so direction is the finding, not the exact figures |
 | CSV run-log (Day 5 step 5) | n/a | 6/6 tests pass; smoke-tested end to end via `scripts/train_risk_classifier.py` against a synthetic CSV | MLflow cut-first per sprint doc; `run_log.csv` covered by the existing blanket `*.csv` gitignore rule |
 | Model Selection Agent (Day 5 step 6) | n/a | 14/14 tests pass (5 agent + 9 eval harness); no real run this sitting -- no `ANTHROPIC_API_KEY` loaded | reuses `CorrectiveRagService`'s propose/critique/revise/abstain shape; real per-question numbers wait for `scripts/run_model_selection_eval.py` on your machine |
+| Guardian (Day 7 steps 1/3/4) | n/a | 17 unit tests + 2 end-to-end (topology, a real restricted-name leak blocked through the full graph); 8 checks, worst-severity-wins, every finding kept in `reason_codes` | deterministic only (no LLM judge) -- the one semantic layer the sprint doc names (an injection *classifier*) is this day's cut-first item, not this check's |
+| PII / canary / audit log (Day 7 steps 2/3) | n/a | 4 + 4 + 4 tests pass; Presidio's `AnalyzerEngine` (with the `en_core_web_lg` model) installed and cached without issue this sitting, contrary to the docstring's own stated expectation that it might not | regex fallback still the layer every test (and CI) actually exercises, since Presidio availability varies by environment |
+| Action-draft approval gate (Day 7 step 5) | n/a | 8 tests pass: pauses only with a real checkpointer, approve/edit/reject paths, an edit is re-reviewed by the Guardian and caught when it reintroduces a leak, a non-approver role is rejected before the graph is even touched | confirmed `interrupt()`/`Command(resume=...)`'s checkpointer requirement and the `ThreadPoolExecutor`/`contextvars` non-propagation (relevant again in step 7) with throwaway smoke scripts before writing the real wiring |
+| Input gate (Day 7 step 6) | n/a | 18 unit tests + 3 orchestrator-wiring tests pass | found and fixed a real test-isolation bug before shipping: the default `InputGate`'s `SpendTracker` persists to a real on-disk file, so dozens of orchestrator tests sharing one `InputGate()` default tripped the daily cap for reasons unrelated to what any one test checked -- fixed with `tests/conftest.py`'s autouse fixture, not by weakening the cap |
+| LangSmith trace masking (Day 7 step 7) | n/a | 8 tests pass | chose `@traceable(process_inputs=..., process_outputs=...)` over a `Client(anonymizer=...)` after two things ruled the latter out (confirmed empirically, not assumed): constructing a `Client()` calls `GET /info` eagerly, and a `contextvars`-based default client doesn't survive into `_run_specialist`'s worker thread |
+| 23-case privacy-leakage suite (Day 7 step 8) | n/a | 23/23 pass | surfaced a real, previously-unguarded gap (an unbounded cross join) rather than just re-testing what already existed; fixed in the SQL validator, verified against the real golden set (`gq-025`) before shipping so the fix doesn't regress a legitimate query |
 
 ## Decisions
 
@@ -237,6 +333,12 @@ the Verifier/budget-enforcement/checkpointer/LangSmith-tagging choices all follo
 `ModelSelectionAgent` and `LLMClient` already established (propose/critique/revise, `effort`
 over `temperature`, `@traceable`); the one new dependency, `langgraph-checkpoint-sqlite`, is a
 companion package to the already-adopted `langgraph`, not a build-vs-buy decision of its own.
+**ADR-006 (Guardian design) is Day 7's required ADR per Addendum A1 and is still open** --
+I implemented using my own proposed defaults for its 4 questions (outcome severity ordering,
+ESCALATE-with-no-reviewer-yet behaviour, vendor-audience check scope, raw-row-shape detection
+approach), stated as proposals throughout the code's own docstrings, not as settled decisions.
+The template + questions are below; **your answers, not mine, are what the actual ADR-006
+document needs to say** -- see "Next step".
 
 ## Costs to date
 
@@ -246,7 +348,10 @@ unnecessary repair-loop retries). Expected once Day 2 resources exist: about $22
 AWS (Mumbai). Day 6's own real-key run (`scripts/run_orchestrator_golden.py`, 10 multi-hop
 questions, each 2-4 specialist LLM calls plus a plan/draft/verify call per question, with up to
 2 redrafts) hasn't been run yet -- expect a similar order of magnitude to the effort lab's
-~$0.11 for 15 calls, scaled up for more calls per question.
+~$0.11 for 15 calls, scaled up for more calls per question. Day 7 added $0 -- every Guardian/
+input-gate/trace-masking/privacy-suite test is deterministic (no LLM call, no API key), same
+posture every other guardrail-layer test in this project takes; Presidio's spaCy model download
+also added $0 (no API key needed for that).
 
 ## Live URLs
 
@@ -254,13 +359,18 @@ None yet. Target: `https://api.vendor.<domain>/health`.
 
 ## Next step
 
-Me: Day 6 is complete -- all 7 steps built (Studio itself cut-first, an external tool not code),
-345/345 tests passing, ruff/mypy clean. Ready to start Day 7 (Guardian, guardrails, approvals)
-on your go-ahead. You: `scripts/run_orchestrator_golden.py` is the new real-key run queued up --
-10 multi-hop questions end to end through the real Orchestrator with your `ANTHROPIC_API_KEY`
-loaded (plan coverage, verified status, cost/latency per question; doesn't block starting
-Day 7). Carried forward, still open and not urgent: `scripts/train_risk_classifier.py` against
-your real `vw_PortfolioHealth` export, `scripts/run_model_selection_eval.py`,
-`scripts/build_rag_index.py` + `scripts/run_rag_eval.py`, a third re-run of
-`scripts/run_effort_lab.py`, a real `TextToSqlService` call, Docker Desktop install/engine
-status, AWS resources, domain, GitHub variables from Day 2.
+**You: ADR-006 (Guardian design) needs your answers, not mine** -- the template and 3-5 pointed
+questions are in this handoff/the chat; Addendum A1's process is I give the template + questions,
+you write the answers in your own words, I review/challenge, you revise. I implemented Day 7
+using my own proposed defaults (stated as proposals throughout the code's docstrings, e.g.
+`guardian.py`'s `_check_vendor_audience`/`_check_grounding`), but the actual ADR-006 document
+isn't written until you answer -- this is the one thing blocking Day 7's doc/commit step from
+being fully done. Me: once you answer, I'll write ADR-006 from your answers (not mine), finish
+the commit, and start Day 8 on your go-ahead. Day 7 itself is complete -- all 8 steps built
+(injection classifier cut-first per the sprint doc), 440/440 tests passing, ruff/mypy clean.
+Carried forward, still open and not urgent: `scripts/run_orchestrator_golden.py` (Day 6's
+10-question real-key run), `scripts/train_risk_classifier.py` against your real
+`vw_PortfolioHealth` export, `scripts/run_model_selection_eval.py`, `scripts/build_rag_index.py`
++ `scripts/run_rag_eval.py`, a third re-run of `scripts/run_effort_lab.py`, a real
+`TextToSqlService` call, Docker Desktop install/engine status, AWS resources, domain, GitHub
+variables from Day 2.

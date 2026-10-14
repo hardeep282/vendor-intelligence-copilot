@@ -52,6 +52,41 @@ honest limitation `concurrent.futures`-based timeouts always have), and (b) down
 otherwise-`ok` result to `partial` with the specific overage named in `gaps` when
 `AgentResult.exceeds(budget)` is true, so a specialist that quietly blew its cost/call budget
 is never reported as if nothing happened.
+
+**Day 7 step 4: the Guardian, non-bypassable.** `finalize` no longer edges straight to `END`;
+it now edges to a new `guardian` node (`copilot.guardrails.guardian.Guardian`). There is exactly
+one path through this graph from `plan` to `END`, and it always passes through `guardian` --
+see `test_orchestrator.py`'s topology test for the proof. `OrchestratorResult.answer` is the
+Guardian's `safe_answer` by the time `answer()` returns it to a caller; the full verdict is kept
+on `OrchestratorResult.guardian_verdict`.
+
+**Day 7 step 5: the approval gate (master prompt C5).** An Action draft (a renegotiation email,
+a reorder recommendation -- `run_action` never sends anything itself) that the Guardian didn't
+already BLOCK/ESCALATE stops one node short of `END`: `_approval_gate` calls LangGraph's
+`interrupt()`, pausing the graph with the draft and verdict as the interrupt payload, until a
+human with the `approver`/`admin` role calls `resume_approval()`. `_route_after_guardian` is the
+conditional edge that decides whether a run needs this stop at all -- no Action draft, or the
+Guardian already BLOCKed/ESCALATEd it, routes straight to `END` instead, same as before this
+step. `interrupt()`/`Command(resume=...)` require a checkpointer (confirmed with a throwaway
+smoke script against `SqliteSaver` before wiring this in -- resuming without one raises
+`RuntimeError` from LangGraph itself); an `Orchestrator` built without `checkpoint_path` (most
+existing tests, and any one-shot caller that never intends to resume a paused run) skips the
+gate entirely rather than pausing on a run nothing can ever resume -- same "real thing needs
+real infrastructure, skip it gracefully otherwise" posture `_run_specialist`'s budget timeouts
+and Day 6's Studio cut-first already take. An `edit` decision is re-run through
+`self._guardian.review()` before its text is accepted, because an approver's edit is new,
+unreviewed text -- see `_approval_gate`'s own docstring. `resume_approval()` checks
+`approver_role` in Python *before* touching the graph at all, so a non-approver can't resume a
+paused thread even by guessing its `thread_id`.
+
+**Day 7 step 6: the input gate.** `answer()`'s first line of work, before `plan` or anything
+else: `self._input_gate.review(question, role)` (`copilot.guardrails.input_gate.InputGate`) --
+kill switch, input length, injection heuristics, scope, rate limit, daily spend cap, cheapest
+first. A BLOCK returns an `OrchestratorResult` with the gate's safe message straight away; the
+graph never even starts, so nothing was spent. On a normal run, `answer()` records the real
+`total_cost_usd` the run spent against the role's daily cap once it's known (`InputGate.
+record_spend`) -- the gate can only ever check *past* spend against the cap, since it runs before
+this request's own cost exists yet.
 """
 
 from __future__ import annotations
@@ -63,16 +98,21 @@ import uuid
 from collections.abc import Callable
 from concurrent.futures import ThreadPoolExecutor
 from concurrent.futures import TimeoutError as FutureTimeoutError
-from typing import Annotated, Any, TypedDict, cast
+from typing import Annotated, Any, Literal, TypedDict, cast
 
 from anthropic.types import MessageParam
 from langgraph.checkpoint.sqlite import SqliteSaver
 from langgraph.graph import END, StateGraph
-from langgraph.types import Send
+from langgraph.types import Command, Send, interrupt
 from langsmith.run_helpers import LangSmithExtra
 from pydantic import BaseModel, Field
 
 from copilot.agents.contracts import AgentBudget, AgentName, AgentResult, TaskSpec
+from copilot.guardrails.audit_log import log_approval, log_decision
+from copilot.guardrails.canary import canary_line
+from copilot.guardrails.guardian import Guardian, GuardianVerdict
+from copilot.guardrails.input_gate import GateVerdict as InputGateVerdict
+from copilot.guardrails.input_gate import InputGate
 from copilot.guardrails.policy import Role
 from copilot.llm.client import Effort, LLMClient
 from copilot.llm.prompts import load_prompt
@@ -145,6 +185,22 @@ class OrchestratorResult(BaseModel):
     total_cost_usd: float = 0.0
     total_latency_s: float = 0.0
     llm_calls: int = 0
+    # Day 7 step 4: set by the graph's mandatory "guardian" node, the one place between
+    # "finalize" and END (see `_build_graph`/the topology test in test_orchestrator.py). `answer`
+    # above is already the Guardian's `safe_answer` by the time a caller sees this object --
+    # `guardian_verdict` is kept alongside it as the full record (outcome, every finding, reason
+    # codes), not a second, possibly-unsafe copy of the original draft.
+    guardian_verdict: GuardianVerdict | None = None
+    # Day 7 step 5: set by `answer()` when the graph paused inside `_approval_gate` (an Action
+    # draft the Guardian allowed/redacted, awaiting an approver) -- `answer` above is still the
+    # Guardian's `safe_answer` at that point; it only changes once `resume_approval()` runs.
+    pending_approval: bool = False
+    approval_decision: Literal["approved", "edited", "rejected"] | None = None
+    # Day 7 step 6: set by `answer()` when the input gate blocked this request before the graph
+    # ever ran -- `plan`/`results` stay empty and `total_cost_usd` stays 0.0 in that case, since
+    # nothing was spent. `None` means the gate allowed the request through (its ALLOW verdict
+    # isn't worth keeping -- there's nothing to show for it).
+    input_gate_verdict: InputGateVerdict | None = None
 
 
 class _State(TypedDict):
@@ -185,6 +241,8 @@ class Orchestrator:
         effort: Effort | None = None,
         default_budget: AgentBudget | None = None,
         checkpoint_path: str | None = None,
+        guardian: Guardian | None = None,
+        input_gate: InputGate | None = None,
     ) -> None:
         self._llm = llm
         self._executors = executors
@@ -195,9 +253,29 @@ class Orchestrator:
             if checkpoint_path is not None
             else None
         )
+        # Day 7 step 4: constructed once (same posture as `self._llm`/`self._executors` --
+        # expensive setup, cheap reuse), injected rather than hardcoded so tests can pass a
+        # Guardian built from a fake/minimal policy without touching the real
+        # policies/disclosure.yaml.
+        self._guardian = guardian or Guardian()
+        # Day 7 step 6: same posture -- injected so tests can pass an InputGate built with a
+        # fake RateLimiter/SpendTracker rather than touching real settings or `data/spend/`.
+        self._input_gate = input_gate or InputGate()
         self._graph = self._build_graph()
 
     def answer(self, question: str, role: Role, thread_id: str | None = None) -> OrchestratorResult:
+        # Day 7 step 6: the input gate runs before anything else -- a blocked request never
+        # reaches "plan", never spends an LLM call, and never touches a specialist. See
+        # `copilot.guardrails.input_gate`'s module docstring for why this list of checks and why
+        # BLOCK-only (no redact/escalate) makes sense on the input side.
+        gate_verdict = self._input_gate.review(question, role)
+        if gate_verdict.outcome == "block":
+            return OrchestratorResult(
+                question=question,
+                role=role,
+                answer=gate_verdict.message,
+                input_gate_verdict=gate_verdict,
+            )
         initial: _State = {
             "question": question,
             "role": role,
@@ -223,6 +301,64 @@ class Orchestrator:
             # asserted so it survives -O, same posture as CorrectiveRagService.answer()'s and
             # ModelSelectionAgent.select()'s equivalent guards.
             raise RuntimeError("orchestrator graph reached END without producing a result")
+        if final_state.get("__interrupt__"):
+            # Day 7 step 5: the graph paused inside "_approval_gate" rather than reaching END --
+            # "result" here is still "finalize"/"guardian"'s state, correct but not yet
+            # approver-reviewed. Flag it rather than silently handing back a result that looks
+            # finished; the caller resumes with resume_approval(thread_id=..., ...).
+            result = result.model_copy(update={"pending_approval": True})
+        # Day 7 step 6: the spend-cap half of the gate. Recorded only once the run has actually
+        # finished (not before the graph starts, and not again on a resumed/paused thread --
+        # resume_approval() doesn't call this), against the real total this specific run spent,
+        # not an estimate.
+        self._input_gate.record_spend(role, result.total_cost_usd)
+        return result
+
+    def resume_approval(
+        self,
+        thread_id: str,
+        decision: Literal["approve", "edit", "reject"],
+        *,
+        approver_role: Role,
+        edited_answer: str | None = None,
+    ) -> OrchestratorResult:
+        """Day 7 step 5: the only way a paused Action-draft approval gate is ever resumed.
+
+        `approver_role` is checked here, in plain Python, *before* `Command(resume=...)` ever
+        touches the graph -- master prompt C5 names "approver role" as who may act on this gate,
+        and the check has to live on this side of the boundary: `_approval_gate` only runs again
+        once this call has already decided to resume it, so putting the check inside that node
+        would be too late to stop an unauthorized resume from happening at all. A caller who
+        doesn't hold `thread_id` has no way to resume anything; one who does but isn't an
+        approver/admin is stopped right here, before touching the paused thread's state.
+        """
+        if approver_role not in ("approver", "admin"):
+            raise PermissionError(
+                f"role '{approver_role}' may not approve, edit or reject an Action draft "
+                "(requires 'approver' or 'admin')"
+            )
+        if self._checkpointer is None:
+            # Can't happen in practice: nothing can be paused-and-resumable without a
+            # checkpointer in the first place (answer() never sets pending_approval=True for an
+            # Orchestrator built without checkpoint_path). Guarded anyway rather than letting
+            # LangGraph's own "Cannot use Command(resume=...) without checkpointer" RuntimeError
+            # surface from deeper in the stack.
+            raise RuntimeError(
+                "resume_approval requires an Orchestrator built with checkpoint_path set"
+            )
+        config: dict[str, Any] = {"configurable": {"thread_id": thread_id}}
+        final_state = cast(
+            "_State",
+            self._graph.invoke(
+                Command(resume={"decision": decision, "edited_answer": edited_answer}),
+                config=config,
+            ),
+        )
+        result = final_state["result"]
+        if result is None:
+            # Can't happen: "_approval_gate" always sets "result" before returning. Raised, not
+            # asserted, for the same -O-survival reason as the other guards in this module.
+            raise RuntimeError("orchestrator graph reached END without producing a result")
         return result
 
     # -- graph construction --------------------------------------------------------------
@@ -236,6 +372,8 @@ class Orchestrator:
         graph.add_node("verify", self._verify)
         graph.add_node("revise_draft", self._revise_draft)
         graph.add_node("finalize", self._finalize)
+        graph.add_node("guardian", self._guardian_node)
+        graph.add_node("approval_gate", self._approval_gate)
         graph.set_entry_point("plan")
         graph.add_conditional_edges("plan", self._fan_out, ["run_specialist", "draft"])
         graph.add_edge("run_specialist", "draft")
@@ -244,7 +382,17 @@ class Orchestrator:
             "verify", self._route_after_verify, ["finalize", "revise_draft"]
         )
         graph.add_edge("revise_draft", "draft")
-        graph.add_edge("finalize", END)
+        # Day 7 step 4: "guardian" is the single node between "finalize" and END -- every path
+        # through this graph reaches END only via "guardian". See `test_orchestrator.py`'s
+        # `test_every_path_to_end_passes_through_guardian` for the topology proof.
+        graph.add_edge("finalize", "guardian")
+        # Day 7 step 5: "guardian" no longer edges straight to END -- an allowed/redacted Action
+        # draft routes through "approval_gate" first (`_route_after_guardian` decides per-run;
+        # everything else still goes straight to END, same as before this step).
+        graph.add_conditional_edges(
+            "guardian", self._route_after_guardian, ["approval_gate", END]
+        )
+        graph.add_edge("approval_gate", END)
         return graph.compile(checkpointer=self._checkpointer)
 
     # -- nodes -----------------------------------------------------------------------------
@@ -266,7 +414,9 @@ class Orchestrator:
 
     def _plan(self, state: _State) -> dict[str, object]:
         prompt = load_prompt("orchestrator_plan")
-        system = prompt.render_system(roster_block=_roster_block())
+        system = prompt.render_system(roster_block=_roster_block()) + canary_line(
+            "orchestrator_plan"
+        )
         messages: list[MessageParam] = [
             {
                 "role": "user",
@@ -407,7 +557,7 @@ class Orchestrator:
         )
 
         prompt = load_prompt("orchestrator_draft")
-        system = prompt.render_system(role=state["role"])
+        system = prompt.render_system(role=state["role"]) + canary_line("orchestrator_draft")
         messages: list[MessageParam] = [
             {
                 "role": "user",
@@ -460,7 +610,7 @@ class Orchestrator:
             findings_block=findings_block,
             draft_answer=draft.answer,
             cited_tasks=", ".join(draft.cited_tasks) or "(none cited)",
-        )
+        ) + canary_line("orchestrator_verify")
         messages: list[MessageParam] = [{"role": "user", "content": prompt.render_user()}]
         verdict, metrics = cast(
             "tuple[VerifierVerdict, CallMetrics]",
@@ -539,6 +689,145 @@ class Orchestrator:
             llm_calls=state["llm_calls"] + sum(r.llm_calls for r in results),
         )
         return {"result": result}
+
+    def _guardian_node(self, state: _State) -> dict[str, object]:
+        """Day 7 steps 1/3/4: the mandatory final pass. Reads the `OrchestratorResult` `finalize`
+        just produced, runs every Guardian check against it, and replaces `answer` with the
+        verdict's `safe_answer` -- callers of `Orchestrator.answer()` only ever see Guardian-
+        reviewed text, never the raw draft. The full verdict (every finding, not just the
+        winning outcome) is kept on `guardian_verdict` and written to the audit log
+        (`copilot.guardrails.audit_log`) before this node returns; a logging failure there is
+        reported via `log_decision`'s own return value, never raised into the graph (an audit
+        write problem must not itself block an already-reviewed answer from reaching the user).
+        """
+        result = state["result"]
+        if result is None:
+            # Can't happen: "guardian" only ever runs after "finalize" has set "result" (the
+            # same -O-survival guard `answer()`'s own check at the bottom of this class uses).
+            raise RuntimeError("guardian invoked with no result to review")
+        verdict = self._guardian.review(result)
+        log_decision(verdict, question=result.question, role=result.role)
+        reviewed = result.model_copy(
+            update={"answer": verdict.safe_answer, "guardian_verdict": verdict}
+        )
+        return {"result": reviewed}
+
+    def _route_after_guardian(self, state: _State) -> str:
+        """Pure routing function (no LLM call, no state mutation, mirrors
+        `_route_after_verify`): decides whether this run needs the human approval gate at all.
+
+        Three independent reasons route straight to `END` instead of `"approval_gate"`:
+        (a) no checkpointer -- `interrupt()`/`Command(resume=...)` need one to actually pause-
+        and-resume (confirmed against a real `SqliteSaver` before this was wired in; without
+        one, LangGraph itself raises `RuntimeError` on resume, and a pause nothing can ever
+        resume is worse than skipping it); (b) no Action draft in this run's results --
+        `run_action` is the only specialist that drafts an outbound renegotiation email/reorder
+        recommendation, so nothing here needs a human's sign-off before being shown; (c) the
+        Guardian already BLOCKed or ESCALATEd -- a draft that already failed Guardian review
+        isn't "awaiting approval", it's already been handled, and routing it to the gate would
+        put an approver in the position of approving text the user never even sees (`answer` is
+        already the Guardian's safe generic message by this point).
+        """
+        if self._checkpointer is None:
+            return END
+        result = state["result"]
+        if result is None or result.guardian_verdict is None:
+            # Can't happen: "guardian" always sets both before this router runs.
+            return END
+        if result.guardian_verdict.outcome not in ("allow", "redact"):
+            return END
+        if not any(r.agent == "action" for r in result.results):
+            return END
+        return "approval_gate"
+
+    def _approval_gate(self, state: _State) -> dict[str, object]:
+        """Day 7 step 5: master prompt C5's "Action draft behind interrupt -> Guardian ->
+        approver approves/edits/rejects". Only ever reached when `_route_after_guardian` has
+        already confirmed there's a checkpointer and an Action draft the Guardian didn't already
+        BLOCK/ESCALATE (see that method's docstring) -- so everything below can assume both.
+
+        Calls `interrupt()` with the draft and verdict as the payload, pausing the graph until
+        `Orchestrator.resume_approval()` sends back `Command(resume={"decision": ..., "edited_
+        answer": ...})`. LangGraph re-runs this node from the top on resume, so everything above
+        the `interrupt()` call must stay cheap and side-effect-free -- it is (just reading
+        `state["result"]`); nothing here was logged or mutated before the pause.
+
+        **Why an "edit" is re-reviewed, not trusted:** the Guardian already blessed the ORIGINAL
+        draft as `safe_answer`. An approver's edited text is new, never-reviewed content -- it
+        could just as easily reintroduce a restricted name or PII the original draft never had.
+        Re-running `self._guardian.review()` on the edited result keeps the same non-bypassable
+        guarantee step 4 established: no text reaches `answer` without a Guardian pass over it,
+        approver edits included.
+        """
+        result = state["result"]
+        if result is None:
+            # Can't happen: "_approval_gate" only ever runs after "guardian" has set "result".
+            raise RuntimeError("approval_gate invoked with no result to review")
+
+        verdict = result.guardian_verdict
+        decision_payload = interrupt(
+            {
+                "question": result.question,
+                "draft": result.answer,
+                "guardian_outcome": verdict.outcome if verdict else None,
+                "reason_codes": verdict.reason_codes if verdict else [],
+            }
+        )
+        decision = (
+            decision_payload.get("decision") if isinstance(decision_payload, dict) else None
+        )
+
+        if decision == "reject":
+            updated = result.model_copy(
+                update={
+                    "answer": "This action draft was rejected by an approver and will not be "
+                    "sent.",
+                    "approval_decision": "rejected",
+                }
+            )
+            log_approval(
+                question=updated.question,
+                role=updated.role,
+                decision="rejected",
+                final_answer=updated.answer or "",
+            )
+            return {"result": updated}
+
+        if decision == "edit":
+            edited_text = (
+                decision_payload.get("edited_answer") or result.answer
+                if isinstance(decision_payload, dict)
+                else result.answer
+            )
+            edited_result = result.model_copy(update={"answer": edited_text})
+            new_verdict = self._guardian.review(edited_result)
+            log_decision(new_verdict, question=edited_result.question, role=edited_result.role)
+            updated = edited_result.model_copy(
+                update={
+                    "answer": new_verdict.safe_answer,
+                    "guardian_verdict": new_verdict,
+                    "approval_decision": "edited",
+                }
+            )
+            log_approval(
+                question=updated.question,
+                role=updated.role,
+                decision="edited",
+                final_answer=updated.answer or "",
+            )
+            return {"result": updated}
+
+        # Anything else (including the expected "approve") keeps the Guardian's safe_answer
+        # as-is -- approving means "send what the Guardian already allowed/redacted", not a
+        # fresh draft.
+        updated = result.model_copy(update={"approval_decision": "approved"})
+        log_approval(
+            question=updated.question,
+            role=updated.role,
+            decision="approved",
+            final_answer=updated.answer or "",
+        )
+        return {"result": updated}
 
 
 __all__ = [

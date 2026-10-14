@@ -225,3 +225,42 @@ def test_blocks_between_range_entirely_outside_coverage(policy, rules):
     result = validate(sql, "analyst", policy, rules)
     assert not result.ok
     assert result.violations[0].code == "sql_coverage_out_of_range"
+
+
+# -- Day 7 red-team case 8: DoS cross join ---------------------------------------------------
+
+
+def test_blocks_unconditioned_cross_join_between_two_tables(policy, rules):
+    sql = "SELECT * FROM vendor_revenue_summary a, vendor_tiering b"
+    result = validate(sql, "analyst", policy, rules)
+    assert not result.ok
+    assert result.violations[0].code == "sql_cost_limit"
+
+
+def test_blocks_cross_join_filtered_on_only_one_side(policy, rules):
+    sql = "SELECT * FROM vendor_revenue_summary a, vendor_tiering b WHERE a.VendorName = 'x'"
+    result = validate(sql, "analyst", policy, rules)
+    assert not result.ok
+    assert result.violations[0].code == "sql_cost_limit"
+
+
+def test_allows_a_self_join_bounded_entirely_through_where(policy, rules):
+    """Exactly gq-025's shape: a comma-join self-join with no ON/USING, but WHERE filters
+    reference both sides by their table-qualified columns -- real, already-golden SQL that a
+    blanket "every join needs ON/USING" rule would have false-blocked.
+    """
+    sql = (
+        "SELECT d.MonthlyRevenue FROM portfolio_monthly_demand d, portfolio_monthly_demand n "
+        "WHERE d.SalesMonth = 12 AND n.SalesMonth = 11"
+    )
+    result = validate(sql, "viewer", policy, rules)
+    assert result.ok
+
+
+def test_allows_an_explicit_join_with_an_on_condition(policy, rules):
+    sql = (
+        "SELECT a.VendorName FROM vendor_revenue_summary a "
+        "JOIN vendor_tiering b ON a.VendorName = b.VendorName"
+    )
+    result = validate(sql, "analyst", policy, rules)
+    assert result.ok

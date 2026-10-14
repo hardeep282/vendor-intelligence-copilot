@@ -38,6 +38,7 @@ from anthropic.types import MessageParam
 from langgraph.graph import END, StateGraph
 from pydantic import BaseModel
 
+from copilot.guardrails.canary import canary_line
 from copilot.guardrails.policy import Role
 from copilot.llm.client import Effort, LLMClient
 from copilot.llm.prompts import load_prompt
@@ -210,7 +211,9 @@ class CorrectiveRagService:
             return {"relevant_ids": set()}
 
         prompt = load_prompt("crag_grade")
-        system = prompt.render_system(chunks_block=_format_chunks_block(retrieved))
+        system = prompt.render_system(
+            chunks_block=_format_chunks_block(retrieved)
+        ) + canary_line("knowledge_grade")
         messages: list[MessageParam] = [
             {"role": "user", "content": prompt.render_user(question=state["question"])}
         ]
@@ -249,7 +252,9 @@ class CorrectiveRagService:
     def _rewrite(self, state: _State) -> dict[str, object]:
         prompt = load_prompt("crag_rewrite")
         previous = state["rewritten_queries"] or [state["question"]]
-        system = prompt.render_system(previous_queries="; ".join(previous))
+        system = prompt.render_system(
+            previous_queries="; ".join(previous)
+        ) + canary_line("knowledge_rewrite")
         messages: list[MessageParam] = [
             {"role": "user", "content": prompt.render_user(question=state["question"])}
         ]
@@ -277,7 +282,9 @@ class CorrectiveRagService:
     def _generate(self, state: _State) -> dict[str, object]:
         relevant = [r for r in state["retrieved"] if r.chunk.chunk_id in state["relevant_ids"]]
         prompt = load_prompt("crag_generate")
-        system = prompt.render_system(chunks_block=_format_chunks_block(relevant))
+        system = prompt.render_system(
+            chunks_block=_format_chunks_block(relevant)
+        ) + canary_line("knowledge_generate")
         messages: list[MessageParam] = [
             {"role": "user", "content": prompt.render_user(question=state["question"])}
         ]

@@ -15,6 +15,7 @@ from pathlib import Path
 
 from copilot.agents.contracts import AgentBudget, AgentResult, TaskSpec
 from copilot.agents.orchestrator import MAX_VERIFICATION_LOOPS, Orchestrator
+from copilot.guardrails.input_gate import InputGate
 from copilot.llm.client import LLMClient
 from tests.fakes.anthropic_fakes import FakeMessagesResource, structured_response
 
@@ -355,7 +356,14 @@ def test_verification_that_never_passes_finalizes_unverified_after_max_loops() -
 
     assert result.verified is False
     assert result.verify_attempts == MAX_VERIFICATION_LOOPS
-    assert result.answer == "attempt 3"  # delivered anyway, honestly flagged unverified
+    # Day 7: an unverified draft is finalized (not looped forever) but then the Guardian
+    # ESCALATEs it -- the raw "attempt 3" text never reaches the caller; the safe,
+    # human-review-queued message does. The original draft is still visible through
+    # `results`/the eval harness if needed; what a real end user sees is the safe copy.
+    assert result.guardian_verdict is not None
+    assert result.guardian_verdict.outcome == "escalate"
+    assert "unverified_grounding" in result.guardian_verdict.reason_codes
+    assert result.answer != "attempt 3"
     # plan(1) + 3x(draft+verify) + specialist(1) = 1 + 6 + 1
     assert result.llm_calls == 8
 
@@ -448,3 +456,300 @@ def test_sqlite_checkpointer_persists_the_run_under_its_thread_id(tmp_path: Path
     finally:
         con.close()
     assert rows[0] > 0
+
+
+def test_every_path_to_end_passes_through_guardian() -> None:
+    """Day 7 step 4's topology test: master prompt C4 requires "a graph-topology unit test
+    asserts that every path to the end node passes through the Guardian." LangGraph's own
+    `get_graph()` exposes the compiled graph's real edges (not just the `add_edge` calls in
+    `_build_graph`'s source, which could drift from what's actually compiled) -- this asserts
+    directly against that.
+
+    Day 7 step 5 added "approval_gate" as a second possible hop before END (an allowed/redacted
+    Action draft stops there first), so "exactly one edge into END, from guardian" is no longer
+    the right shape -- the guarantee that still has to hold is that every edge into END comes
+    from "guardian" or "approval_gate", and "approval_gate" itself is only ever reached from
+    "guardian". That composition is what actually proves "every path passes through guardian".
+    """
+    llm = _llm_with([])
+    orch = Orchestrator(llm, executors={})
+    compiled = orch._graph.get_graph()
+
+    end_node_id = next(n for n in compiled.nodes if n in ("__end__", "END"))
+    edges_into_end = [e for e in compiled.edges if e.target == end_node_id]
+    sources_into_end = {e.source for e in edges_into_end}
+
+    assert sources_into_end <= {"guardian", "approval_gate"}
+    edges_into_approval_gate = [e for e in compiled.edges if e.target == "approval_gate"]
+    assert {e.source for e in edges_into_approval_gate} == {"guardian"}
+
+
+def test_guardian_blocks_a_restricted_name_leak_end_to_end() -> None:
+    """Proves the wiring, not just `Guardian.review()` in isolation (that's
+    `tests/test_guardian.py`'s job): a draft answer that happens to name a Restricted table
+    comes back blocked through the real graph, with the raw text never reaching the caller.
+    """
+    llm = _llm_with(
+        [
+            structured_response(
+                {"tasks": [{"agent": "data_analyst", "objective": "x", "constraints": {}}]}
+            ),
+            structured_response(
+                {
+                    "answer": "Computed straight from vw_PortfolioHealth.",
+                    "cited_tasks": ["t0"],
+                    "conflicts_noted": [],
+                }
+            ),
+            _PASSING_VERDICT,
+        ]
+    )
+    orch = Orchestrator(llm, executors={"data_analyst": _ok("data_analyst", "x", ["internal"])})
+
+    result = orch.answer("x?", role="analyst")
+
+    assert result.guardian_verdict is not None
+    assert result.guardian_verdict.outcome == "block"
+    assert "vw_PortfolioHealth" not in (result.answer or "")
+
+
+def _action_plan_llm() -> list[object]:
+    return [
+        structured_response(
+            {
+                "tasks": [
+                    {"agent": "action", "objective": "draft a reorder email", "constraints": {}}
+                ]
+            }
+        ),
+        structured_response(
+            {
+                "answer": "Draft: confirm the reorder, thanks.",
+                "cited_tasks": ["t0"],
+                "conflicts_noted": [],
+            }
+        ),
+        _PASSING_VERDICT,
+    ]
+
+
+def test_no_checkpointer_skips_the_approval_gate_entirely() -> None:
+    """Day 7 step 5: `interrupt()`/`Command(resume=...)` need a checkpointer to actually pause
+    and resume (confirmed against a real SqliteSaver -- resuming without one raises a LangGraph
+    RuntimeError). An Orchestrator built without `checkpoint_path` (every test above this one,
+    and any one-shot caller) must never pause on an Action draft it has no way to ever resume --
+    it should route straight through to a normal, non-pending result.
+    """
+    llm = _llm_with(_action_plan_llm())
+    orch = Orchestrator(llm, executors={"action": _ok("action", "x", ["public"])})
+
+    result = orch.answer("x?", role="analyst")
+
+    assert result.pending_approval is False
+    assert result.approval_decision is None
+    assert result.guardian_verdict is not None
+    assert result.guardian_verdict.outcome == "allow"
+    assert result.answer == "Draft: confirm the reorder, thanks."
+
+
+def test_action_draft_pauses_for_approval_when_checkpointed(tmp_path: Path) -> None:
+    db_path = str(tmp_path / "checkpoints.sqlite")
+    llm = _llm_with(_action_plan_llm())
+    orch = Orchestrator(
+        llm,
+        executors={"action": _ok("action", "x", ["public"])},
+        checkpoint_path=db_path,
+    )
+
+    result = orch.answer("x?", role="analyst", thread_id="run-approve")
+
+    assert result.pending_approval is True
+    assert result.approval_decision is None
+    # The draft itself is still the Guardian's already-reviewed safe_answer -- pending_approval
+    # flags that it's awaiting a human, it doesn't hide the text a reviewer needs to see.
+    assert result.answer == "Draft: confirm the reorder, thanks."
+
+
+def test_approver_can_approve_a_paused_action_draft(tmp_path: Path) -> None:
+    db_path = str(tmp_path / "checkpoints.sqlite")
+    llm = _llm_with(_action_plan_llm())
+    orch = Orchestrator(
+        llm,
+        executors={"action": _ok("action", "x", ["public"])},
+        checkpoint_path=db_path,
+    )
+    orch.answer("x?", role="analyst", thread_id="run-approve")
+
+    result = orch.resume_approval("run-approve", "approve", approver_role="approver")
+
+    assert result.approval_decision == "approved"
+    # pending_approval is set True only by answer()'s own wrapper around the paused invoke()
+    # call (it's never written into graph state) -- a resumed, decided run has nothing pending.
+    assert result.pending_approval is False
+    assert result.answer == "Draft: confirm the reorder, thanks."
+
+
+def test_approver_can_reject_a_paused_action_draft(tmp_path: Path) -> None:
+    db_path = str(tmp_path / "checkpoints.sqlite")
+    llm = _llm_with(_action_plan_llm())
+    orch = Orchestrator(
+        llm,
+        executors={"action": _ok("action", "x", ["public"])},
+        checkpoint_path=db_path,
+    )
+    orch.answer("x?", role="analyst", thread_id="run-reject")
+
+    result = orch.resume_approval("run-reject", "reject", approver_role="approver")
+
+    assert result.approval_decision == "rejected"
+    assert "rejected" in (result.answer or "")
+    assert "Draft: confirm the reorder" not in (result.answer or "")
+
+
+def test_approver_edit_is_re_reviewed_by_the_guardian_not_trusted(tmp_path: Path) -> None:
+    """An approver's edit is new, unreviewed text -- re-running it through the Guardian should
+    catch a violation the original draft never had (here, a restricted-name leak the approver
+    typed in by hand), proving the edit path doesn't bypass step 4's non-bypassable guarantee.
+    """
+    db_path = str(tmp_path / "checkpoints.sqlite")
+    llm = _llm_with(_action_plan_llm())
+    orch = Orchestrator(
+        llm,
+        executors={"action": _ok("action", "x", ["public"])},
+        checkpoint_path=db_path,
+    )
+    orch.answer("x?", role="analyst", thread_id="run-edit")
+
+    result = orch.resume_approval(
+        "run-edit",
+        "edit",
+        approver_role="approver",
+        edited_answer="Pulled straight from vw_PortfolioHealth for you.",
+    )
+
+    assert result.approval_decision == "edited"
+    assert result.guardian_verdict is not None
+    assert result.guardian_verdict.outcome == "block"
+    assert "vw_PortfolioHealth" not in (result.answer or "")
+
+
+def test_approver_edit_that_stays_clean_is_accepted(tmp_path: Path) -> None:
+    db_path = str(tmp_path / "checkpoints.sqlite")
+    llm = _llm_with(_action_plan_llm())
+    orch = Orchestrator(
+        llm,
+        executors={"action": _ok("action", "x", ["public"])},
+        checkpoint_path=db_path,
+    )
+    orch.answer("x?", role="analyst", thread_id="run-edit-clean")
+
+    result = orch.resume_approval(
+        "run-edit-clean",
+        "edit",
+        approver_role="approver",
+        edited_answer="Please confirm the reorder at your convenience.",
+    )
+
+    assert result.approval_decision == "edited"
+    assert result.guardian_verdict is not None
+    assert result.guardian_verdict.outcome == "allow"
+    assert result.answer == "Please confirm the reorder at your convenience."
+
+
+def test_resume_approval_rejects_a_non_approver_role(tmp_path: Path) -> None:
+    db_path = str(tmp_path / "checkpoints.sqlite")
+    llm = _llm_with(_action_plan_llm())
+    orch = Orchestrator(
+        llm,
+        executors={"action": _ok("action", "x", ["public"])},
+        checkpoint_path=db_path,
+    )
+    orch.answer("x?", role="analyst", thread_id="run-guard")
+
+    try:
+        orch.resume_approval("run-guard", "approve", approver_role="viewer")
+        raised = False
+    except PermissionError:
+        raised = True
+    assert raised
+
+
+def test_resume_approval_without_a_checkpointer_raises() -> None:
+    llm = _llm_with([])
+    orch = Orchestrator(llm, executors={})
+
+    try:
+        orch.resume_approval("no-thread", "approve", approver_role="approver")
+        raised = False
+    except RuntimeError:
+        raised = True
+    assert raised
+
+
+def test_input_gate_blocks_before_the_graph_ever_runs() -> None:
+    """Day 7 step 6: a blocked question never reaches "plan" -- no LLM call, no specialist, no
+    cost. `_llm_with([])` (an empty queue) proves this: if `_plan` ran, `FakeMessagesResource`
+    would raise on the unexpected call.
+    """
+    llm = _llm_with([])
+    gate = InputGate(kill_switch_enabled=True)
+    orch = Orchestrator(llm, executors={}, input_gate=gate)
+
+    result = orch.answer("anything at all", role="analyst")
+
+    assert result.input_gate_verdict is not None
+    assert result.input_gate_verdict.outcome == "block"
+    assert "kill_switch_engaged" in result.input_gate_verdict.reason_codes
+    assert result.plan == []
+    assert result.results == []
+    assert result.total_cost_usd == 0.0
+    assert "stopped before it reached the system" in (result.answer or "")
+
+
+def test_input_gate_allows_a_clean_question_through_with_no_verdict_recorded() -> None:
+    llm = _llm_with(
+        [
+            structured_response(
+                {"tasks": [{"agent": "data_analyst", "objective": "x", "constraints": {}}]}
+            ),
+            structured_response({"answer": "ok", "cited_tasks": ["t0"], "conflicts_noted": []}),
+            _PASSING_VERDICT,
+        ]
+    )
+    orch = Orchestrator(llm, executors={"data_analyst": _ok("data_analyst", "x")})
+
+    result = orch.answer("What is our top vendor's fill rate?", role="analyst")
+
+    assert result.answer == "ok"
+    assert result.input_gate_verdict is None
+
+
+def test_a_completed_run_records_its_spend_against_the_input_gate_cap(tmp_path: Path) -> None:
+    """Proves `answer()` actually calls `InputGate.record_spend` with the real total, not a
+    guess -- the second call for the same role should then see that spend reflected.
+    """
+    from copilot.guardrails.input_gate import SpendTracker
+
+    tracker = SpendTracker(path=tmp_path / "spend.json")
+    gate = InputGate(spend_tracker=tracker, daily_spend_cap_usd=1000.0)
+
+    def _costly(spec: TaskSpec) -> AgentResult:
+        return AgentResult(
+            task_id=spec.task_id, agent="data_analyst", status="ok", findings="x", cost_usd=2.0
+        )
+
+    llm = _llm_with(
+        [
+            structured_response(
+                {"tasks": [{"agent": "data_analyst", "objective": "x", "constraints": {}}]}
+            ),
+            structured_response({"answer": "ok", "cited_tasks": ["t0"], "conflicts_noted": []}),
+            _PASSING_VERDICT,
+        ]
+    )
+    orch = Orchestrator(llm, executors={"data_analyst": _costly}, input_gate=gate)
+
+    result = orch.answer("x?", role="analyst")
+
+    assert result.total_cost_usd > 0
+    assert tracker.spent_today("analyst") == result.total_cost_usd

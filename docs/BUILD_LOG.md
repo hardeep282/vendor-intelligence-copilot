@@ -1177,3 +1177,123 @@ tool rather than code). Open for Day 7: the Guardian (cross-model-family provena
 check on `AgentResult.data_classes` vs. the requesting role and answer audience), the
 interrupt -> approver flow `run_action`'s own `gaps` already points at, and guardrails/approvals
 more broadly.
+
+## 2026-10-15 · Day 7 · Guardian, guardrails and approvals
+
+**Covered:** all 8 steps of the sprint doc's D7 (injection classifier cut-first, per the doc's
+own cut-first line). Guardian node with 8 deterministic checks and ALLOW/REDACT/BLOCK/ESCALATE
+outcomes; PII (Presidio + regex fallback), secret patterns, canary tokens in every agent's
+system prompt; audit log; a graph topology test proving no path to `END` skips the Guardian;
+an Action-draft approval gate (`interrupt()` -> Guardian -> approver approve/edit/reject); an
+input gate (kill switch, length, injection heuristics, scope, rate limit, daily spend cap);
+LangSmith trace masking; a 23-case privacy-leakage suite in CI (15 + 8 SQL red-team).
+
+**Step 1-3 (Guardian, PII/canary/secrets, outcomes + audit log):** `Guardian.review()` runs
+8 checks cheapest-first against a `_Reviewable` Protocol (not an import of `OrchestratorResult`
+-- avoids a circular import with `orchestrator.py`, which has to import `guardian.py`): canary
+leak, restricted-table-name leak, raw-row-shape (`RAW_ROW_PATTERN`: 10+ consecutive delimited
+lines), role policy, vendor-facing-audience (an Action draft + any other specialist's non-public
+data in the same answer), secrets, PII, and grounding (`not verified` -> ESCALATE, not BLOCK).
+Worst-severity finding wins; every finding's code lands in `reason_codes` regardless of which
+one decided the outcome. `copilot.guardrails.pii.find_pii` tries Presidio first (its
+`AnalyzerEngine` built and cached once per process -- an uncached first attempt made the test
+suite hang, reloading the spaCy model on every single call) and falls back to a deterministic
+regex layer when Presidio/its model aren't usable; the regex layer is what every test and CI
+run actually exercises. `copilot.guardrails.canary` appends one `CANARY-<AGENT>` marker per
+call site to every system prompt this project builds. `copilot.guardrails.audit_log.
+log_decision`/`log_approval` append JSON lines to a local, gitignored
+`data/audit/guardian_log.jsonl`, independent of LangSmith on purpose.
+
+**Step 4 (topology test):** `finalize` no longer edges straight to `END` -- it edges to
+`guardian`, which (after step 5) shares the one path to `END` with `approval_gate`, itself only
+reachable from `guardian`. The test asserts this against the *compiled* graph's own
+`get_graph()` edges, not `_build_graph`'s Python source.
+
+**Step 5 (approval gate):** confirmed the `interrupt()`/`Command(resume=...)` pattern against a
+real `SqliteSaver` with a throwaway smoke script *before* writing the real wiring -- resuming
+without a checkpointer raises `RuntimeError` from LangGraph itself, so an `Orchestrator` built
+with no `checkpoint_path` skips the approval gate entirely rather than pausing on a run nothing
+can resume. `resume_approval()` checks `approver_role in {"approver", "admin"}` in Python before
+touching the graph at all. An `"edit"` decision is re-run through `self._guardian.review()`
+before its text is accepted.
+
+**Step 6 (input gate):** `InputGate.review()` runs kill switch, length, injection heuristics,
+scope, rate limit, and daily spend cap, cheapest-first, BLOCK-only (nothing on the input side is
+worth partially salvaging). `InputGate.record_spend()` is called by `Orchestrator.answer()`
+after a run finishes with its real `total_cost_usd` -- the gate itself, running before this
+request's own cost exists, can only ever check *past* spend.
+
+**Step 7 (trace masking):** `LLMClient.complete`/`.structured` are decorated with
+`process_inputs=mask_run_payload, process_outputs=mask_run_payload`
+(`copilot.guardrails.trace_masking`) rather than threading a `langsmith.Client(anonymizer=...)`
+through every call site. Two things ruled the `Client` approach out, both confirmed with
+throwaway scripts first: constructing a `Client()` eagerly calls `GET /info` over the network;
+and a masked client set as langsmith's own default via its `contextvars`-based context doesn't
+survive crossing into `_run_specialist`'s `ThreadPoolExecutor` worker thread (`ContextVar.set()`
+in the main thread is invisible to a plain new thread -- verified directly). `mask_run_payload`
+hides the whole payload if a Restricted table/view name appears anywhere in it, otherwise
+redacts PII/secrets recursively through every string value.
+
+**Step 8 (23-case suite):** `tests/test_privacy_leakage_suite.py` names every case from the
+master prompt's privacy-leakage categories (role escalation, poisoned contract, cross-vendor
+draft, prompt extraction, raw rows, other vendors' terms, system prompts, API keys, other
+users' memory, small-group figures) plus the 8 SQL red-team rows from `docs/specs/
+text_to_sql_safety.md`, asserting the real mechanism that catches each one. Writing it surfaced
+a real, previously-unguarded gap: nothing blocked an unbounded cross join (the existing
+`LIMIT 200` cap bounds the output, not the join computation). Fixed with a new validator check,
+`_check_cost_limit` (`sql_cost_limit`): blocks a join with no `ON`/`USING` *unless* `WHERE`
+references columns from at least two of the joined tables by their table-qualified name --
+verified against the real golden set first (`gq-025`'s genuine bounded-by-`WHERE` self-join
+correctly still passes) before trusting the fix.
+
+**Mistakes and fixes:**
+- A circular import: `copilot.llm.client` needs `mask_run_payload` (step 7), which needs
+  `SECRET_PATTERNS`; importing that from `guardian.py` closed a real loop (`guardian.py` imports
+  `copilot.agents.contracts` for `AgentResult`'s type hint, which imports `copilot.llm.client`
+  for `Effort`) -- confirmed by actually hitting the `ImportError` before fixing it. Fixed by
+  splitting `SECRET_PATTERNS` into its own leaf module, `copilot.guardrails.secret_patterns`,
+  with no project imports, used by both `guardian.py` and `trace_masking.py`.
+- The real repo's `data/spend/daily_spend.json` got polluted to $10.02 for role `analyst` by
+  the test suite itself (every orchestrator test building a plain `Orchestrator(...)` shares one
+  default `InputGate()`, whose `SpendTracker` persists to that real file) -- this then broke 8
+  unrelated orchestrator tests with a spurious `daily_spend_cap_exceeded` block, and one of the
+  approval-resume tests on top of that (resuming a thread that was blocked before the graph ever
+  ran, so there was nothing to resume). Fixed two ways: cleaned the polluted file, and added
+  `tests/conftest.py`'s autouse `_isolated_spend_log` fixture so every test gets its own
+  throwaway spend file (required changing `SpendTracker.__init__`'s default-path handling from
+  a bound default-argument value to a body-level lookup, so `monkeypatch.setattr` on the module
+  constant actually takes effect).
+- `_check_cost_limit`'s first version used `statement.args.get("from")` -- this sqlglot version
+  stores it under `"from_"` (`from` is a Python keyword), so the lookup silently returned `None`
+  and the real golden query `gq-025` got false-blocked. Found by debugging the exact AST args
+  keys directly rather than guessing, fixed the key name, reverified both the false-block case
+  and the real-leak case.
+- Test draft text containing day names ("by Friday", "by Monday") tripped Presidio's own
+  `DATE_TIME` entity detection, REDACTing text the approval-gate tests expected to pass through
+  unchanged -- fixed by rewording the fixture text, not by weakening the PII check.
+
+**Tests (95 new):** 17 `tests/test_guardian.py`, 4 `tests/test_guardrails_pii.py`, 4 `tests/
+test_guardrails_canary.py`, 4 `tests/test_guardrails_audit_log.py`, 2 end-to-end Guardian-wiring
+tests in `tests/test_orchestrator.py` (step 4) + 8 approval-gate tests (step 5) + 3 input-gate
+wiring tests (step 6), 18 `tests/test_input_gate.py`, 8 `tests/test_trace_masking.py`, 4 new
+`sql_cost_limit` cases in `tests/test_sql_validator.py`, 23 `tests/test_privacy_leakage_suite.py`.
+All deterministic -- no LLM call, no API key, same posture every other guardrail test in this
+project takes.
+
+Updated `docs/CODE_MAP.md`: new entries for `copilot.guardrails.guardian`/`pii`/`canary`/
+`audit_log`/`input_gate`/`trace_masking`/`secret_patterns`, the `sql_cost_limit` addition to
+`copilot.sql.validator`, the input-gate knobs added to `copilot.settings`, and `tests/
+conftest.py` -- one `CODE_MAP.md` edit per commit, per the standing rule.
+
+**Metrics:** 440 tests pass (was 345). ruff and mypy (strict) clean across the whole repo
+(79 source files, up from 72).
+
+**Costs:** $0 -- every Guardian/input-gate/trace-masking/privacy-suite test is deterministic;
+Presidio's `AnalyzerEngine` and its `en_core_web_lg` spaCy model installed and ran without issue
+this sitting (no API key needed for either).
+
+**Day 7 is now complete: all 8 steps shipped** (the injection classifier cut-first, per the
+sprint doc's own line). **ADR-006 (Guardian design) is still open** -- the required Day 7 ADR
+per Addendum A1, waiting on the user's own answers to the template/questions rather than mine.
+Open for Day 8: FastAPI `/ask` with SSE streaming, the UI, invite-code + API-key auth, Postgres
+for checkpoints, the CI eval gate, latency budget work, and release `v0.1.0`.

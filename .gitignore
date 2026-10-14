@@ -21,6 +21,11 @@ data/private/
 data/chroma/
 *.xlsx
 *.csv
+# Guardian audit log (Day 7 step 3): a local, append-only record of every decision -- same
+# never-commit-local-runtime-data rule as the entries above, never *.jsonl in general.
+data/audit/*.jsonl
+# Input gate's daily spend tracker (Day 7 step 6): local runtime state, same rule.
+data/spend/*.json
 
 # Tooling
 .ipynb_checkpoints/

@@ -25,6 +25,15 @@ this corrects the sprint plan's assumption that `temperature` still works the ol
     InternalServerError, ServiceUnavailableError, OverloadedError, DeadlineExceededError.
     `max_retries=0` is passed to the SDK client so *we* control backoff, jitter and logging
     (tenacity), instead of the SDK silently retrying underneath us.
+
+**Day 7 step 7: LangSmith trace masking.** `complete`/`structured` -- the one choke point every
+LLM call in this project already goes through -- are decorated with `process_inputs=mask_run_
+payload, process_outputs=mask_run_payload` (`copilot.guardrails.trace_masking`). These are plain
+functions, not a `Client(anonymizer=...)`: no network call at decoration time (constructing a
+`langsmith.Client()` eagerly calls `GET /info`, confirmed before choosing this), and no
+`contextvars` propagation problem into `_run_specialist`'s `ThreadPoolExecutor` worker thread
+(confirmed a `ContextVar.set()` in the main thread is invisible there). What actually reaches
+LangSmith is masked; what the caller gets back from `complete`/`structured` is never touched.
 """
 
 from __future__ import annotations
@@ -46,6 +55,7 @@ from tenacity import (
     wait_random_exponential,
 )
 
+from copilot.guardrails.trace_masking import mask_run_payload
 from copilot.llm.pricing import cost_usd
 from copilot.llm.types import CallMetrics, LLMCallError, LLMResult, StructuredOutputError
 from copilot.settings import get_settings
@@ -142,7 +152,12 @@ class LLMClient:
             os.environ.setdefault("LANGSMITH_API_KEY", s.langsmith_api_key.get_secret_value())
             os.environ.setdefault("LANGSMITH_PROJECT", s.langsmith_project)
 
-    @traceable(run_type="llm", name="LLMClient.complete")
+    @traceable(
+        run_type="llm",
+        name="LLMClient.complete",
+        process_inputs=mask_run_payload,
+        process_outputs=mask_run_payload,
+    )
     def complete(
         self,
         *,
@@ -202,7 +217,12 @@ class LLMClient:
 
         return cast(LLMResult, _call())
 
-    @traceable(run_type="llm", name="LLMClient.structured")
+    @traceable(
+        run_type="llm",
+        name="LLMClient.structured",
+        process_inputs=mask_run_payload,
+        process_outputs=mask_run_payload,
+    )
     def structured(
         self,
         *,

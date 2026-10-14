@@ -17,11 +17,15 @@ in this repo it calls or is called by).
 
 ### `src/copilot/settings.py`
 One typed place for every config value and secret in the project.
+Day 7 step 6 added the input gate's knobs: `daily_spend_cap_usd` (already present, now actually
+enforced), `rate_limit_per_minute` (default 30), `max_question_chars` (default 4000),
+`kill_switch_enabled` (default `False` — the one flag an operator flips first in an incident).
 **Takes in:** environment variables, plus a local `.env` file (never committed).
 **Gives out:** a cached `Settings` object via `get_settings()`.
 **Talks to:** everything else that needs a key or a path — `LLMClient`, all the `scripts/*.py`,
-`copilot.data.store`. This is the *only* code that reads `.env` directly; anything that builds its
-own API client (e.g. `anthropic.Anthropic()`) must go through this, or it won't see the key.
+`copilot.data.store`, `copilot.guardrails.input_gate` (Day 7). This is the *only* code that reads
+`.env` directly; anything that builds its own API client (e.g. `anthropic.Anthropic()`) must go
+through this, or it won't see the key.
 
 ### `src/copilot/secrets.py`
 Loads production secrets from AWS SSM Parameter Store when the server starts in prod.
@@ -65,12 +69,176 @@ a way to fact-check a narrative by eye instead of trusting the model's own citat
 
 ## Guardrails — who is allowed to see what
 
+### `src/copilot/guardrails/guardian.py` -- `Guardian` *(day: 7, isNew: true)*
+Master prompt C4's single mandatory final pass. `Guardian.review(result)` runs 8 checks,
+cheapest-first, against anything shaped like an `OrchestratorResult` (a `_Reviewable` Protocol --
+`role`/`answer`/`results`/`verified` -- not an import of that class, to avoid a circular import
+with `orchestrator.py`): `_check_canary` (the agent-specific `CANARY-<AGENT>` markers every
+system prompt now carries, via `canary.py`, leaking into output = BLOCK), `_check_restricted_
+names` (any `policies/disclosure.yaml` `restricted_names` table/view named in the answer =
+BLOCK), `_check_raw_row_shape` (`RAW_ROW_PATTERN`: 10+ consecutive pipe/tab-delimited 3+-field
+lines = BLOCK -- a real row-level export, not an illustrative summary table), `_check_role_
+policy` (any `AgentResult.data_classes` the requesting role's `DisclosurePolicy.can_view` says no
+to = BLOCK), `_check_vendor_audience` (an Action draft present + any *other* specialist's data
+classes beyond `vendor_facing_audience.allowed_classes` = BLOCK), `_check_secrets` (`_SECRET_
+PATTERNS`: Anthropic/AWS/bearer-token shapes = BLOCK), `_check_pii` (`pii.find_pii` hits =
+REDACT, one finding per entity), `_check_grounding` (`not result.verified` = ESCALATE, not
+BLOCK -- unconfirmed-safe isn't known-unsafe). The worst-severity finding (`block` > `escalate` >
+`redact` > `allow`) decides `outcome`; every finding's `code` lands in `reason_codes` regardless
+of which one won, so the audit log shows everything that fired. `safe_answer` is the real text on
+ALLOW, a copy with each PII span replaced by `[REDACTED:<TYPE>]` on REDACT, or one of two fixed
+generic messages (naming the reason codes, nothing else) on BLOCK/ESCALATE.
+**Takes in:** a `_Reviewable` (role, answer, specialist results, verified flag) + an optional
+`DisclosurePolicy` (defaults to `load_policy()`).
+**Gives out:** `GuardianVerdict` (`outcome`, `reason_codes`, `findings`, `safe_answer`,
+`policy_version`); `Finding`; `GuardianOutcome`; `RAW_ROW_PATTERN`.
+**Talks to:** `copilot.agents.contracts` (`AgentResult`); `copilot.guardrails.pii` (`find_pii`);
+`copilot.guardrails.policy` (`DataClass`/`DisclosurePolicy`/`Role`/`load_policy`). Called from
+`copilot.agents.orchestrator._guardian_node`/`_approval_gate` -- the only node between `finalize`
+and `END` (step 4's topology test, `tests/test_orchestrator.py::
+test_every_path_to_end_passes_through_guardian`), and the re-review every approver `edit` gets
+(step 5) before its text is accepted.
+
+### `src/copilot/guardrails/pii.py` -- `find_pii()` *(day: 7, isNew: true)*
+PII detection for `Guardian._check_pii`/`_apply_redactions`. Presidio (`AnalyzerEngine` + the
+`en_core_web_lg` spaCy model) when it's installed and the model loads; a dependency-free regex
+fallback (`EMAIL_ADDRESS`/`PHONE_NUMBER`/`CREDIT_CARD`) otherwise, so the check never silently
+no-ops just because a model wasn't available in some environment. `_get_analyzer()` builds and
+caches the `AnalyzerEngine` at module level (construction, not `.analyze()`, is the slow part --
+an uncached version made the test suite hang); a failed build is cached too, so a missing model
+doesn't re-attempt on every call. `find_pii` tries Presidio first via `_get_analyzer()`, falls
+back to regex only when Presidio itself returns `None` (not installed, model missing, or an
+analysis-time failure) -- never both, so a caller can tell from `PiiEntity.source` which layer
+actually ran. Tests (`tests/test_guardrails_pii.py`) assert against `_regex_entities` directly,
+since Presidio's availability varies by environment; `Guardian`'s own tests exercise `find_pii`
+itself, whichever backend fires.
+**Takes in:** a string (an answer about to be shown to a user).
+**Gives out:** `list[PiiEntity]` (`entity_type`, `text`, `source: "presidio" | "regex_fallback"`).
+**Talks to:** `copilot.guardrails.guardian` is the only caller.
+
+### `src/copilot/guardrails/canary.py` -- `canary_token()`/`canary_line()` *(day: 7, isNew: true)*
+Fixed per-agent markers planted in every system prompt this project builds, so any appearance of
+one in a *final answer* is unambiguous proof of a system-prompt/instruction leak, not a guess.
+`canary_token(agent)` -> `f"{policy.canary.prefix}{agent.upper()}"` (prefix from `policies/
+disclosure.yaml`'s `canary.prefix`, currently `"CANARY-"`); `canary_line(agent)` wraps that into
+one appendable instruction line. Appended to every system prompt that reaches an LLM in this
+project: `TextToSqlService.answer()` (`"data_analyst"`), `run_action()` (`"action"`),
+`CorrectiveRagService._grade`/`_rewrite`/`_generate` (`"knowledge_grade"`/`"knowledge_rewrite"`/
+`"knowledge_generate"`), and `Orchestrator._plan`/`_draft`/`_verify`
+(`"orchestrator_plan"`/`"orchestrator_draft"`/`"orchestrator_verify"`) -- one token per call site,
+not per agent, since a leak at the draft step versus the verify step says something different
+about where it came from.
+**Takes in:** an agent/call-site name (any string -- not restricted to `AgentName`, since
+`orchestrator_plan`/`orchestrator_draft`/`orchestrator_verify`/`knowledge_grade`/etc. aren't
+specialist names).
+**Gives out:** `canary_token(agent) -> str`, `canary_line(agent) -> str`.
+**Talks to:** `copilot.guardrails.policy` (`load_policy`, cached at module level);
+`copilot.guardrails.guardian._check_canary` is the only check that looks for these tokens.
+
+### `src/copilot/guardrails/audit_log.py` -- `log_decision()`/`log_approval()` *(day: 7, isNew: true)*
+A durable, append-only JSONL record of every Guardian decision and every approver decision --
+independent of LangSmith on purpose (traces can be sampled/redacted/rotated, step 7; this file is
+the compliance-grade record that has to survive that). `log_decision(verdict, question=, role=)`
+writes one `"event": "guardian_decision"` row per `GuardianVerdict`; `log_approval(question=,
+role=, decision=, final_answer=)` writes one `"event": "approval_decision"` row per approve/edit/
+reject call (no `GuardianVerdict` to log there -- an edit gets its own separate `log_decision`
+row from the re-review). Both never raise into the caller: a write wrapped in `try/except OSError`
+returns `True`/`False` instead, because an audit-log write problem must not itself block an
+already-decided answer from reaching the user. `read_decisions(path)` returns `[]` for a log that
+doesn't exist yet. Local-only, never committed (`data/audit/*.jsonl` added to `.gitignore`
+alongside this file -- no existing wildcard covered `.jsonl`).
+**Takes in:** a `GuardianVerdict` + question/role (`log_decision`), or question/role/decision/
+final_answer (`log_approval`).
+**Gives out:** `True`/`False` per write; `list[dict]` from `read_decisions`.
+**Talks to:** `copilot.guardrails.guardian` (`GuardianVerdict`); `copilot.settings`
+(`REPO_ROOT`). Called from `copilot.agents.orchestrator._guardian_node` and `_approval_gate`.
+
+### `src/copilot/guardrails/input_gate.py` -- `InputGate` *(day: 7, isNew: true)*
+Master prompt D2/C4's input half of defence in depth (the Guardian above is the output half) --
+checks that run on the raw question *before* the Orchestrator's `plan` node, so a bad request
+never spends an LLM call. `InputGate.review(question, role)` runs 6 checks, cheapest first:
+`_check_kill_switch` (one flag, `Settings.kill_switch_enabled`), `_check_length` (`len()` against
+`Settings.max_question_chars`, default 4000), `_check_injection` (`_INJECTION_PATTERNS`: blunt,
+common phrasings -- "ignore previous instructions", "reveal your system prompt", "you are now",
+etc. -- the sprint doc's one Day 7 cut-first item is the *classifier*; least-privilege tools
+downstream, not these regexes alone, are the real backstop against a cleverly-worded injection
+that slips past them), `_check_scope` (`_OFF_TOPIC_PATTERNS`: a small set of clearly-not-vendor-
+procurement request shapes -- "write me a poem", "tell me a joke" -- false negatives here are
+the Orchestrator's/Guardian's problem; false positives on a real question would be worse),
+`_check_rate_limit` (`RateLimiter`, an in-memory per-role sliding window, `Settings.
+rate_limit_per_minute`, default 30/min -- process-local by design, resets on restart),
+`_check_spend_cap` (`SpendTracker`, a role's cumulative spend *today* read from a small JSON
+file, `Settings.daily_spend_cap_usd`, default $5 -- has to survive a restart within the same day,
+unlike the rate limiter, so this one does touch disk). Every finding is `outcome="block"` (no
+redact/escalate on the input side -- see the module docstring for why); any finding at all means
+the verdict blocks, with every firing code in `reason_codes`. `InputGate.record_spend(role,
+cost_usd)` is the other half of the spend cap: called by the Orchestrator *after* a run finishes
+with its real `total_cost_usd` (the gate itself, running before the request's own cost exists,
+can only ever check *past* spend). `RateLimiter`/`SpendTracker` are injectable (same construction
+pattern as `Guardian`), so tests can isolate or fast-forward either one without touching real
+settings or `data/spend/` -- `tests/conftest.py`'s autouse `_isolated_spend_log` fixture does
+exactly that for every Orchestrator test that doesn't build its own `InputGate` explicitly.
+**Takes in:** a question string + a `Role`; optional `RateLimiter`/`SpendTracker`/limit overrides
+at construction (defaults come from `copilot.settings.get_settings()`).
+**Gives out:** `GateVerdict` (`outcome`, `reason_codes`, `findings`, `message`); `Finding`;
+`GateOutcome`; `RateLimiter`; `SpendTracker`; `DEFAULT_SPEND_LOG_PATH`.
+**Talks to:** `copilot.guardrails.policy` (`Role`); `copilot.settings` (`REPO_ROOT`,
+`get_settings`). Called from `copilot.agents.orchestrator.Orchestrator.answer` -- the first thing
+that runs, before `plan` -- and `.record_spend` once the run (or an input-gate pass-through) has
+finished.
+
+### `src/copilot/guardrails/secret_patterns.py` *(day: 7, isNew: true)*
+A leaf module (no project imports) holding just `SECRET_PATTERNS` -- split out of `guardian.py`
+so `trace_masking.py` (below) can reuse the exact same regexes without creating an import cycle
+(`guardian.py` imports `copilot.agents.contracts` for `AgentResult`'s type hint, which imports
+`copilot.llm.client` for `Effort` -- and `llm/client.py` is exactly the module that needs to
+import the masking function, so `trace_masking -> guardian -> contracts -> llm.client` would
+have closed the loop; confirmed by actually hitting the `ImportError` before this was split out).
+**Gives out:** `SECRET_PATTERNS` (anthropic_api_key/aws_access_key_id/aws_secret_access_key/
+generic_bearer_token regexes).
+**Talks to:** `copilot.guardrails.guardian` (`_check_secrets`) and `copilot.guardrails.
+trace_masking` both import from here; neither imports the other.
+
+### `src/copilot/guardrails/trace_masking.py` -- `mask_run_payload()` *(day: 7, isNew: true)*
+Day 7 step 7 (sprint doc: "anonymizer rules, hidden restricted payloads"). Masks what actually
+gets *recorded* in a LangSmith trace -- independent of the Guardian, which only ever sees the
+Orchestrator's one final answer; an intermediate specialist prompt can reference a Restricted
+table by name on its way to a correctly-redacted final answer, and that intermediate payload
+needs its own masking before anything reaches LangSmith's servers. `mask_run_payload(payload)`:
+if any `policies/disclosure.yaml` `restricted_names` table/view appears anywhere in the payload
+(recursively, through nested dicts/lists), the *entire* payload is replaced with one marker
+(`RESTRICTED_PAYLOAD_MARKER`) -- "hidden restricted payloads" means the whole thing, not
+selective redaction, since a payload that already names a Restricted source is already out of
+bounds for what this project's licence/disclosure rules say should sit in a third-party trace
+store. Otherwise, every string value (recursively) gets PII (`copilot.guardrails.pii.find_pii`)
+and secret (`SECRET_PATTERNS`) matches replaced with `[REDACTED:<TYPE>]` -- same redaction shape
+`Guardian._apply_redactions` uses on the output side, applied here to inputs *and* outputs.
+**Why wired as `@traceable(process_inputs=mask_run_payload, process_outputs=mask_run_payload)`
+on `LLMClient.complete`/`.structured` themselves, not a `langsmith.Client(anonymizer=...)`
+threaded through every call site:** two things ruled that out, both confirmed with throwaway
+scripts before choosing this: constructing a `Client()` eagerly calls `GET /info` over the
+network (bad to do at import/decoration time just to attach an anonymizer); and setting a masked
+client as langsmith's own default via its `contextvars`-based context doesn't survive crossing
+into `_run_specialist`'s `ThreadPoolExecutor` worker thread (a `ContextVar.set()` in the main
+thread is invisible there -- confirmed empirically). A plain function reference baked into the
+decorator at the one choke point every LLM call already goes through sidesteps both problems
+with no change needed at any of this project's other call sites. Only what's *recorded* for the
+trace is masked -- the real return value `complete`/`structured` hand back to their caller is
+never touched.
+**Takes in:** the `inputs`/`outputs` dict `@traceable` builds for one LLM call.
+**Gives out:** `mask_run_payload(payload) -> dict`; `RESTRICTED_PAYLOAD_MARKER`.
+**Talks to:** `copilot.guardrails.pii` (`find_pii`); `copilot.guardrails.policy`
+(`load_policy`, cached at module level); `copilot.guardrails.secret_patterns`
+(`SECRET_PATTERNS`). Called from `copilot.llm.client.LLMClient.complete`/`.structured`'s
+`@traceable` decorators -- the only caller.
+
 ### `src/copilot/guardrails/policy.py`
 Parses `policies/disclosure.yaml` into typed objects and answers "may this role see this?".
 **Takes in:** the YAML policy file.
 **Gives out:** a validated `DisclosurePolicy`.
 **Talks to:** `TextToSqlService` (schema linking + validator), `InsightService` (k-threshold
-masking), the future Guardian agent (Day 7).
+masking), `copilot.guardrails.guardian`/`canary` (Day 7: role-policy/vendor-audience checks and
+the canary-token prefix both read this same policy object).
 
 ### `policies/disclosure.yaml` / `policies/sql_rules.yaml`
 Data, not code: which roles may see which tables/columns (disclosure), and the structural/semantic
@@ -84,11 +252,18 @@ rules the SQL validator enforces (sql_rules). Changing a rule is a diff to these
 The one place every agent/service calls an LLM through: retries/backoff, streaming for
 time-to-first-token, prompt caching, tracing (`@traceable`), per-call cost/latency/token logging.
 No `temperature`/`top_p`/`top_k` — this model generation's API doesn't accept them (confirmed
-against the SDK, see ADR-005); the nearest lever is `effort`.
+against the SDK, see ADR-005); the nearest lever is `effort`. Day 7 step 7: `complete`/
+`structured`'s `@traceable` decorators now also carry `process_inputs=mask_run_payload,
+process_outputs=mask_run_payload` (`copilot.guardrails.trace_masking`) — every LLM call's
+recorded trace is masked (PII/secrets redacted, a Restricted-table mention hides the whole
+payload) before anything reaches LangSmith, with no change needed at any call site elsewhere
+in the codebase. See that module's own entry for why a plain function here, not a
+`Client(anonymizer=...)`, was the right call.
 **Takes in:** model id, system prompt, messages, optionally a Pydantic output model (`structured()`).
 **Gives out:** `LLMResult` or a validated Pydantic object, paired with `CallMetrics`.
 **Talks to:** `InsightService`, `TextToSqlService`, `run_effort_lab.py`, `run_tokenization_lab.py`
-all call through this instead of touching the Anthropic SDK directly.
+all call through this instead of touching the Anthropic SDK directly; `copilot.guardrails.
+trace_masking` (Day 7).
 
 ### `src/copilot/llm/prompts.py`
 Versioned prompt loader — prompt text lives in reviewable YAML, not buried in Python strings. A
@@ -117,7 +292,9 @@ One business question → one validated DuckDB query → real rows. Shows the mo
 tables (schema linking) and 3 similar verified examples, validates every candidate query through
 all 6 validator layers before running it, and on rejection feeds the exact violations back to the
 model as the next turn (self-correction, max 2 retries) rather than giving up or running bad SQL.
-**Talks to:** `schema.py`, `examples.py`, `validator.py`, `store.py`, `LLMClient`.
+Day 7 step 2: its system prompt now appends `canary_line("data_analyst")`.
+**Talks to:** `schema.py`, `examples.py`, `validator.py`, `store.py`, `LLMClient`,
+`copilot.guardrails.canary` (Day 7).
 
 ### `src/copilot/sql/schema.py`
 Builds the "schema card" shown to the model — only the tables/columns a given role may even be told
@@ -135,8 +312,17 @@ The 6-layer validator that catches two failure families before anything runs: st
 SQL (wrong table, disguised write, catalog probe), and structurally valid SQL that would still
 return a wrong *number* (a ratio column averaged across vendors, a sum after a fan-out join, two
 overlapping counts added). Full trap table: `docs/specs/text_to_sql_safety.md`.
+**Day 7 step 8, red-team case 8 (`sql_cost_limit`):** `_check_cost_limit` blocks a multi-table
+`FROM`/`JOIN` with no `ON`/`USING` condition *unless* `WHERE` references columns from at least
+two of the joined tables by their table-qualified name -- catches an unbounded cross join (a DoS
+risk: the LIMIT cap bounds the output, not the join computation that produces it) without
+false-blocking `gq-025`'s real golden query, a self-join with no join key that's entirely bounded
+through `WHERE` instead (`d.SalesMonth = 12 AND n.SalesMonth = 11`). Known, documented limitation:
+only a table-qualified `WHERE` column counts as bounding -- an unqualified column filtering one
+side of a comma-join is still flagged, a deliberate false-block-over-false-allow tradeoff.
 **Talks to:** `sql_rules.yaml` (the rules data), `TextToSqlService` (calls it before running SQL),
-`evaluators.py`'s `leakage_free` (re-runs it as a defence-in-depth check).
+`evaluators.py`'s `leakage_free` (re-runs it as a defence-in-depth check), `tests/
+test_privacy_leakage_suite.py` (Day 7 step 8's SQL red-team half).
 
 ---
 
@@ -297,13 +483,15 @@ external web-search fallback (this system answers from one internal corpus by de
 — "not enough relevant chunks" rewrites the query and retries the *same* corpus instead, bounded
 by `MAX_CORRECTIONS` (mirrors `copilot.sql.service.MAX_SELF_CORRECTIONS`), then abstains honestly
 rather than generate from weak grounding. Never trusts a grade or citation for a chunk id that
-wasn't actually shown to the model.
+wasn't actually shown to the model. Day 7 step 2: `_grade`/`_rewrite`/`_generate` each append
+their own `canary_line("knowledge_grade"/"knowledge_rewrite"/"knowledge_generate")`.
 **Takes in:** a question, a `Role` (per call, not per instance).
 **Gives out:** a `CorrectiveRagResult` — a grounded answer + the chunk ids it actually cited, or
 an explicit abstention + reason, plus cost/latency/call accounting (same shape as
 `TextToSqlResult`).
 **Talks to:** `copilot.rag.permissions`/`copilot.rag.retrieval` (via the `Retriever` Protocol and
-`RetrievedChunk`); `copilot.llm.client`/`copilot.llm.prompts` for the three LLM calls.
+`RetrievedChunk`); `copilot.llm.client`/`copilot.llm.prompts` for the three LLM calls;
+`copilot.guardrails.canary` (Day 7).
 
 ### `scripts/build_rag_index.py`
 Loads the corpus, checks it against the live disclosure policy, chunks it, embeds with the real
@@ -499,13 +687,15 @@ an already-tested service -- no new logic, just the C3 contract on top.
   `reorder_recommendation` via `LLMClient.structured()` into `ActionDraft`
   (`subject`/`body`). Always returns `status="partial"` with a gap stating the draft hasn't
   passed the Guardian/an approver yet (Day 7) -- this function never sends anything.
+Day 7 step 2: `run_action`'s system prompt now appends `canary_line("action")` -- any leak of
+that marker into a final answer is what `Guardian._check_canary` catches.
 **Takes in:** a `TaskSpec` plus each specialist's already-constructed dependency
 (`TextToSqlService`, a DuckDB connection, a `ForecastResult`, a `CorrectiveRagService` +
 `PermissionedRetriever`, an `LLMClient`).
 **Gives out:** `AgentResult` for each; `ActionDraft`, `DraftType` are also exported.
 **Talks to:** `copilot.sql.service`, `copilot.ml.forecast`/`inventory`/`risk_classifier`,
 `copilot.rag.corrective`/`permissions`, `copilot.llm.client`/`prompts`,
-`copilot.guardrails.policy`.
+`copilot.guardrails.policy`, `copilot.guardrails.canary` (Day 7).
 
 ### `prompts/action_draft/v1.yaml` *(day: 6, isNew: true)*
 The Action specialist's one prompt. System prompt states the vendor-facing audience rule
@@ -571,19 +761,53 @@ instead of every call showing up as the same generic `LLMClient.structured` run.
 Day 3-5 services (`TextToSqlService`, `CorrectiveRagService`) whose internal LLM calls aren't
 yet agent-tagged -- threading tags through those pre-existing services is out of this step's
 scope, noted here rather than silently left undone.
+**Day 7 step 4: the Guardian, non-bypassable.** `finalize` no longer edges to `END` directly --
+it edges to a new `guardian` node (`_guardian_node`, wrapping `copilot.guardrails.guardian.
+Guardian`), which reviews the finished `OrchestratorResult`, writes an audit-log row
+(`log_decision`), and replaces `answer` with the verdict's `safe_answer` (the raw draft never
+reaches a caller; the full verdict is kept on `OrchestratorResult.guardian_verdict`). Every path
+from `plan` to `END` now passes through `guardian` -- `tests/test_orchestrator.py::
+test_every_path_to_end_passes_through_guardian` asserts this against the *compiled* graph's own
+`get_graph()` edges, not `_build_graph`'s source.
+**Day 7 step 5: the approval gate (C5).** An Action draft the Guardian allowed/redacted (never
+one it already BLOCKed/ESCALATEd) stops one hop short of `END`: `_route_after_guardian` (pure
+routing, no LLM call) sends it to `_approval_gate` instead, which calls LangGraph's `interrupt()`
+with the draft + verdict as payload, pausing the run until `resume_approval(thread_id, decision,
+approver_role=, edited_answer=)` sends back `Command(resume=...)`. `resume_approval` checks
+`approver_role in {"approver", "admin"}` in plain Python *before* touching the graph, so an
+unauthorized caller can't resume a paused thread even knowing its `thread_id`. Three outcomes:
+`"approve"` keeps the Guardian's `safe_answer` as-is; `"reject"` replaces `answer` with a fixed
+rejection message; `"edit"` re-runs the approver's new text through `self._guardian.review()`
+before accepting it (an edit is unreviewed text -- it could reintroduce exactly what the
+original draft didn't have) and uses *that* verdict's `safe_answer`, not the raw edit. Every
+branch logs an `"approval_decision"` row via `log_approval`. **Needs a real checkpointer to mean
+anything** (`interrupt()`/`Command(resume=...)` require one -- confirmed against a real
+`SqliteSaver` with a throwaway smoke script before wiring this in; resuming without one raises
+`RuntimeError` from LangGraph itself): an `Orchestrator` built with no `checkpoint_path` skips
+the gate entirely (`_route_after_guardian` routes straight to `END`) rather than pausing on a run
+nothing can ever resume. `OrchestratorResult.pending_approval` is set only by `answer()`'s own
+wrapper when `final_state` carries a `__interrupt__` key -- it's never written into graph state
+itself, so a resumed/decided result always reports `pending_approval=False`.
 **Takes in:** an `LLMClient`, `executors: dict[AgentName, SpecialistExecutor]` -- the Day 6
 step 2 `run_*` functions, wired in by the caller (never constructed here: each needs a
 different real dependency the Orchestrator has no business reproducing) -- plus a question,
-`Role`, and optional `thread_id` at call time; optional `checkpoint_path` at construction time.
+`Role`, and optional `thread_id` at call time; optional `checkpoint_path`/`guardian` at
+construction time. `resume_approval` additionally takes `thread_id`, a decision
+(`"approve"|"edit"|"reject"`), the approver's `Role`, and an optional `edited_answer`.
 **Gives out:** `OrchestratorResult` (plan, every `AgentResult`, the drafted answer,
 `conflicts_noted`, `verified`/`verify_attempts`, summed cost/latency/llm_calls across plan +
-every specialist + every draft/verify attempt).
+every specialist + every draft/verify attempt, `guardian_verdict`, `pending_approval`,
+`approval_decision`).
 **Talks to:** `copilot.agents.contracts` (`TaskSpec`/`AgentResult`/`AgentBudget`/`AgentName`);
 `copilot.llm.client`/`prompts` (`orchestrator_plan`/`orchestrator_draft`/`orchestrator_verify`
-v1.yaml); `copilot.guardrails.policy` (`Role`); `langgraph.checkpoint.sqlite` (`SqliteSaver`);
-`langsmith.run_helpers` (`LangSmithExtra`). Does not import `copilot.agents.specialists`
-directly -- tests inject fake executors, and the real caller is `copilot.agents.wiring` (Day 6
-step 7) via `scripts/run_orchestrator_golden.py`.
+v1.yaml); `copilot.guardrails.policy` (`Role`); `copilot.guardrails.guardian` (`Guardian`,
+`GuardianVerdict`); `copilot.guardrails.canary` (`canary_line`, appended to every system prompt
+this module renders); `copilot.guardrails.audit_log` (`log_decision`, `log_approval`);
+`copilot.guardrails.input_gate` (`InputGate`, Day 7 step 6 -- `answer()`'s very first call, with
+`InputGate.record_spend` its last); `langgraph.checkpoint.sqlite` (`SqliteSaver`);
+`langgraph.types` (`Command`, `Send`, `interrupt`); `langsmith.run_helpers` (`LangSmithExtra`).
+Does not import `copilot.agents.specialists` directly -- tests inject fake executors, and the
+real caller is `copilot.agents.wiring` (Day 6 step 7) via `scripts/run_orchestrator_golden.py`.
 
 ### `src/copilot/agents/wiring.py` -- `build_executors()` *(day: 6, isNew: true)*
 The one piece of glue nothing else needed: turns the five already-tested `run_*` functions
@@ -660,3 +884,13 @@ imports work later; no real code yet. (`src/copilot/rag/`, `src/copilot/ml/`, an
 One test file per module above, named `test_<module>.py` — not documented individually here since
 they mirror the module list exactly. `tests/fakes/anthropic_fakes.py` is a fake Anthropic SDK used
 so `test_llm_client.py` and others can test retry/repair/caching logic without a real API key.
+`tests/conftest.py` (Day 7 step 6) is an autouse fixture that points every test's default
+`InputGate` spend tracking at a throwaway `tmp_path` file instead of the real repo path --
+without it, every orchestrator test that builds a plain `Orchestrator(...)` with no explicit
+`input_gate` would share one on-disk running total across the whole test session.
+`tests/test_privacy_leakage_suite.py` (Day 7 step 8) is the one exception to "mirrors the module
+list" -- it's a cross-cutting suite, not a per-module test file: 23 named cases (15 role-
+escalation/poisoned-contract/cross-vendor-draft/prompt-extraction/etc. cases through `Guardian`/
+`InputGate`, + 8 SQL red-team cases from `docs/specs/text_to_sql_safety.md` through the
+validator), each asserting the real outcome a leak attempt gets today, run as ordinary pytest
+(no separate eval harness) so a regression here fails CI the same way any other test would.
