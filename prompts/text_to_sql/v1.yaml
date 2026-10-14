@@ -12,7 +12,7 @@
 name: text_to_sql
 version: 1
 model: claude-sonnet-5
-max_tokens: 800
+max_tokens: 1500
 effort: medium
 cache_system: true
 

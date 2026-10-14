@@ -371,3 +371,51 @@ this is expected to just work on yours.
 **Metrics:** 145 tests pass (+5 `test_tokenization_lab.py`). ruff and mypy clean across the
 whole repo. This was the last item in Day 3's checklist (step 7, the question->SQL pair
 generator, stays skipped per the sprint doc's own "likely cut" flag).
+
+## 2026-10-14 · All four real-call scripts run on your machine; one real bug found and fixed
+
+**Covered:** you ran all four "run this yourself" scripts for real, with your own keys:
+
+- `scripts/push_golden_to_langsmith.py` -- created the `vendor-copilot-golden-v2` dataset,
+  46 examples.
+- `scripts/run_effort_lab.py` -- 15 real calls, $0.11408 total. `exec_acc` came back `0.67`
+  at **every** effort level (low through max) -- identical across all 5, which is the
+  signature of one specific question failing for a structural reason, not of randomness.
+  The run also logged `llm.structured repair 1/1 after validation failure: model did not
+  return a parseable SqlGeneration (stop_reason=max_tokens)` -- the exact same failure mode
+  already fixed once for `vendor_insight` (13 Oct): the model's answer got cut off before it
+  finished, because `max_tokens` was set too low.
+- `scripts/run_tokenization_lab.py` (after the `.env`-reading fix below) -- real numbers:
+  provider (ground truth) averaged 1889.2 tokens per prompt; `tiktoken` averaged 1092.2
+  (**41.5% under** the real count); the HF `gpt2` tokenizer averaged 1252.8 (**32.6% under**).
+  Projected to cost/1,000 requests at Sonnet 5 pricing: provider $5.28, tiktoken $3.68, HF
+  $4.01 -- confirms the module's whole premise: both local approximations would make you
+  *underestimate* your real bill by a third to over 40%, so neither is safe to budget from
+  without checking it against the provider count first.
+
+**Mistakes and fixes:**
+- `scripts/run_tokenization_lab.py` built its Anthropic client with `anthropic.Anthropic()`
+  (no arguments), which only reads a real OS environment variable, not a `.env` file. Every
+  other script in this project goes through `copilot.settings.get_settings()` first (which
+  does read `.env`), but this one script skipped that and talked to the SDK directly --
+  worked right up until the first real API call, which failed with "Could not resolve
+  authentication method." Fixed by routing it through `get_settings()` like everything else.
+  Caught by the user actually running it on their machine, not by my own testing (I have no
+  real key to run this script with).
+- `prompts/text_to_sql/v1.yaml`'s `max_tokens` was `800`, too tight for what the model wants
+  to write at higher effort levels before it finishes its structured answer -- same root
+  cause and same fix pattern as the `vendor_insight` prompt's `700 -> 1200` fix (13 Oct):
+  edited the existing v1 file in place (a capacity fix, not a behaviour change, so the "new
+  version per behaviour change" rule doesn't apply), raised to `1500`.
+- Added a per-question breakdown to `scripts/run_effort_lab.py`'s printed output (previously
+  it only printed the average across questions per effort level, which hides a single
+  question failing every time behind an unchanging-looking number) -- next real run will
+  show exactly which question is wrong and whether the `max_tokens` fix resolved it.
+
+**Open:** the `max_tokens` fix and the per-question breakdown are both unverified against
+real behaviour yet -- next step is you re-running `scripts/run_effort_lab.py` (same ~$0.11)
+so we can see, per question, whether `exec_acc` is still stuck and which question it is.
+
+**Metrics:** 145 tests pass still (no new tests this entry -- the changes are a prompt
+constant and a print statement, both exercised by the real run above rather than new unit
+tests). ruff and mypy clean.

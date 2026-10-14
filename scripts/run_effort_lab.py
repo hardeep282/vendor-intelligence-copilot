@@ -91,6 +91,17 @@ def main() -> int:
 
     total_cost = sum(r.cost_usd for r in report.records)
     print(f"\nTotal spend this run: ${total_cost:.5f}")
+
+    # Per-question breakdown: the summary table above averages across questions, so a
+    # question that fails at every effort level looks identical to one that passes at every
+    # effort level but is offset by another question failing -- this makes that visible.
+    print("\nPer-question breakdown (so a question that fails every time is visible):")
+    print(f"{'question':<10} {'effort':<8} {'exec_acc':>9} {'leak_free':>10} {'sql/abstain'}")
+    for r in report.records:
+        detail = r.sql[:60] if r.sql is not None else "(abstained)"
+        prefix = f"{r.question_id:<10} {r.effort:<8} {r.execution_accuracy:>9.2f}"
+        print(f"{prefix} {r.leakage_free:>10.2f} {detail}")
+
     return 0
 
 

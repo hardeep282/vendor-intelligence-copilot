@@ -58,7 +58,8 @@ instead of 3 temperatures x 5 runs. Full writeup: `docs/adr/005-llm-provider.md`
 | Text-to-SQL self-correction loop | n/a | 4/4 tests pass (first-try, 1-retry, abstain, exhausted) | validator rejection fed back as the next turn; abstains after 2 retries rather than run bad SQL |
 | LLM client: retries, repair loop, caching, no-temperature guard | n/a | Tested | against a fake SDK, no API key used (`tests/test_llm_client.py`) |
 | First real LLM call (`InsightService`, DIAGEO, viewer role) | n/a | $0.01127, 7.31s, 1 attempt, 0 repairs | run on your machine, 14 Oct; caught and fixed a `max_tokens` truncation bug (see BUILD_LOG) |
-| Tokenization lab: provider vs. tiktoken vs. HF, cost/1000 req | n/a | module + 5 tests pass; no real sweep yet | `copilot.evals.tokenization_lab`; provider count is ground truth, the other two are scored by % error against it rather than assumed close -- real numbers need your machine (`scripts/run_tokenization_lab.py`), see Next step |
+| Tokenization lab: provider vs. tiktoken vs. HF, cost/1000 req | n/a | provider 1889.2 tok avg; tiktoken -41.5% (1092.2); HF gpt2 -32.6% (1252.8); $/1000req: $5.28 / $3.68 / $4.01 | run on your machine, 14 Oct; both local tokenizers would make you underestimate the real cost by a third to over 40% |
+| Effort lab real sweep (3 questions x 5 effort levels) | n/a | $0.11408 total; exec_acc = 0.67 at every effort level (same question failing each time -- being investigated) | run on your machine, 14 Oct; caught a second `max_tokens`-truncation case (`text_to_sql` prompt, `800 -> 1500`), same bug shape as the InsightService one above |
 
 ## Decisions
 
@@ -79,17 +80,19 @@ None yet. Target: `https://api.vendor.<domain>/health`.
 
 ## Next step
 
-Me: Day 3 is now fully built -- 8 of its 9 checklist items done (step 7, the question->SQL
-pair generator, stays skipped per the sprint doc's own "likely cut" flag; say so if you want
-it built anyway). Next up is Day 4 (RAG and advanced RAG) whenever you're ready to continue
-the sprint. You: four scripts are now ready to run on your machine with your own keys (never
-in chat) -- `scripts/push_golden_to_langsmith.py` (LangSmith dataset sync),
-a real `TextToSqlService` call (same pattern as the `InsightService` first-call test),
-`scripts/run_effort_lab.py` (15 real Anthropic calls by default, ~$0.15-0.20 going by the
-InsightService baseline), and `scripts/run_tokenization_lab.py` (5 token-counting calls, far
-cheaper than a completion, but needs normal internet access beyond api.anthropic.com --
-`tiktoken` and the Hugging Face tokenizer each download their vocab the first time, from
-hosts this project's own build sandbox couldn't reach) -- paste back whichever printed
-results you want logged here. Also still open: Docker Desktop install/engine status (Day 2's
-actual `docker build` has not run yet), and AWS resources, domain, GitHub variables from
+Me: one open thread from today's real runs -- the effort lab's `exec_acc` came back `0.67`
+at every effort level (identical 5 times), which points at one specific question failing
+every time rather than randomness. Already fixed one likely cause (`text_to_sql` prompt's
+`max_tokens` was `800`, too tight at higher effort -- raised to `1500`, same bug shape as the
+`vendor_insight` fix on 13 Oct) and added a per-question breakdown to
+`scripts/run_effort_lab.py`'s output so the next run names the exact question. Waiting on
+you to re-run it (same ~$0.11) so we can confirm the fix and see which question it was.
+After that: Day 4 (RAG and advanced RAG) whenever you're ready to continue the sprint.
+You: `git pull`, then `uv run python scripts/run_effort_lab.py` again and paste back the new
+per-question table. Two scripts from the previous batch are still outstanding too --
+`scripts/push_golden_to_langsmith.py` and `scripts/run_tokenization_lab.py` are both done
+(results logged above); only a real `TextToSqlService` call (same pattern as the
+`InsightService` first-call test) hasn't been run yet, if you want that logged too. Also
+still open: Docker Desktop install/engine status (Day 2's actual `docker build` has not run
+yet), and AWS resources, domain, GitHub variables from
 Day 2.
