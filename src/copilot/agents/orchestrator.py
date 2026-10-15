@@ -489,7 +489,7 @@ class Orchestrator:
             )
             return {"results": [result]}
 
-        t0 = time.monotonic()
+        t0 = time.perf_counter()
         try:
             with ThreadPoolExecutor(max_workers=1) as pool:
                 future = pool.submit(executor, task)
@@ -504,7 +504,7 @@ class Orchestrator:
                 ),
                 gaps=[f"timed out after {task.budget.max_latency_s:.0f}s"],
                 confidence="low",
-                latency_s=time.monotonic() - t0,
+                latency_s=time.perf_counter() - t0,
             )
         except Exception as exc:  # noqa: BLE001 -- one specialist's failure must not crash the
             # whole plan; see module docstring.
@@ -515,7 +515,7 @@ class Orchestrator:
                 findings=f"specialist raised: {exc}",
                 gaps=[str(exc)],
                 confidence="low",
-                latency_s=time.monotonic() - t0,
+                latency_s=time.perf_counter() - t0,
             )
         else:
             if result.status == "ok" and result.exceeds(task.budget):

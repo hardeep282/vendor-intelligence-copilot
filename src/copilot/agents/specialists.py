@@ -159,11 +159,11 @@ def run_forecasting_risk(
     vendor_name = spec.constraints.get("vendor_name")
     horizon = int(spec.constraints.get("horizon_months", "3"))
 
-    t0 = time.monotonic()
+    t0 = time.perf_counter()
     forecast = forecast_demand(
         ForecastRequest(level=level, vendor_name=vendor_name, horizon_months=horizon), con=con
     )
-    latency = time.monotonic() - t0
+    latency = time.perf_counter() - t0
 
     lines = [
         f"{level} demand forecast ({forecast.chosen_model} chosen by WAPE): "

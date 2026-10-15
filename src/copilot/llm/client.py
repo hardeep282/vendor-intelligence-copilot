@@ -179,7 +179,7 @@ class LLMClient:
         def _call() -> LLMResult:
             nonlocal attempt_count
             attempt_count += 1
-            t0 = time.monotonic()
+            t0 = time.perf_counter()
             ttft: float | None = None
             kwargs: dict[str, Any] = {}
             if effort is not None:
@@ -193,9 +193,9 @@ class LLMClient:
             ) as stream:
                 for event in stream:
                     if ttft is None and event.type == "content_block_delta":
-                        ttft = time.monotonic() - t0
+                        ttft = time.perf_counter() - t0
                 final = stream.get_final_message()
-            total = time.monotonic() - t0
+            total = time.perf_counter() - t0
             metrics = _metrics_from_usage(
                 model, final.usage, ttft, total, final.stop_reason, attempt_count
             )
@@ -253,7 +253,7 @@ class LLMClient:
             ) -> tuple[T, CallMetrics]:
                 nonlocal attempt_count
                 attempt_count += 1
-                t0 = time.monotonic()
+                t0 = time.perf_counter()
                 ttft: float | None = None
                 kwargs: dict[str, Any] = {}
                 if effort is not None:
@@ -268,9 +268,9 @@ class LLMClient:
                 ) as stream:
                     for event in stream:
                         if ttft is None and event.type == "content_block_delta":
-                            ttft = time.monotonic() - t0
+                            ttft = time.perf_counter() - t0
                     final = stream.get_final_message()
-                total = time.monotonic() - t0
+                total = time.perf_counter() - t0
                 metrics = _metrics_from_usage(
                     model,
                     final.usage,
