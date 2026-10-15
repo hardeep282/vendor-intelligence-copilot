@@ -1297,3 +1297,25 @@ sprint doc's own line). **ADR-006 (Guardian design) is still open** -- the requi
 per Addendum A1, waiting on the user's own answers to the template/questions rather than mine.
 Open for Day 8: FastAPI `/ask` with SSE streaming, the UI, invite-code + API-key auth, Postgres
 for checkpoints, the CI eval gate, latency budget work, and release `v0.1.0`.
+
+## 15 Oct -- Handoff cross-check (chat 7), gap found and closed
+
+Re-attached the repo, rebuilt the snapshot from the analytics repo's workbook, and reran every
+check: 440/440 tests pass, ruff clean, mypy (strict) clean -- matches the Day 7 commit's own
+claim exactly, nothing to correct there.
+
+**Real gap found:** `docs/TRADEOFF_LOG.md`, mandatory per Addendum A1 section 2.2 from "the
+current sprint day onward," did not exist through Days 1-7. Created it now, backfilled only
+with before/after facts that already exist in this file (the `execution_accuracy` scoring fix,
+the `sql_cost_limit` validator addition, the `unverified_grounding` -> ESCALATE routing choice)
+-- no invented numbers, several cells marked "not measured" per the addendum's own rule. A full
+golden-set execution-accuracy rerun after the `sql_cost_limit`/`execution_accuracy` fixes is
+still owed and is carried forward as open measurement debt in that file.
+
+**Still open, unchanged from the Day 7 commit:** ADR-006 (Guardian design) needs the user's own
+written answers to the 4 questions (severity ordering, ESCALATE-with-no-reviewer-yet behaviour,
+vendor-audience check scope, raw-row-shape detection approach) before the ADR document itself
+can be written -- Addendum A1's process is the user writes the answers, not Claude. Presented
+again this session since no prior file actually contains the template text itself (the Day 7
+commit message said it was "presented to the user" but it lived only in that chat's turns, not
+in a committed file).
