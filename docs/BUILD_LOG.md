@@ -794,9 +794,20 @@ resolver (`relevant_chunk_ids()`) correctly picks the one chunk matching both `v
 phrase, but the retriever itself ranks purely by semantic/BM25 similarity with no vendor
 boosting, so five near-identical boilerplate sentences across different vendor docs embed to
 nearly the same vector and the ranking becomes a near-coin-flip which vendor's chunk surfaces.
-q05 (Constellation rebate %) and q10 (Ultra Beverage rebate %) have vendor-unique `must_contain`
-numbers, so the same explanation doesn't apply to them as-is -- not yet root-caused, logged as
-open rather than guessed at.
+q05 (Constellation rebate %) and q10 (Ultra Beverage rebate %) root-caused the same day: every
+one of the 10 vendor contracts' "Rebate structure" section ends in the identical boilerplate
+suffix "% of qualifying net purchases" (`grep` across all 10 confirms it), differing only in a
+leading number (1.5, 1.75, 2.0, 2.25, 2.75, 3.0, 3.25, 3.5, 3.75). Sentence embeddings are not
+trained to represent numeric magnitude precisely, so ten near-identical sentences that differ
+only by a digit or two embed to nearly the same vector -- which vendor's rebate chunk actually
+surfaces in the top 5 for a generic "what's vendor X's rebate rate" phrasing is close to a coin
+flip. This is the exact same underlying phenomenon as q01/q04 (shared contract boilerplate
+across vendors), just hitting the "Rebate structure" clause family instead of "Payment
+terms"/"Freight terms". All 4 misses now trace to one root cause, not four separate ones:
+standardized contract language makes same-clause-type chunks across different vendors
+semantically near-duplicate, and semantic retrieval alone can't reliably tell them apart without
+either metadata-filtered/vendor-boosted retrieval or a CRAG-style grading step that would catch
+a wrong-vendor chunk even when it ranks well.
 
 This is a genuine retrieval-quality finding, not a bug in the eval harness or the golden set:
 shared contract boilerplate across vendors is exactly the kind of near-duplicate-text case that
