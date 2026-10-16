@@ -773,6 +773,36 @@ FakeEmbedder-based number so far (e.g. step 3's idempotency check). Real numbers
 
 **Mistakes and fixes:**
 
+## 16 Oct -- Day 4 step 7 closed for real: recall@5/MRR with the real embedding model
+
+Ran `scripts/run_rag_eval.py` on the laptop against the real Chroma index (built by
+`scripts/build_rag_index.py`, `sentence-transformers/all-MiniLM-L6-v2`, not `FakeEmbedder`):
+mean recall@5 = 0.800, MRR = 0.662 over the full 20-question golden set. This replaces the
+`FakeEmbedder` noise-level numbers above as the real retrieval-quality baseline for Day 4 step 7
+and closes the "real embedding-model numbers" gap `docs/PROJECT_PROGRESS.md` had flagged as
+still open.
+
+4 of 20 questions (q01, q04, q05, q10) scored 0 on both metrics -- the correct chunk never
+appeared in the top 5 at all. Checked two of them against the real corpus rather than assuming
+a retrieval bug: q01 (Diageo North America payment terms, `must_contain` "Net 45 days from
+invoice date") and q04 (Moet Hennessy Usa freight terms, `must_contain` "Vendor-paid freight
+(FOB destination)") both fail because their exact `must_contain` phrase is **not unique to that
+vendor** -- `grep` across `knowledge/contracts/` shows "Net 45 days from invoice date" verbatim
+in 5 vendor contracts (Diageo, Moet Hennessy, Pernod Ricard, Brown-Forman, Bacardi) and
+"Vendor-paid freight (FOB destination)" in 3 (Moet Hennessy, Diageo, Bacardi). The golden-set
+resolver (`relevant_chunk_ids()`) correctly picks the one chunk matching both `vendor` and the
+phrase, but the retriever itself ranks purely by semantic/BM25 similarity with no vendor
+boosting, so five near-identical boilerplate sentences across different vendor docs embed to
+nearly the same vector and the ranking becomes a near-coin-flip which vendor's chunk surfaces.
+q05 (Constellation rebate %) and q10 (Ultra Beverage rebate %) have vendor-unique `must_contain`
+numbers, so the same explanation doesn't apply to them as-is -- not yet root-caused, logged as
+open rather than guessed at.
+
+This is a genuine retrieval-quality finding, not a bug in the eval harness or the golden set:
+shared contract boilerplate across vendors is exactly the kind of near-duplicate-text case that
+motivates CRAG's grading step (Concept 04 of the explainer artifact) or a vendor-aware
+re-ranking boost -- neither built yet. Logged here rather than silently patched.
+
 - RAG golden-set labelling bug: q15's original `must_contain` phrase ("licence guard that rejects
   SKU-level columns") spanned a markdown soft-wrap line break in the source `decision_log.md`
   file, so the literal substring never appeared on one line in the stored chunk text --
