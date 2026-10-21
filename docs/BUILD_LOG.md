@@ -1583,3 +1583,22 @@ calls return internally) and refuses a new call once the running total reaches t
 Day 3-6 work) and the existing CI job shape (`astral-sh/setup-uv`, `uv sync --frozen`, same
 runner); the only genuinely new mechanism is `_CostTrackingLLMClient`, a thin instrumentation
 wrapper, not an architectural decision.
+
+## 22 Oct — Day 8: determinism note (Addendum A2 §1.7)
+
+**What:** `docs/determinism.md` -- the "just a doc paragraph" A2 asked for, explaining which
+parts of this system are deterministic (Guardian, input gate, SQL validator, auth/rate-limit,
+`execution_accuracy`/`leakage_free`) and which are inherently not (anything behind
+`LLMClient.complete()`/`.structured()` -- planning, drafting, verifying, the LLM-judged evals),
+and how each existing mechanism (forced structured output, the repair/redraft loops, the
+Guardian's unconditional post-draft run, golden-set numeric tolerance, prompt version pinning
+from A2 §1.5) narrows the impact of that non-determinism rather than pretending it away. No new
+mechanism, no code change -- pure documentation, written after re-reading `docs/TRADEOFF_LOG.md`
+(which already tracks "temperature change" as a trigger category and has its own "Open
+measurement debt" section listing which Day 7 changes are deterministic) and `copilot.llm.client`'s
+module docstring (confirms no `seed`/`temperature`/`top_p`/`top_k` on this model generation,
+`effort` as the nearest per-call lever) as the two existing sources of truth it had to stay
+consistent with.
+
+**No new ADR** -- this is a documentation deliverable, not a design decision; nothing in the
+system's behavior changed.

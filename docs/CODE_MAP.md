@@ -411,6 +411,16 @@ unexpected test failure, a threshold miss, or budget exhaustion), plus a printed
 `orchestrator_golden`); `copilot.agents.wiring`/`orchestrator`; `copilot.llm.client`
 (`LLMClient`, wrapped); `.github/workflows/ci.yml`.
 
+### `docs/determinism.md` *(day: 8, isNew: true)*
+Day 8, Addendum A2 §1.7: the determinism note. Draws the same deterministic/non-deterministic
+line the eval gate above is built on -- Guardian, input gate, SQL validator, and the
+`execution_accuracy`/`leakage_free` evaluators never touch an LLM and always reproduce; planning,
+drafting, verifying, and the LLM-judged evals do call one and are openly non-deterministic by
+construction (no `seed`/`temperature` on this model generation to pin). Explains what forced
+structured output, the repair/redraft loops, the Guardian's unconditional run, the golden-set
+evals' numeric tolerance, and prompt version pinning (A2 §1.5, already shipped) each do -- and
+don't do -- about that variance. Pure documentation; no code changed.
+
 ### `src/copilot/evals/__init__.py`, `src/copilot/insights/__init__.py`, `src/copilot/llm/__init__.py`
 Empty package markers — no logic, just make the folder importable.
 
