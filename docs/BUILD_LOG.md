@@ -1528,3 +1528,58 @@ limiter, noted here as a known limitation rather than silently assumed away, sam
 `RequestRateLimiter`'s own docstring already takes. The `/ask` SSE *format* itself (hand-rolled,
 not a library) is a design choice worth a sentence, not a decision with real alternatives
 weighed — covered in this entry and the `main.py` docstring instead.
+
+## 22 Oct — Day 8 step 6: the CI eval gate (A2 §1.3)
+
+`evals/thresholds.yaml` + `scripts/run_eval_gate.py`, wired into a new `eval-gate` job in
+`.github/workflows/ci.yml` (PRs targeting main only, not every push — the existing `checks` job
+already lints/types/tests on every push; this is the extra pre-merge bar).
+
+**Deterministic-first, for real, not just in name:** the gate's hard floor is `uv run pytest`
+(zero real LLM calls anywhere in that suite — every LLM-dependent path is exercised against
+`tests/fakes/anthropic_fakes.py`) failing on anything outside a fixed, named set of 15 test ids
+(`_KNOWN_MISSING_DATA_FAILURES`) that always fail in an environment with no local
+`data/snapshot/` — this project's own licence rule (the purchased workbook is never committed,
+exposed, or reconstructed outside your own machine) means that's every environment this repo's
+actual GitHub Actions run will ever see. Confirmed against a real run in this cloud session:
+`15 failed, 457 passed`, all 15 inside the known set — deterministic layer reports PASS.
+
+**The `llm_judged` layer (text-to-SQL exec-accuracy/leakage-free, RAG faithfulness/context-
+recall, Model Selection task-type/reasoning-grounded, Orchestrator plan-coverage/verified-rate,
+thresholds in `thresholds.yaml`) only runs when a real `ANTHROPIC_API_KEY` *and* the real
+snapshot/Chroma index are both present** — confirmed by running the gate script for real in
+this session: it correctly printed `LLM-judged evals: SKIPPED (no ANTHROPIC_API_KEY
+configured)` and exited 0, rather than either fabricating a pass or failing the gate over
+infrastructure the licence rule means this environment can never have. Hardened one real gap
+found while reasoning through the CI wiring, not yet hit in practice: `.github/workflows/
+ci.yml` passes `secrets.ANTHROPIC_API_KEY` through as an env var unconditionally (harmless if
+unset) so this layer activates automatically the day this repo's own CI is ever given a real
+key and a real, non-sensitive snapshot — but an *unset* GitHub secret resolves to an *empty
+string* env var, not an absent one, and pydantic-settings reads that as `SecretStr("")`, not
+`None`. `_real_infra_available()`'s check was `is None` only, which would have missed this and
+let `LLMClient()` raise an unhandled `LLMCallError` deeper in the run instead of this function's
+own clean, reported skip. Fixed by also checking `.get_secret_value()` is non-empty, confirmed
+by re-running the gate script after the fix.
+
+**Verified the gate actually fails on a real regression, not just that it passes when
+everything's fine:** temporarily broke one assertion in `tests/test_api_auth.py` (`role ==
+"analyst"` -> `role == "nope"`), ran the gate, confirmed it printed `GATE FAILED: 1 unexpected
+test failure(s), not in the known missing-local-data set` and exited 1 (verified via a separate
+`$?` check — an earlier attempt piped the gate's output through `tail` and read `$?` from
+`tail`, not the gate script, which silently misreported success; caught by checking the exit
+code a second way rather than trusting the first result), then reverted the test file with `git
+checkout` and re-ran the gate clean to confirm it returned to `457 passed` / exit 0.
+
+Added `max_llm_budget_usd` enforcement via a new `_CostTrackingLLMClient` wrapper in the gate
+script — accumulates `cost_usd` across every `complete()`/`structured()` call (duck-typed, no
+existing evaluator signature touched, since `rag_quality.faithfulness`/`context_recall` and
+`model_selection_quality.reasoning_grounded` already discard the `CallMetrics` their own judge
+calls return internally) and refuses a new call once the running total reaches the cap — same
+"can only act on *past* spend, not this call's own cost before it runs" honesty
+`copilot.guardrails.input_gate.SpendTracker`'s own daily cap already lives with.
+
+**No new ADR** — reuses this project's own established eval-suite functions
+(`copilot.evals.evaluators`/`rag_quality`/`model_selection_quality`/`orchestrator_golden`, all
+Day 3-6 work) and the existing CI job shape (`astral-sh/setup-uv`, `uv sync --frozen`, same
+runner); the only genuinely new mechanism is `_CostTrackingLLMClient`, a thin instrumentation
+wrapper, not an architectural decision.

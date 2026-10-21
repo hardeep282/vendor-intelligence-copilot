@@ -383,6 +383,34 @@ approximations) — then projects what each would predict for cost per 1,000 req
 (14 Oct): both local tokenizers undercount badly (tiktoken -41.5%, HF -32.6%), which would make
 budgeting on either one understate the real bill.
 
+### `evals/thresholds.yaml` + `scripts/run_eval_gate.py` *(day: 8, isNew: true)*
+Day 8, Addendum A2 §1.3: the CI eval gate (`.github/workflows/ci.yml`'s new `eval-gate` job,
+PRs targeting main only). "Deterministic-first": the hard floor is the full `uv run pytest`
+suite (zero real LLM calls anywhere in it) failing on any failure *not* in the script's own
+`_KNOWN_MISSING_DATA_FAILURES` set -- this repo's licence rule means a fixed, documented set of
+tests always fails in any environment without the local, never-committed snapshot, this
+project's own GitHub Actions run included, and that's expected, not a regression. On top of
+that, an `llm_judged` layer (thresholds in `evals/thresholds.yaml`: text-to-SQL execution
+accuracy/leakage-free rate, RAG faithfulness/context recall, Model Selection task-type-correct/
+reasoning-grounded, Orchestrator plan-coverage/verified-rate) runs only when a real
+`ANTHROPIC_API_KEY` *and* the real snapshot/Chroma index are both present -- never true in this
+repo's own CI, by the same licence rule, so this layer is correctly SKIPPED there with a clear
+message rather than failing the gate over infrastructure that was never supposed to exist in
+that environment; it applies identically on your own machine, or a CI environment you
+deliberately configure with your own secrets and your own non-sensitive snapshot.
+`_CostTrackingLLMClient` wraps a real `LLMClient`, accumulating `cost_usd` from every
+`complete()`/`structured()` call (duck-typed drop-in -- no evaluator's signature changes) to
+enforce `max_llm_budget_usd` as a hard per-run ceiling, checked before each call against the
+running total; hitting it fails the gate outright rather than silently truncating coverage.
+**Takes in:** `evals/thresholds.yaml`'s thresholds; (for the `llm_judged` layer) the real
+snapshot, Chroma index, and `ANTHROPIC_API_KEY`.
+**Gives out:** exit code 0 (gate passed, or `llm_judged` correctly skipped) or non-zero (an
+unexpected test failure, a threshold miss, or budget exhaustion), plus a printed report.
+**Talks to:** every eval suite this project has (`copilot.evals.evaluators`/`golden`/
+`rag_metrics`/`rag_quality`/`model_selection_metrics`/`model_selection_quality`/
+`orchestrator_golden`); `copilot.agents.wiring`/`orchestrator`; `copilot.llm.client`
+(`LLMClient`, wrapped); `.github/workflows/ci.yml`.
+
 ### `src/copilot/evals/__init__.py`, `src/copilot/insights/__init__.py`, `src/copilot/llm/__init__.py`
 Empty package markers — no logic, just make the folder importable.
 

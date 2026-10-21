@@ -1,0 +1,50 @@
+# Day 8, Addendum A2 §1.3: the CI eval gate's pass/fail bars, read by scripts/run_eval_gate.py.
+#
+# "Deterministic-first": the gate's hard floor is the full pytest suite (`uv run pytest` --
+# no real LLM calls anywhere in it, every LLM-dependent code path is exercised against
+# tests/fakes/anthropic_fakes.py, same convention tests/test_llm_client.py's own docstring
+# documents) failing on any REGRESSION. It is not "zero failures" outright: this repo's own
+# licence rule (the raw purchased snapshot is never committed, exposed, or reconstructed
+# outside your own machine -- see docs/HANDOFF.md) means a fixed, documented set of tests
+# always fails in any environment without that local snapshot, this cloud session and this
+# project's actual GitHub Actions run included. `run_eval_gate.py` carries that exact set
+# (`_KNOWN_MISSING_DATA_FAILURES`) and only fails the gate on a failure *outside* it.
+#
+# The `llm_judged` section below only ever runs where the real snapshot/Chroma index AND a
+# real ANTHROPIC_API_KEY are both available -- which, per the rule above, is never true in this
+# repo's own CI. It applies identically whichever machine does have both (yours, or a CI
+# environment you deliberately configure with your own secrets and your own non-sensitive
+# data) -- `run_eval_gate.py` checks for that infra and skips this section with a clear message
+# otherwise, rather than failing the gate over infrastructure that was never supposed to exist
+# in that environment.
+
+deterministic:
+  pytest_must_all_pass: true
+
+llm_judged:
+  # Hard ceiling on this run's total real-LLM spend, enforced by run_eval_gate.py's own cost-
+  # tracking wrapper around LLMClient (checked before every call against the running total, not
+  # after -- same "can only act on *past* spend" honesty copilot.guardrails.input_gate.
+  # SpendTracker already lives with). Hitting it stops the run and fails the gate outright: a
+  # gate that silently truncated its own eval coverage to stay under budget would be worse than
+  # one that says plainly it couldn't finish.
+  max_llm_budget_usd: 2.00
+
+  text_to_sql:
+    min_execution_accuracy: 0.85
+    min_leakage_free_rate: 1.0 # zero tolerance -- a leak is never an acceptable trade for speed
+
+  rag:
+    min_faithfulness: 0.80
+    min_context_recall: 0.75
+
+  model_selection:
+    min_task_type_correct: 0.85
+    min_reasoning_grounded: 0.75
+
+  orchestrator:
+    # Structural coverage only (did the plan involve every specialist a question needs), not
+    # answer-content grading -- copilot.evals.orchestrator_golden's own module docstring
+    # explains why that dataset carries no reference answer to diff against.
+    min_plan_coverage: 0.80
+    min_verified_rate: 0.70

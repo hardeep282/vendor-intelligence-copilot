@@ -1,6 +1,8 @@
 # Purpose : quality gate on every push and PR; build + deploy on main.
-# Jobs    : checks (lint, types, tests) | secret-scan (gitleaks, full history) | image (build the
-#           Docker image and smoke-test it) | deploy (main only, once AWS repo variables exist).
+# Jobs    : checks (lint, types, tests) | eval-gate (Day 8, A2 §1.3: deterministic-first eval
+#           gate, PRs targeting main only) | secret-scan (gitleaks, full history) | image (build
+#           the Docker image and smoke-test it) | deploy (main only, once AWS repo variables
+#           exist).
 # Deploy  : GitHub OIDC -> IAM role (no long-lived AWS keys) -> push to ECR -> SSM Run Command
 #           runs infra/server/deploy.sh on EC2 -> public smoke test of /health and /version.
 name: ci
@@ -39,6 +41,30 @@ jobs:
         run: uv run mypy
       - name: Tests
         run: uv run pytest -q
+
+  eval-gate:
+    # Day 8, Addendum A2 §1.3: deterministic-first eval gate, on PRs targeting main only (not
+    # every push -- the lint/type/test checks above already run on every push; this is the
+    # extra bar before merge). `scripts/run_eval_gate.py`'s own module docstring covers why its
+    # `llm_judged` layer is expected to be SKIPPED here: this project's licence rule means the
+    # real snapshot is never committed or exposed, including to this workflow, so there is no
+    # local data for that layer to run against -- `ANTHROPIC_API_KEY` is passed through from a
+    # repo secret anyway (harmless if unset) so this job exercises the real thing automatically
+    # the day this repo's own CI is ever given both a real key and a real, non-sensitive
+    # snapshot to test against, with no workflow change needed.
+    if: github.event_name == 'pull_request' && github.base_ref == 'main'
+    runs-on: ubuntu-24.04
+    env:
+      ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+    steps:
+      - uses: actions/checkout@v7
+      - uses: astral-sh/setup-uv@v10.3.0
+        with:
+          version: ${{ env.UV_VERSION }}
+      - name: Install locked dependencies
+        run: uv sync --frozen
+      - name: Eval gate
+        run: uv run python scripts/run_eval_gate.py
 
   secret-scan:
     runs-on: ubuntu-24.04
