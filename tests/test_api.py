@@ -41,9 +41,14 @@ def test_prod_startup_loads_secrets_from_ssm(monkeypatch: pytest.MonkeyPatch) ->
 
 
 def test_version_reports_git_sha(client: TestClient, monkeypatch: pytest.MonkeyPatch) -> None:
+    from importlib.metadata import version as package_version
+
     monkeypatch.setenv("GIT_SHA", "abc1234")
     get_settings.cache_clear()
     body = client.get("/version").json()
     assert body["git_sha"] == "abc1234"
     assert body["env"] == "dev"
-    assert body["version"] == "0.0.1"
+    # Read from the installed package's own metadata rather than hardcoding a version string
+    # here -- a hardcoded value just breaks (as it did going from 0.0.1 to 0.1.0 at the v0.1.0
+    # release) every time pyproject.toml's version bumps, checking nothing real in the process.
+    assert body["version"] == package_version("vendor-intelligence-copilot")

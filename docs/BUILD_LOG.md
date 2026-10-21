@@ -1692,3 +1692,28 @@ started the real server (`uv run uvicorn copilot.api.main:app`) and hit `/`, `/s
 shape `/ask`/`enforce_rate_limits` already established (Day 8 step 4), just with a different
 allowed-role set; the UI is a static-files mount, the simplest option for "serve one HTML page
 and its JS/CSS from the same process," not a build-vs-buy decision between frameworks.
+
+## 22 Oct — Day 8 step 7 wrap-up: progress docs, version bump, v0.1.0
+
+**What:** `docs/PROJECT_PROGRESS.md` brought current through all of Day 8 (sprint status table,
+a new Day 8 checklist mirroring Day 7's format, Results rows for the eval gate/Postgres/UI work,
+Decisions noting ADR-006 is now resolved and why Day 8 needed no new ADR, Costs to date, and an
+honest "Next step" naming exactly two things left: verifying the Postgres path against a real
+database, and real-key runs that only add numbers to already-tested code). `pyproject.toml`
+bumped `0.0.1` -> `0.1.0`, matching the sprint brief's own Day 8 scope ("...then release
+v0.1.0"), `uv sync` run to update `uv.lock`'s matching entry.
+
+**Mistake, caught by the test suite itself:** the version bump broke
+`tests/test_api.py::test_version_reports_git_sha`, which had `assert body["version"] ==
+"0.0.1"` hardcoded -- exactly the kind of test that looks like it's checking something but was
+really just checking that nobody ever changed the version number. Fixed by reading the expected
+value from the installed package's own metadata (`importlib.metadata.version(...)`, the same
+call `/version` itself uses) instead of a literal string, so this test checks the real
+behaviour (the endpoint reports whatever's actually installed) and won't need touching at the
+next version bump either.
+
+**Verification:** full `uv run pytest -q` back to 465 passed / 15 known failures (the fixed
+test included); `ruff check`/`ruff format --check`/`mypy` all clean.
+
+**No new ADR** -- a progress-doc update and a version-number bump are not architectural
+decisions.
