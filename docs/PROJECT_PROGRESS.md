@@ -80,7 +80,7 @@ later as a third stage without changing `copilot.rag.retrieval`'s contract.
 | # | Item | Status |
 |---|---|---|
 | 1 | Forecast tool: ETS vs naive, WAPE/MASE/bias on a rolling backtest | **Done, real numbers run in this sitting** (`copilot.ml.forecast`, `copilot.ml.metrics`) -- see below |
-| 2 | SKU risk classifier: sklearn Pipeline (Random Forest), leakage-safe features, calibration, SHAP | **Done, synthetic fixture run in this sitting** (`copilot.ml.risk_classifier`) -- see below |
+| 2 | SKU risk classifier: sklearn Pipeline (Random Forest), leakage-safe features, calibration, SHAP | **Done; synthetic fixture run this sitting, real `vw_PortfolioHealth` numbers run 17 Oct** (`copilot.ml.risk_classifier`) -- see below |
 | 3 | XGBoost comparison on the same split | **Done** (`copilot.ml.risk_classifier.compare_models()`) -- see below |
 | 4 | Inventory tools: safety stock, reorder point, EOQ | **Done, real numbers run in this sitting** (`copilot.ml.inventory`) -- see below |
 | 5 | Pydantic schemas + unit tests for every tool; run-log (MLflow cut, CSV instead per sprint doc) | **Done** -- schemas + tests for all 3 tools; CSV run-log (`copilot.ml.run_log`) |
@@ -400,6 +400,7 @@ bearer `Authorization` header.
 | Forecast tool (Day 5 step 1), portfolio, real run | n/a | 22/22 tests pass; real backtest: ETS WAPE 0.1153, MASE 1.516, bias -63,673; naive WAPE 0.1153, MASE 1.516, bias -63,671 (essentially tied -- AutoETS's trend reduces to ~none on this series); naive chosen by WAPE tiebreak | matches the analytics repo's own `forecast_backtest.py` "portfolio naive 11.8%" baseline as a sanity check; full reasoning in `docs/BUILD_LOG.md` |
 | Inventory tools (Day 5 step 4), real run from the forecast above | n/a | 12/12 tests pass; real plan (3-month horizon, 1-period lead time, 95% service level, $500/order, $0.50/unit/yr holding): mean demand/period 3,758,005, std dev 363,277, safety stock 597,537, reorder point 4,355,542, EOQ 300,320 | caught and fixed a bug before shipping: std dev must come from historical variability, not variance across a (possibly flat) forecast -- see `docs/BUILD_LOG.md` |
 | SKU risk classifier (Day 5 steps 2-3), synthetic fixture run | n/a | 12/12 tests pass; n=2000: RF accuracy 0.834 -> 0.820, F1 0.291 -> 0.211; XGBoost accuracy 0.898 -> 0.886, F1 0.667 -> 0.596 (leaky -> leakage-safe) | leakage inflates both models' scores in the expected direction; `SalesToPurchaseRatio` had to be added to `LEAKING_FEATURES` after it was found reconstructing `ProfitMargin` algebraically -- see `docs/BUILD_LOG.md`. Synthetic data, so direction is the finding, not the exact figures |
+| SKU risk classifier (Day 5 steps 2-3), **real `vw_PortfolioHealth` run, 17 Oct (laptop)** | n/a | n=10,495 real SKU rows, label balance 30.3% at-risk: RF accuracy 0.997 -> 0.952, F1 0.994 -> 0.919; XGBoost accuracy 0.999 -> 0.971, F1 0.999 -> 0.953 (leaky -> leakage-safe); top leakage-safe SHAP driver `StockTurnover` (0.2809), no margin-family proxy in the top 5 | same leaky-vs-safe gap as the synthetic fixture, now confirmed on real data -- these real numbers are the reported figures going forward; the synthetic ones above stay only as the historical record of how the leakage was first diagnosed. Full writeup: `docs/BUILD_LOG.md`, 17 Oct entry |
 | CSV run-log (Day 5 step 5) | n/a | 6/6 tests pass; smoke-tested end to end via `scripts/train_risk_classifier.py` against a synthetic CSV | MLflow cut-first per sprint doc; `run_log.csv` covered by the existing blanket `*.csv` gitignore rule |
 | Model Selection Agent (Day 5 step 6) | n/a | 14/14 tests pass (5 agent + 9 eval harness); no real run this sitting -- no `ANTHROPIC_API_KEY` loaded | reuses `CorrectiveRagService`'s propose/critique/revise/abstain shape; real per-question numbers wait for `scripts/run_model_selection_eval.py` on your machine |
 | Guardian (Day 7 steps 1/3/4) | n/a | 17 unit tests + 2 end-to-end (topology, a real restricted-name leak blocked through the full graph); 8 checks, worst-severity-wins, every finding kept in `reason_codes` | deterministic only (no LLM judge) -- the one semantic layer the sprint doc names (an injection *classifier*) is this day's cut-first item, not this check's |
@@ -479,13 +480,14 @@ What's genuinely left, none of it blocking the tag itself:
 2. **Real-key runs that only add real numbers to what's already built and tested**, same
    carried-forward category as every prior day: `scripts/run_orchestrator_golden.py` (Day 6's
    10-question real-key run), `scripts/run_eval_gate.py`'s `llm_judged` layer with a real key +
-   snapshot + Chroma index, `scripts/train_risk_classifier.py` against your real
-   `vw_PortfolioHealth` export, `scripts/run_model_selection_eval.py`, `scripts/
+   snapshot + Chroma index, `scripts/run_model_selection_eval.py`, `scripts/
    build_rag_index.py` + `scripts/run_rag_eval.py`, a third re-run of `scripts/
    run_effort_lab.py`, a real `TextToSqlService` call, and a real walkthrough of the new UI
    against the real server (`uv run uvicorn copilot.api.main:app` then open `http://
    localhost:8000/`) -- everything above was smoke-tested against a running server in this
-   session, but not by a human clicking through it.
+   session, but not by a human clicking through it. (`scripts/train_risk_classifier.py` against
+   the real `vw_PortfolioHealth` export is no longer on this list -- run 17 Oct, see the Day 5
+   results table above.)
 3. **Still waiting on you, carried forward from Day 2, unrelated to Day 8's own code:** Docker
    Desktop install/engine status, AWS resources, domain, GitHub Actions variables -- nothing in
    Day 8 needed these to build or test, but the actual deployed `/health` URL still waits on
