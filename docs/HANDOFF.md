@@ -136,6 +136,7 @@ likely candidate).
 | Domain bought, `api.vendor.<domain>` A record, Certbot HTTPS | ☐ (domain: ______) |
 | Dev keys in `.env`: Anthropic (spend limit set), LangSmith | ☑ (used for the 14 Oct `InsightService` call) |
 | Prod keys in SSM: ANTHROPIC_API_KEY, LANGSMITH_API_KEY | ☐ |
+| (Optional, Day 8 step 7) Prod Postgres for checkpoints: a real Postgres instance + `CHECKPOINT_DATABASE_URL` as a SecureString in SSM under `/vendor-copilot/prod/` -- omit this and the server keeps using its local SQLite file, which is fine for a single-instance deploy | ☐ |
 | Run `scripts/push_golden_to_langsmith.py` on your machine | ☐ |
 | Run a real `TextToSqlService.answer()` call on your machine | ☐ |
 | Run `scripts/run_effort_lab.py` on your machine (~$0.15–0.20) | ☐ |

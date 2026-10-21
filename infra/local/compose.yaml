@@ -1,0 +1,25 @@
+# Purpose : local-only Postgres for exercising the Day 8 step 7 checkpointer against a real
+#           database, without needing a cloud instance. Never used by CI or by the deploy job
+#           (infra/server/compose.yaml is the one that ships) -- this is a developer convenience
+#           that lives entirely on your own machine.
+# Run     : docker compose -f infra/local/compose.yaml up -d
+# Then    : put the printed connection string in your .env as CHECKPOINT_DATABASE_URL and run
+#           the API (`uv run uvicorn copilot.api.main:app --reload`) or
+#           `uv run python scripts/run_orchestrator_golden.py` as normal -- everything else about
+#           those commands is unchanged; only the checkpoint store moves from the local SQLite
+#           file to this container.
+services:
+  postgres:
+    image: postgres:17
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: copilot
+      POSTGRES_PASSWORD: copilot-local-dev-only
+      POSTGRES_DB: copilot_checkpoints
+    ports:
+      - "127.0.0.1:5432:5432" # local machine only -- never expose this port elsewhere
+    volumes:
+      - copilot_checkpoints_local:/var/lib/postgresql/data
+
+volumes:
+  copilot_checkpoints_local:

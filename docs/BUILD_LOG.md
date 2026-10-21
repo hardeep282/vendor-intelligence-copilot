@@ -1602,3 +1602,51 @@ consistent with.
 
 **No new ADR** -- this is a documentation deliverable, not a design decision; nothing in the
 system's behavior changed.
+
+## 22 Oct — Day 8 step 7: Postgres checkpointer
+
+**What:** the orchestrator's checkpoint store can now be Postgres instead of local SQLite, for
+real multi-replica/redeploy-safe durability, while every existing caller and every test keeps
+working unchanged.
+
+- `Orchestrator.__init__` gained a `checkpointer: BaseCheckpointSaver[str] | None` parameter
+  alongside the existing `checkpoint_path: str | None` -- pass either, or both (`checkpointer`
+  wins). The module stays storage-agnostic: it only ever calls the `BaseCheckpointSaver`
+  interface, never imports `psycopg` or anything Postgres-specific. `checkpoint_path` is
+  unchanged and still the simplest path for local dev and every pre-existing test.
+- New `Settings.checkpoint_database_url: SecretStr | None` (default `None`).
+- New `copilot.api.dependencies._build_checkpointer()`: `None`/empty DSN -> the existing local
+  `SqliteSaver(CHECKPOINT_PATH)`; a real DSN -> `PostgresSaver` over a `psycopg_pool.
+  ConnectionPool` (a pool, not a single `Connection` -- this object is one process-lifetime
+  singleton shared by every concurrent `/ask` request, and a single psycopg `Connection` isn't
+  safe for that). `get_orchestrator()` now calls this instead of hardcoding `checkpoint_path`.
+  `.setup()` runs LangGraph's own idempotent migration on every start-up.
+- New dependencies: `langgraph-checkpoint-postgres`, `psycopg[binary,pool]`.
+- New `infra/local/compose.yaml` -- a local-only Postgres container (never used by CI or the
+  real deploy job) for exercising the Postgres branch by hand; `.env.example` documents
+  `CHECKPOINT_DATABASE_URL` and points at it. `docs/HANDOFF.md`'s action checklist got one more
+  optional row for a real prod Postgres instance + the SSM parameter.
+
+**Verification:** `uv run mypy`/`ruff check`/`ruff format --check` all clean; full `uv run
+pytest -q` -- 461 passed (the pre-existing 15 known missing-data failures, unchanged, plus 4 new
+tests: `test_checkpointer_param_takes_priority_over_checkpoint_path` in `test_orchestrator.py`
+(two real `SqliteSaver`-backed files, proving `checkpointer` wins and `checkpoint_path`'s file is
+never even created) and three in the new `tests/test_api_dependencies.py` covering
+`_build_checkpointer`'s three branches (unset, empty string -- the same pydantic-settings
+empty-env-var gotcha the eval gate already had to guard against for `ANTHROPIC_API_KEY` -- and a
+real DSN, the last via monkeypatched `ConnectionPool`/`PostgresSaver` fakes since there's no live
+Postgres in this environment); re-ran `scripts/run_eval_gate.py` end to end, still exit 0.
+**Not verified against a live Postgres instance in this environment** -- no Docker daemon
+available here (`docker ps` fails: no `/var/run/docker.sock`) -- so the Postgres branch itself is
+proven by test, by API inspection (`PostgresSaver.__init__`'s type signature confirmed to accept
+a `ConnectionPool`, not just a `Connection`), and by `.setup()`/`ConnectionPool` being exactly
+the documented langgraph-checkpoint-postgres API, not by an actual round-trip against a running
+database. Whoever runs this against `infra/local/compose.yaml` first should treat that as the
+real first integration test of this path, not a formality.
+
+**No new ADR** -- Postgres itself was the brief's own instruction (A2/Day-8 scope), not a choice
+made among alternatives here; the design reuses the checkpointer-as-injected-dependency shape
+Day 6 step 6 already established (the Orchestrator takes a storage object/path, never builds
+its own notion of "the" checkpoint store), just widened from one concrete type (`SqliteSaver`
+over a `sqlite3.Connection`) to any `BaseCheckpointSaver`, with the concrete choice pushed to the
+caller -- not a new pattern.

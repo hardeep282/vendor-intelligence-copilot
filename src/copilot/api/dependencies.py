@@ -22,10 +22,18 @@ overriding the dependency with a fake `Orchestrator` instead (`tests/test_api_as
 
 from __future__ import annotations
 
+import sqlite3
 from collections.abc import Callable
 from functools import lru_cache
+from typing import Any, cast
 
 from fastapi import Depends, Header, HTTPException, Request
+from langgraph.checkpoint.base import BaseCheckpointSaver
+from langgraph.checkpoint.postgres import PostgresSaver
+from langgraph.checkpoint.sqlite import SqliteSaver
+from psycopg import Connection
+from psycopg.rows import dict_row
+from psycopg_pool import ConnectionPool
 
 from copilot.agents.contracts import AgentBudget
 from copilot.agents.orchestrator import Orchestrator
@@ -46,6 +54,35 @@ from copilot.sql.service import TextToSqlService
 from copilot.sql.validator import load_rules
 
 CHECKPOINT_PATH = str(REPO_ROOT / "data" / "orchestrator_checkpoints.sqlite")
+
+
+def _build_checkpointer() -> BaseCheckpointSaver[str]:
+    """Day 8 step 7: Postgres in prod (or wherever `CHECKPOINT_DATABASE_URL` is set), local
+    SQLite everywhere else -- the orchestrator module stays storage-agnostic (see
+    `Orchestrator.__init__`'s docstring), this is the one place that decides which store a real
+    server run gets. A `ConnectionPool`, not a single `Connection`, because this object is
+    shared across every concurrent request in the process for its whole lifetime (same
+    process-lifetime-singleton posture as `get_auth_store`/the rate limiters) -- a single
+    psycopg `Connection` is not safe for that; `PostgresSaver` accepts either and a pool is the
+    one actually meant for concurrent callers. `.setup()` runs LangGraph's own idempotent
+    `CREATE TABLE IF NOT EXISTS` migration -- safe to call on every start-up, including against
+    a database another replica already migrated.
+    """
+    settings = get_settings()
+    dsn = settings.checkpoint_database_url
+    if dsn is not None and dsn.get_secret_value():
+        pool = cast(
+            "ConnectionPool[Connection[dict[str, Any]]]",
+            ConnectionPool(
+                conninfo=dsn.get_secret_value(),
+                kwargs={"autocommit": True, "prepare_threshold": 0, "row_factory": dict_row},
+                open=True,
+            ),
+        )
+        pg_checkpointer = PostgresSaver(pool)
+        pg_checkpointer.setup()
+        return pg_checkpointer
+    return SqliteSaver(sqlite3.connect(CHECKPOINT_PATH, check_same_thread=False))
 
 
 @lru_cache
@@ -93,7 +130,7 @@ def get_orchestrator() -> Orchestrator:
         llm,
         executors=executors,
         default_budget=AgentBudget(max_latency_s=60.0),
-        checkpoint_path=CHECKPOINT_PATH,
+        checkpointer=_build_checkpointer(),
     )
 
 

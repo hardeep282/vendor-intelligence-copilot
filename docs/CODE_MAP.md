@@ -22,7 +22,9 @@ enforced), `rate_limit_per_minute` (default 30), `max_question_chars` (default 4
 `kill_switch_enabled` (default `False` — the one flag an operator flips first in an incident).
 Day 8, A2 §1.1 added `fallback_model` (default `None` — no fallback, so a primary-model outage
 still surfaces as an error exactly as before this existed; an operational choice, left unset in
-`.env.example` on purpose since ADR-005 already names the primary).
+`.env.example` on purpose since ADR-005 already names the primary). Day 8 step 7 added
+`checkpoint_database_url` (`SecretStr | None`, default `None` — local SQLite; a real Postgres
+DSN switches `copilot.api.dependencies._build_checkpointer` to a `PostgresSaver` instead).
 **Takes in:** environment variables, plus a local `.env` file (never committed).
 **Gives out:** a cached `Settings` object via `get_settings()`.
 **Talks to:** everything else that needs a key or a path — `LLMClient`, all the `scripts/*.py`,
@@ -483,12 +485,26 @@ callable identity) runs authentication exactly once per request, not twice.
 budget guard (A2 §1.6), run after auth resolves a `Principal` and before anything -- the
 Orchestrator, even the input gate -- ever sees the request; raises `HTTPException(429)` on the
 first of the three checks that fails.
+
+**Day 8 step 7: `_build_checkpointer()`.** The one place that decides which checkpoint store a
+real server run gets: local SQLite (unchanged default) when `settings.checkpoint_database_url`
+is unset or empty (same empty-string-secret guard `scripts/run_eval_gate.py` already needed for
+`ANTHROPIC_API_KEY` -- an unset env var and one set to `""` are not the same thing to
+pydantic-settings), a `PostgresSaver` over a `psycopg_pool.ConnectionPool` otherwise. A pool, not
+a single `Connection`, because `get_orchestrator()`'s result -- and everything it holds,
+including this checkpointer -- is one process-lifetime singleton shared across every concurrent
+`/ask` request; a single psycopg `Connection` isn't safe for that, a pool is what it's for.
+`.setup()` runs LangGraph's own idempotent migration on every start-up. `Orchestrator` itself
+stays storage-agnostic (see its own docstring) -- this function is the only code that imports
+`psycopg`/`langgraph.checkpoint.postgres` at all.
 **Takes in:** a `Request` (for the client IP) and, via other dependencies, the `Authorization`
-header.
-**Gives out:** a `Principal`, or raises `HTTPException` (401/403/429).
+header; `settings.checkpoint_database_url` (for `_build_checkpointer`).
+**Gives out:** a `Principal`, or raises `HTTPException` (401/403/429); a `BaseCheckpointSaver`
+from `_build_checkpointer`.
 **Talks to:** `copilot.api.auth`, `copilot.api.rate_limit`, `copilot.agents.wiring`
 (`build_executors`), every real service `get_orchestrator` wires up (same list `scripts/
-run_orchestrator_golden.py` already names).
+run_orchestrator_golden.py` already names); `langgraph.checkpoint.postgres`/`.sqlite`,
+`psycopg_pool` (checkpoint storage only).
 
 ### `src/copilot/api/auth.py` -- `AuthStore` *(day: 8, isNew: true)*
 Invite-code + API-key authentication (Day 8 step 4). Both are `secrets.token_urlsafe(24)`,
@@ -959,11 +975,19 @@ is unchanged from a caller's perspective (same signature, same return type, same
 unmodified); `/ask` is the first caller of `stream_answer()` directly, to forward each node
 event as a server-sent "agent is now doing X" update instead of one blocking call for the whole
 multi-specialist run.
+**Day 8 step 7: `checkpointer`, for Postgres in production.** A new, optional constructor
+parameter alongside `checkpoint_path`: pass any pre-built `BaseCheckpointSaver` (a
+`PostgresSaver`, in `copilot.api.dependencies.get_orchestrator`'s case) and it's used as-is,
+taking priority over `checkpoint_path` if both are given. This module still never imports
+`psycopg` or anything Postgres-specific -- it stays storage-agnostic, calling only the
+`BaseCheckpointSaver` interface, exactly as it already did for `SqliteSaver`; building *which*
+concrete checkpointer, and from what connection string, is the caller's job. `checkpoint_path`
+itself is unchanged and still the simplest path for local dev and every existing test.
 **Takes in:** an `LLMClient`, `executors: dict[AgentName, SpecialistExecutor]` -- the Day 6
 step 2 `run_*` functions, wired in by the caller (never constructed here: each needs a
 different real dependency the Orchestrator has no business reproducing) -- plus a question,
-`Role`, and optional `thread_id` at call time; optional `checkpoint_path`/`guardian` at
-construction time. `resume_approval` additionally takes `thread_id`, a decision
+`Role`, and optional `thread_id` at call time; optional `checkpoint_path`/`checkpointer`/
+`guardian` at construction time. `resume_approval` additionally takes `thread_id`, a decision
 (`"approve"|"edit"|"reject"`), the approver's `Role`, and an optional `edited_answer`.
 **Gives out:** `OrchestratorResult` (plan, every `AgentResult`, the drafted answer,
 `conflicts_noted`, `verified`/`verify_attempts`, summed cost/latency/llm_calls across plan +
@@ -976,8 +1000,10 @@ v1.yaml); `copilot.guardrails.policy` (`Role`); `copilot.guardrails.guardian` (`
 `GuardianVerdict`); `copilot.guardrails.canary` (`canary_line`, appended to every system prompt
 this module renders); `copilot.guardrails.audit_log` (`log_decision`, `log_approval`);
 `copilot.guardrails.input_gate` (`InputGate`, Day 7 step 6 -- `answer()`'s very first call, with
-`InputGate.record_spend` its last); `langgraph.checkpoint.sqlite` (`SqliteSaver`);
-`langgraph.types` (`Command`, `Send`, `interrupt`); `langsmith.run_helpers` (`LangSmithExtra`).
+`InputGate.record_spend` its last); `langgraph.checkpoint.base` (`BaseCheckpointSaver`, the
+interface `checkpointer` is typed against); `langgraph.checkpoint.sqlite` (`SqliteSaver`, the
+`checkpoint_path` fallback); `langgraph.types` (`Command`, `Send`, `interrupt`);
+`langsmith.run_helpers` (`LangSmithExtra`).
 Does not import `copilot.agents.specialists` directly -- tests inject fake executors, and the
 real caller is `copilot.agents.wiring` (Day 6 step 7) via `scripts/run_orchestrator_golden.py`.
 
@@ -1051,6 +1077,7 @@ imports work later; no real code yet. (`src/copilot/rag/`, `src/copilot/ml/`, an
 | `scripts/train_risk_classifier.py` | your real `vw_PortfolioHealth` export (CSV/XLSX) | real RF/XGBoost leaky-vs-safe accuracy/F1 + SHAP drivers, appends to `run_log.csv` |
 | `scripts/run_model_selection_eval.py` | `ANTHROPIC_API_KEY` (every run, not just `--quality`) | real Model Selection Agent runs over the 8-question golden set; `--quality` adds the LLM-judged reasoning check |
 | `scripts/run_orchestrator_golden.py` | `ANTHROPIC_API_KEY` + the real snapshot + `data/chroma/` | Day 6 step 7: runs the 10 multi-hop golden questions end to end through the real Orchestrator (real specialists, real Verifier loop); prints plan coverage, verified status, cost/latency per question, and leaves a SQLite checkpoint per run at `data/orchestrator_checkpoints.sqlite` |
+| `docker compose -f infra/local/compose.yaml up -d` | Docker | Day 8 step 7: a local-only Postgres container for exercising `copilot.api.dependencies._build_checkpointer`'s Postgres branch for real; set `CHECKPOINT_DATABASE_URL` in `.env` to the printed connection string, nothing else changes |
 
 ## Tests (`tests/*.py`)
 One test file per module above, named `test_<module>.py` — not documented individually here since

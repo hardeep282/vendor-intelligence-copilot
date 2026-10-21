@@ -13,6 +13,8 @@ import sqlite3
 import time
 from pathlib import Path
 
+from langgraph.checkpoint.sqlite import SqliteSaver
+
 from copilot.agents.contracts import AgentBudget, AgentResult, TaskSpec
 from copilot.agents.orchestrator import MAX_VERIFICATION_LOOPS, Orchestrator
 from copilot.guardrails.input_gate import InputGate
@@ -875,3 +877,43 @@ def test_a_completed_run_records_its_spend_against_the_input_gate_cap(tmp_path: 
 
     assert result.total_cost_usd > 0
     assert tracker.spent_today("analyst") == result.total_cost_usd
+
+
+def test_checkpointer_param_takes_priority_over_checkpoint_path(tmp_path: Path) -> None:
+    """Day 8 step 7: `checkpointer` (a real `PostgresSaver` in production, via
+    `copilot.api.dependencies._build_checkpointer`) wins when both are passed -- `checkpoint_path`
+    stays the local-dev/test SQLite fallback it always was. Proven here with two different
+    SqliteSaver-backed files rather than a real Postgres instance (none available in this test
+    environment, and `Orchestrator` is deliberately storage-agnostic -- it only ever calls the
+    `BaseCheckpointSaver` interface, so a second SQLite file exercises exactly the same code path
+    a real `PostgresSaver` would): only the file behind `checkpointer` should end up with a
+    persisted checkpoint for this run's thread_id, and the `checkpoint_path` file should never
+    even be created.
+    """
+    unused_path = str(tmp_path / "unused.sqlite")
+    used_path = str(tmp_path / "used.sqlite")
+    used_conn = sqlite3.connect(used_path, check_same_thread=False)
+    used_checkpointer = SqliteSaver(used_conn)
+
+    llm = _llm_with(
+        [
+            structured_response(
+                {"tasks": [{"agent": "data_analyst", "objective": "x", "constraints": {}}]}
+            ),
+            structured_response({"answer": "ok", "cited_tasks": ["t0"], "conflicts_noted": []}),
+            _PASSING_VERDICT,
+        ]
+    )
+    orch = Orchestrator(
+        llm,
+        executors={"data_analyst": _ok("data_analyst", "x")},
+        checkpoint_path=unused_path,
+        checkpointer=used_checkpointer,
+    )
+
+    orch.answer("x?", role="analyst", thread_id="priority-check")
+
+    assert orch._checkpointer is used_checkpointer
+    row = used_conn.execute("SELECT count(*) FROM checkpoints").fetchone()
+    assert row[0] > 0
+    assert not Path(unused_path).exists()

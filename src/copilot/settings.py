@@ -61,6 +61,15 @@ class Settings(BaseSettings):
     per_ip_rate_limit_per_minute: int = Field(default=60, gt=0)
     per_user_daily_budget_usd: float = Field(default=1.0, gt=0)
 
+    # Day 8 step 7: the orchestrator's checkpoint store. None (the default -- every local dev
+    # setup and every test) means `copilot.api.dependencies.get_orchestrator` falls back to the
+    # existing local SQLite file; a real DSN (e.g.
+    # "postgresql://user:pass@host:5432/copilot") switches it to a `PostgresSaver` over that
+    # Postgres instance instead, so checkpoint state survives a redeploy or a container restart
+    # rather than living on one container's local disk. A `SecretStr` because the DSN carries a
+    # password.
+    checkpoint_database_url: SecretStr | None = None
+
     # Build metadata: the Git commit baked into the image by CI (shown by /version).
     git_sha: str = "dev"
 

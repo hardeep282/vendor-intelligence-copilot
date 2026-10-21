@@ -29,6 +29,9 @@ data/audit/*.jsonl
 data/spend/*.json
 # Auth store (Day 8 step 4): hashed invite codes and API keys -- never commit, even hashed.
 data/auth/*.json
+# Local SQLite checkpoint DB (Day 6 step 6 / Day 8 step 7's fallback when no
+# CHECKPOINT_DATABASE_URL is set): local runtime state, same rule.
+data/orchestrator_checkpoints.sqlite
 
 # Tooling
 .ipynb_checkpoints/

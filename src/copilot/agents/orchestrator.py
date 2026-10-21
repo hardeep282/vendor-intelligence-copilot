@@ -101,6 +101,7 @@ from concurrent.futures import TimeoutError as FutureTimeoutError
 from typing import Annotated, Any, Literal, TypedDict, cast
 
 from anthropic.types import MessageParam
+from langgraph.checkpoint.base import BaseCheckpointSaver
 from langgraph.checkpoint.sqlite import SqliteSaver
 from langgraph.graph import END, StateGraph
 from langgraph.types import Command, Send, interrupt
@@ -271,8 +272,18 @@ class Orchestrator:
     LangGraph Studio would otherwise visualize; Studio itself is this step's cut-first item per
     the sprint doc (an external tool to point at this process, not code to build). `answer()`
     then takes an optional `thread_id` (LangGraph's checkpoint key) so a caller can resume or
-    inspect one specific run; a fresh one is generated when the caller doesn't need to. Day 8's
-    server swaps this for Postgres -- not this module's concern.
+    inspect one specific run; a fresh one is generated when the caller doesn't need to.
+
+    **Day 8 step 7: a pre-built checkpointer, for Postgres.** Pass `checkpointer` instead of
+    `checkpoint_path` to compile the graph against any `BaseCheckpointSaver` the caller already
+    constructed -- a `PostgresSaver` over the deployed Postgres instance, in the API server's
+    case (`copilot.api.dependencies.get_orchestrator`), so checkpoint state survives a process
+    restart or a redeploy rather than living on one container's local disk. Building *which*
+    checkpointer, and from what connection string, is deliberately the caller's job, not this
+    class's -- this module stays storage-agnostic and only ever calls the `BaseCheckpointSaver`
+    interface. `checkpoint_path` is kept, unchanged, for local dev and every existing test: it's
+    simpler than standing up Postgres for a unit test, and SQLite's simplicity is exactly the
+    point there. If both are passed, `checkpointer` wins.
     """
 
     def __init__(
@@ -282,6 +293,7 @@ class Orchestrator:
         effort: Effort | None = None,
         default_budget: AgentBudget | None = None,
         checkpoint_path: str | None = None,
+        checkpointer: BaseCheckpointSaver[str] | None = None,
         guardian: Guardian | None = None,
         input_gate: InputGate | None = None,
     ) -> None:
@@ -289,7 +301,7 @@ class Orchestrator:
         self._executors = executors
         self._effort = effort
         self._default_budget = default_budget or AgentBudget()
-        self._checkpointer = (
+        self._checkpointer = checkpointer or (
             SqliteSaver(sqlite3.connect(checkpoint_path, check_same_thread=False))
             if checkpoint_path is not None
             else None

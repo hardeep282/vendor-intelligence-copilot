@@ -185,3 +185,20 @@ already in the project (Presidio from Day 6, `sqlglot` from Day 2's SQL validato
 from Day 3's LLM client). Every Guardian/InputGate/trace-masking check is deterministic Python
 with no API key or network call, so unlike most earlier days there is no "run on your machine"
 item here -- commands #3-#4 above already give real, final output in this session.
+
+## Day 8 (API, auth, rate limiting, CI eval gate, determinism note, Postgres checkpointer)
+
+| # | What this step does | Command | What each part does | Expected result |
+|---|---|---|---|---|
+| 1 | Run every check | `uv run ruff check . && uv run mypy && uv run pytest -q` | lint, strict type-check, tests, in that order | "All checks passed!" / "Success, no issues" / "461 passed" (15 known missing-data failures excluded -- see `scripts/run_eval_gate.py`'s own allowlist) |
+| 2 | Run the CI eval gate exactly as `.github/workflows/ci.yml`'s `eval-gate` job does | `uv run python scripts/run_eval_gate.py` | deterministic-first: full pytest suite, tolerant of the known-missing-data allowlist; then an LLM-judged layer that runs only with a real `ANTHROPIC_API_KEY` + snapshot + Chroma index, else cleanly skips | exit 0; "deterministic checks: PASS" then either real eval scores or a clear SKIPPED message |
+| 3 | Issue yourself an invite code, then redeem it for an API key | `uv run python scripts/issue_invite_code.py --role analyst --label "me"` then `curl -s -X POST localhost:8000/auth/redeem -d '{"invite_code": "<code>", "label": "me"}' -H 'Content-Type: application/json'` | admin CLI mints a hashed, single-use invite; `/auth/redeem` exchanges it for a hashed, reusable API key | a printed invite code, then a JSON `{"api_key": "...", "role": "analyst"}` |
+| 4 | Call `/ask` and watch the SSE stream | `curl -N -X POST localhost:8000/ask -H "Authorization: Bearer <api-key>" -H 'Content-Type: application/json' -d '{"question": "...", "role": "analyst"}'` | streams one `event: node` per executed graph node, then one `event: result` with the final `OrchestratorResult` | a sequence of `node`/`result` SSE blocks, not one long wait |
+| 5 | Stand up a local Postgres for the checkpointer's real-DB path | `docker compose -f infra/local/compose.yaml up -d` | starts a throwaway Postgres container, `127.0.0.1:5432` only | container running; set `CHECKPOINT_DATABASE_URL` in `.env` to the connection string in that file's header comment, then re-run the API -- same commands, Postgres now holds checkpoint state instead of the local SQLite file |
+
+No new dependency from steps 1-4 beyond what Day 8's earlier commits already added
+(`langgraph-checkpoint-sqlite`, nothing new for auth/rate-limit/SSE -- hand-rolled on top of
+FastAPI's own `StreamingResponse`). Step 5 added `langgraph-checkpoint-postgres` and
+`psycopg[binary,pool]`; the Postgres branch itself is proven by test and by API inspection in
+this environment, not by a live round-trip -- no Docker daemon available here (see
+`docs/BUILD_LOG.md`'s Day 8 step 7 entry for exactly what was and wasn't verified).
