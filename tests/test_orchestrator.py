@@ -103,6 +103,111 @@ def test_single_specialist_plan_runs_end_to_end() -> None:
     assert result.llm_calls == 4
 
 
+def test_stream_answer_emits_one_node_event_per_executed_node_then_one_result() -> None:
+    """Day 8 step 3: `answer()` is now `stream_answer()` drained for its last event -- this
+    checks the generator's own contract directly (node events in execution order, exactly one
+    trailing result event), the thing the API's SSE endpoint actually forwards.
+    """
+    llm = _llm_with(
+        [
+            structured_response(
+                {"tasks": [{"agent": "data_analyst", "objective": "x", "constraints": {}}]}
+            ),
+            structured_response({"answer": "ok", "cited_tasks": ["t0"], "conflicts_noted": []}),
+            _PASSING_VERDICT,
+        ]
+    )
+    orch = Orchestrator(llm, executors={"data_analyst": _ok("data_analyst", "x")})
+
+    events = list(orch.stream_answer("x?", role="analyst"))
+
+    node_events = [e for e in events if e.type == "node"]
+    result_events = [e for e in events if e.type == "result"]
+    assert [e.node for e in node_events] == [
+        "plan",
+        "run_specialist",
+        "draft",
+        "verify",
+        "finalize",
+        "guardian",
+    ]
+    assert len(result_events) == 1
+    assert result_events[0].result is not None
+    assert result_events[0].result.answer == "ok"
+
+
+def test_stream_answer_blocked_by_input_gate_yields_only_a_result_event() -> None:
+    """A gate BLOCK never reaches "plan" -- no node events, just the one result event carrying
+    the gate's own message, same as `answer()`'s pre-existing blocked-request behaviour."""
+    gate = InputGate(kill_switch_enabled=True)
+    llm = _llm_with([])
+    orch = Orchestrator(llm, executors={}, input_gate=gate)
+
+    events = list(orch.stream_answer("anything", role="analyst"))
+
+    assert all(e.type == "result" for e in events)
+    assert len(events) == 1
+    assert events[0].result is not None
+    assert events[0].result.input_gate_verdict is not None
+    assert events[0].result.input_gate_verdict.outcome == "block"
+
+
+def test_stream_answer_flags_pending_approval_on_the_final_result(tmp_path: Path) -> None:
+    """The interrupt itself surfaces as an "__interrupt__" key in the underlying LangGraph
+    stream, not a StreamEvent -- this checks it still turns into `pending_approval=True` on the
+    one result event the caller actually sees, same as `answer()`'s equivalent check."""
+    db_path = str(tmp_path / "checkpoints.sqlite")
+    llm = _llm_with(_action_plan_llm())
+    orch = Orchestrator(
+        llm, executors={"action": _ok("action", "x", ["public"])}, checkpoint_path=db_path
+    )
+
+    events = list(orch.stream_answer("x?", role="analyst", thread_id="run-stream-approve"))
+
+    result_events = [e for e in events if e.type == "result"]
+    assert len(result_events) == 1
+    assert result_events[0].result is not None
+    assert result_events[0].result.pending_approval is True
+
+
+def test_answer_and_stream_answer_agree_on_the_final_result() -> None:
+    """Belt-and-suspenders: `answer()` is just `stream_answer()` drained -- confirm they
+    actually produce the same OrchestratorResult for the same run, not just that each passes
+    its own tests in isolation."""
+    llm_for_answer = _llm_with(
+        [
+            structured_response(
+                {"tasks": [{"agent": "data_analyst", "objective": "x", "constraints": {}}]}
+            ),
+            structured_response({"answer": "ok", "cited_tasks": ["t0"], "conflicts_noted": []}),
+            _PASSING_VERDICT,
+        ]
+    )
+    llm_for_stream = _llm_with(
+        [
+            structured_response(
+                {"tasks": [{"agent": "data_analyst", "objective": "x", "constraints": {}}]}
+            ),
+            structured_response({"answer": "ok", "cited_tasks": ["t0"], "conflicts_noted": []}),
+            _PASSING_VERDICT,
+        ]
+    )
+    via_answer = Orchestrator(
+        llm_for_answer, executors={"data_analyst": _ok("data_analyst", "x")}
+    ).answer("x?", role="analyst")
+    stream_events = list(
+        Orchestrator(
+            llm_for_stream, executors={"data_analyst": _ok("data_analyst", "x")}
+        ).stream_answer("x?", role="analyst")
+    )
+    via_stream = next(e.result for e in stream_events if e.type == "result")
+
+    assert via_stream is not None
+    assert via_answer.answer == via_stream.answer
+    assert via_answer.verified == via_stream.verified
+    assert via_answer.llm_calls == via_stream.llm_calls
+
+
 def test_two_independent_specialists_fan_out_and_join() -> None:
     llm = _llm_with(
         [
@@ -279,9 +384,7 @@ def test_cost_latency_and_calls_sum_across_plan_specialists_and_draft() -> None:
             _PASSING_VERDICT,
         ]
     )
-    orch = Orchestrator(
-        llm, executors={"data_analyst": _ok("data_analyst", "x", ["internal"])}
-    )
+    orch = Orchestrator(llm, executors={"data_analyst": _ok("data_analyst", "x", ["internal"])})
 
     result = orch.answer("x?", role="analyst")
 
@@ -334,23 +437,15 @@ def test_verification_that_never_passes_finalizes_unverified_after_max_loops() -
             structured_response(
                 {"tasks": [{"agent": "data_analyst", "objective": "x", "constraints": {}}]}
             ),
-            structured_response(
-                {"answer": "attempt 1", "cited_tasks": [], "conflicts_noted": []}
-            ),
+            structured_response({"answer": "attempt 1", "cited_tasks": [], "conflicts_noted": []}),
             structured_response(_verdict(grounded=False, feedback="still wrong, attempt 1")),
-            structured_response(
-                {"answer": "attempt 2", "cited_tasks": [], "conflicts_noted": []}
-            ),
+            structured_response({"answer": "attempt 2", "cited_tasks": [], "conflicts_noted": []}),
             structured_response(_verdict(grounded=False, feedback="still wrong, attempt 2")),
-            structured_response(
-                {"answer": "attempt 3", "cited_tasks": [], "conflicts_noted": []}
-            ),
+            structured_response({"answer": "attempt 3", "cited_tasks": [], "conflicts_noted": []}),
             structured_response(_verdict(grounded=False, feedback="still wrong, attempt 3")),
         ]
     )
-    orch = Orchestrator(
-        llm, executors={"data_analyst": _ok("data_analyst", "x", ["internal"])}
-    )
+    orch = Orchestrator(llm, executors={"data_analyst": _ok("data_analyst", "x", ["internal"])})
 
     result = orch.answer("x?", role="analyst")
 
@@ -386,9 +481,7 @@ def test_an_allowed_result_has_no_pending_review() -> None:
             structured_response(_verdict(grounded=True)),
         ]
     )
-    orch = Orchestrator(
-        llm, executors={"data_analyst": _ok("data_analyst", "x", ["internal"])}
-    )
+    orch = Orchestrator(llm, executors={"data_analyst": _ok("data_analyst", "x", ["internal"])})
 
     result = orch.answer("What is freight cost?", role="analyst")
 

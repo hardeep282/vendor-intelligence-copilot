@@ -833,6 +833,21 @@ the UI) branches on instead of parsing that text, replacing Day 7's actual behav
 ESCALATE was fully reviewable only by grepping `guardian_log.jsonl` by hand) with the "visible
 pending review" ADR-006 decided on, without changing the Guardian's own checks or severity
 ordering (both confirmed as-shipped by that ADR).
+**Day 8 step 3: `stream_answer()`, for the API's `/ask` SSE endpoint.** `answer()` is now a
+two-line wrapper that drains a new generator, `stream_answer()`, for its last event -- the
+input-gate check, the graph run (now via `self._graph.stream(..., stream_mode="updates")`
+instead of `.invoke()`), the `__interrupt__`-detection, and `InputGate.record_spend` all moved
+there unchanged, so there's exactly one copy of that logic rather than two that could drift.
+`stream_answer()` yields a `StreamEvent(type="node", node=<name>)` for each graph node LangGraph
+reports as it actually runs (confirmed against a throwaway probe script: `stream_mode="updates"`
+yields one `{node_name: partial_state}` dict per node, in execution order, and an `
+"__interrupt__"` key in place of a node name when `_approval_gate` pauses the run), then exactly
+one trailing `StreamEvent(type="result", result=<OrchestratorResult>)` -- the same object
+`answer()` has always returned, `pending_approval`/`pending_review` included. `answer()` itself
+is unchanged from a caller's perspective (same signature, same return type, same tests pass
+unmodified); `/ask` is the first caller of `stream_answer()` directly, to forward each node
+event as a server-sent "agent is now doing X" update instead of one blocking call for the whole
+multi-specialist run.
 **Takes in:** an `LLMClient`, `executors: dict[AgentName, SpecialistExecutor]` -- the Day 6
 step 2 `run_*` functions, wired in by the caller (never constructed here: each needs a
 different real dependency the Orchestrator has no business reproducing) -- plus a question,
@@ -842,7 +857,8 @@ construction time. `resume_approval` additionally takes `thread_id`, a decision
 **Gives out:** `OrchestratorResult` (plan, every `AgentResult`, the drafted answer,
 `conflicts_noted`, `verified`/`verify_attempts`, summed cost/latency/llm_calls across plan +
 every specialist + every draft/verify attempt, `guardian_verdict`, `pending_approval`,
-`approval_decision`).
+`approval_decision`) from `answer()`; `stream_answer()` gives the same, wrapped one-per-node in
+`StreamEvent`s plus a trailing `StreamEvent(type="result", ...)` carrying it.
 **Talks to:** `copilot.agents.contracts` (`TaskSpec`/`AgentResult`/`AgentBudget`/`AgentName`);
 `copilot.llm.client`/`prompts` (`orchestrator_plan`/`orchestrator_draft`/`orchestrator_verify`
 v1.yaml); `copilot.guardrails.policy` (`Role`); `copilot.guardrails.guardian` (`Guardian`,

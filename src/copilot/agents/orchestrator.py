@@ -95,7 +95,7 @@ import operator
 import sqlite3
 import time
 import uuid
-from collections.abc import Callable
+from collections.abc import Callable, Iterator
 from concurrent.futures import ThreadPoolExecutor
 from concurrent.futures import TimeoutError as FutureTimeoutError
 from typing import Annotated, Any, Literal, TypedDict, cast
@@ -219,6 +219,31 @@ class OrchestratorResult(BaseModel):
     pending_review: PendingReview | None = None
 
 
+class StreamEvent(BaseModel):
+    """Day 8 step 3: one update from `Orchestrator.stream_answer()` -- a thin, already-typed
+    wrapper the API's `/ask` SSE endpoint serializes straight onto the wire, one JSON object per
+    server-sent event, no translation layer in `copilot.api` needing to know this graph's node
+    names or internal state shape.
+
+    `type="node"` fires once per graph node that actually ran (`node` names one of this
+    module's own node methods -- "plan", "run_specialist", "draft", "verify", "revise_draft",
+    "finalize", "guardian", "approval_gate" -- in the order LangGraph's own `.stream(stream_mode
+    ="updates")` reports them, which is execution order). It carries no payload beyond the name:
+    the point is "the agent is now doing X", a progress indicator for a caller who would
+    otherwise stare at a blank screen for the seconds a multi-specialist run can take, not a
+    partial answer to render early (the Guardian hasn't seen anything yet).
+
+    `type="result"` fires exactly once, last, carrying the same `OrchestratorResult` `answer()`
+    has always returned -- `pending_review`/`pending_approval` on it are what the caller checks
+    for an ESCALATE-pending or approval-pending run, same fields, same meaning, whether reached
+    through `answer()` or `stream_answer()`.
+    """
+
+    type: Literal["node", "result"]
+    node: str | None = None
+    result: OrchestratorResult | None = None
+
+
 class _State(TypedDict):
     question: str
     role: Role
@@ -280,18 +305,54 @@ class Orchestrator:
         self._graph = self._build_graph()
 
     def answer(self, question: str, role: Role, thread_id: str | None = None) -> OrchestratorResult:
+        """Run to completion and return the final result -- the pre-Day-8 interface, unchanged
+        for every existing caller. Drains `stream_answer()` rather than duplicating its gate/
+        graph/spend-recording logic; see that method for what actually runs.
+        """
+        result: OrchestratorResult | None = None
+        for event in self.stream_answer(question, role, thread_id=thread_id):
+            if event.type == "result":
+                result = event.result
+        if result is None:
+            # Can't happen: stream_answer() always yields exactly one type="result" event,
+            # whichever path it takes (gate block, normal finish, or paused for approval).
+            # Raised rather than asserted so it survives -O, same posture as the guard it
+            # replaces and CorrectiveRagService.answer()'s/ModelSelectionAgent.select()'s.
+            raise RuntimeError("stream_answer() finished without yielding a result event")
+        return result
+
+    def stream_answer(
+        self, question: str, role: Role, thread_id: str | None = None
+    ) -> Iterator[StreamEvent]:
+        """Day 8 step 3: the same run `answer()` does, but yielding a `StreamEvent` as each
+        graph node completes, for the API's `/ask` SSE endpoint to forward live instead of the
+        caller waiting on one blocking call for the whole multi-specialist run. `answer()` is
+        now just this generator, drained for its final event -- there is exactly one place the
+        input-gate check, the graph run and the spend recording happen, not two copies that
+        could drift.
+
+        Yields zero or more `type="node"` events (one per node LangGraph's own `.stream(stream_
+        mode="updates")` reports, in execution order) followed by exactly one `type="result"`
+        event, whether the run finished normally, was blocked at the input gate before "plan"
+        ever ran, or paused inside "approval_gate" awaiting a human (see `StreamEvent`'s own
+        docstring for what each carries).
+        """
         # Day 7 step 6: the input gate runs before anything else -- a blocked request never
         # reaches "plan", never spends an LLM call, and never touches a specialist. See
         # `copilot.guardrails.input_gate`'s module docstring for why this list of checks and why
         # BLOCK-only (no redact/escalate) makes sense on the input side.
         gate_verdict = self._input_gate.review(question, role)
         if gate_verdict.outcome == "block":
-            return OrchestratorResult(
-                question=question,
-                role=role,
-                answer=gate_verdict.message,
-                input_gate_verdict=gate_verdict,
+            yield StreamEvent(
+                type="result",
+                result=OrchestratorResult(
+                    question=question,
+                    role=role,
+                    answer=gate_verdict.message,
+                    input_gate_verdict=gate_verdict,
+                ),
             )
+            return
         initial: _State = {
             "question": question,
             "role": role,
@@ -310,25 +371,35 @@ class Orchestrator:
         config: dict[str, Any] = {}
         if self._checkpointer is not None:
             config = {"configurable": {"thread_id": thread_id or str(uuid.uuid4())}}
-        final_state = cast("_State", self._graph.invoke(initial, config=config))
-        result = final_state["result"]
-        if result is None:
+        last_result: OrchestratorResult | None = None
+        interrupted = False
+        for update in self._graph.stream(initial, config=config, stream_mode="updates"):
+            for node_name, partial in update.items():
+                if node_name == "__interrupt__":
+                    # Day 7 step 5: the graph paused inside "approval_gate" rather than reaching
+                    # END -- "partial" here is LangGraph's own Interrupt payload, not this
+                    # graph's state; nothing new to report as a node event, but the already-
+                    # captured "result" (set by "guardian", the node just before this one on
+                    # every path that can pause) needs flagging before it's handed back.
+                    interrupted = True
+                    continue
+                yield StreamEvent(type="node", node=node_name)
+                if isinstance(partial, dict) and partial.get("result") is not None:
+                    last_result = partial["result"]
+        if last_result is None:
             # Can't happen: "draft" always sets "result" before END -- raised rather than
             # asserted so it survives -O, same posture as CorrectiveRagService.answer()'s and
             # ModelSelectionAgent.select()'s equivalent guards.
             raise RuntimeError("orchestrator graph reached END without producing a result")
-        if final_state.get("__interrupt__"):
-            # Day 7 step 5: the graph paused inside "_approval_gate" rather than reaching END --
-            # "result" here is still "finalize"/"guardian"'s state, correct but not yet
-            # approver-reviewed. Flag it rather than silently handing back a result that looks
-            # finished; the caller resumes with resume_approval(thread_id=..., ...).
+        result = last_result
+        if interrupted:
             result = result.model_copy(update={"pending_approval": True})
         # Day 7 step 6: the spend-cap half of the gate. Recorded only once the run has actually
         # finished (not before the graph starts, and not again on a resumed/paused thread --
         # resume_approval() doesn't call this), against the real total this specific run spent,
         # not an estimate.
         self._input_gate.record_spend(role, result.total_cost_usd)
-        return result
+        yield StreamEvent(type="result", result=result)
 
     def resume_approval(
         self,
