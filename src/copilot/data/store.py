@@ -46,13 +46,28 @@ def build_database(snapshot_dir: Path | None = None) -> Path:
 
 
 def connect(snapshot_dir: Path | None = None) -> duckdb.DuckDBPyConnection:
-    """Open the snapshot read-only, with file/network access off and configuration locked."""
+    """Open the snapshot read-only, with file/network access off and configuration locked.
+
+    The lockdown config is passed at connect() time (not applied with SET afterward).
+    DuckDB shares one underlying database instance across every connection opened to the
+    same file path within a process; `SET lock_configuration = true` locks that instance,
+    not just the connection that issued it. A later `connect()` to the same path reuses the
+    cached, already-locked instance, so a second `SET enable_external_access = false` call
+    against it raises InvalidInputException ("configuration has been locked") even though it
+    is only re-asserting the value already in force -- which breaks any process (the API
+    server included) that calls `connect()` more than ~2 times, e.g. once per request.
+    Passing the same two settings via `config=` instead applies them once at instance
+    creation and is a no-op confirmation on a later connect to the already-locked instance,
+    so repeated calls in one process succeed while the lockdown itself is unaffected (see
+    tests/test_store_security.py, which still asserts the engine refuses every attack).
+    """
     d = snapshot_dir or get_settings().snapshot_dir
     db_path = d / DB_NAME
     newest_parquet = max((p.stat().st_mtime for p in d.glob("*.parquet")), default=0.0)
     if not db_path.exists() or db_path.stat().st_mtime < newest_parquet:
         build_database(d)
-    con = duckdb.connect(str(db_path), read_only=True)
-    con.execute("SET enable_external_access = false")
-    con.execute("SET lock_configuration = true")
-    return con
+    return duckdb.connect(
+        str(db_path),
+        read_only=True,
+        config={"enable_external_access": "false", "lock_configuration": "true"},
+    )

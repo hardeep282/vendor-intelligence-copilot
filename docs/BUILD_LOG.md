@@ -1360,3 +1360,48 @@ can be written -- Addendum A1's process is the user writes the answers, not Clau
 again this session since no prior file actually contains the template text itself (the Day 7
 commit message said it was "presented to the user" but it lived only in that chat's turns, not
 in a committed file).
+
+## 22 Oct — Day 8 start: pre-existing production-blocking DuckDB bug found and fixed
+
+Before any Day 8 code: fresh clone, `uv sync --frozen`, full suite run as a baseline. 25 failed,
+415 passed — not the 440/440 the Day 7 commit and the 15 Oct cross-check both recorded.
+
+**Investigated, not assumed.** 10 of the 25 (`test_store_security.py`'s whole parametrized
+`test_engine_refuses` set, plus `test_aggregate_reads_still_work`) were all the same error:
+`InvalidInputException: Cannot change configuration option "enable_external_access" - the
+configuration has been locked`, thrown from `store.connect()`'s own `SET enable_external_access
+= false`. Reproduced directly (not guessed): `connect()` called 3 times in one Python process
+against the same snapshot path — call 1 and 2 succeed, call 3 raises. Root cause: DuckDB shares
+one underlying database instance across every connection opened to the same file path within a
+process; `SET lock_configuration = true` locks that shared instance, not just the connection
+that issued it, so a later `connect()` reusing the cached instance hits an already-locked
+config on its own `SET enable_external_access = false` — even though it's only re-asserting the
+value already in force. This is a **real production blocker**, not a test-only artifact: the
+planned `/ask` endpoint calls `store.connect()` once per request, so the second request into a
+running server would have thrown this on every data-backed question.
+
+**Fix:** pass `enable_external_access` and `lock_configuration` via `config=` at
+`duckdb.connect()`-time instead of two `SET` statements after opening. Verified by direct repro
+(4 repeated connects all succeed) and re-confirmed the security guarantee still holds (`SET
+enable_external_access = true` against the 4th connection still correctly raises). Full suite
+after the fix: 425 passed, 15 failed — all 15 are `CatalogException: Table ... does not exist`,
+because this cloud session has no local `Vendor_Summary.xlsx` to run `scripts/build_snapshot.py`
+against (licence rule: the workbook is local-only, never committed, and I'm not sourcing or
+reconstructing it another way) — `data/snapshot/*.parquet` is correctly absent, same as any
+fresh clone without the user's machine. Not a regression; expected in this environment. The
+remaining 15: `test_agent_specialists.py` (5), `test_ml_forecast.py` (4), `test_golden.py` /
+`test_golden_v2.py` (2), `test_orchestrator_wiring.py` (1), `test_snapshot.py` (2), and
+`test_store_security.py::test_aggregate_reads_still_work` (1) — every one needs a real row in a
+real table. `test_store_security.py`'s own `pytest.mark.skipif` only checks for `MANIFEST.json`
+(committed as provenance metadata, no raw data in it), not for the actual `.duckdb`/`.parquet`
+files, so it doesn't skip here — a latent gap in that skip condition, not touched today (pre-Day-8,
+out of scope, logged here rather than silently fixed).
+
+**No new ADR** — this is a bug fix to already-shipped Day 7 code, not a new architectural or
+build-vs-buy call; it reuses the project's own "lockdown enforced at the engine, never a
+mutable runtime toggle" shape from Layer 0 of `docs/specs/text_to_sql_safety.md`, just moved to
+the right API surface for it to actually hold under repeated use.
+
+**Verified-local state after the fix: 425/440 pass, 15 fail only for missing local data; ruff
+clean; mypy --strict clean on the changed file.** This is this session's working baseline for
+Day 8 — the user's own machine, with the real snapshot built, should still read 440/440.

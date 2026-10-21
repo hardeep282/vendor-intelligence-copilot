@@ -41,9 +41,14 @@ becomes `ANTHROPIC_API_KEY`).
 ### `src/copilot/data/store.py`
 The only way any agent reads data. A locked-down, read-only DuckDB connection over the Parquet
 snapshot — refuses file access, network access, config changes, and every write, even if a bad
-query somehow got past the SQL validator.
+query somehow got past the SQL validator. The lockdown config (`enable_external_access`,
+`lock_configuration`) is passed via `config=` at `connect()`-time rather than applied with `SET`
+afterward (Day 8 fix — see `BUILD_LOG.md`, 22 Oct): DuckDB shares one database instance across
+every connection opened to the same path within a process, so a `SET` after the 2nd-3rd
+`connect()` call hit an already-locked instance and raised. `/ask` calls `connect()` once per
+request, which made this a production blocker, not just a test flake.
 **Takes in:** the snapshot directory (Parquet tables).
-**Gives out:** a read-only DuckDB connection.
+**Gives out:** a read-only DuckDB connection, safe to open repeatedly in one long-lived process.
 **Talks to:** `TextToSqlService`, `InsightService`, `scripts/verify_vendor_data.py` all read through
 this. Layer 0 of the SQL safety design (`docs/specs/text_to_sql_safety.md`).
 
