@@ -1016,6 +1016,48 @@ Tests (18 new: 12 in `tests/test_ml_risk_classifier.py`, 6 in `tests/test_ml_run
 **Costs:** $0 -- synthetic fixture only, no LLM call, no API key, no network access beyond
 `uv sync`'s package downloads (none needed this sitting -- no new dependencies).
 
+## 2026-10-17 · Real `vw_PortfolioHealth` run · replacing the synthetic risk-classifier numbers
+
+**Covered:** ran `scripts/train_risk_classifier.py` against a real export of the licensed
+`vw_PortfolioHealth` view (SQL Server, your own machine) to get the real accuracy/F1 numbers the
+14 Oct entry above flagged as owed. No code changes to `copilot.ml.risk_classifier` -- the
+leakage-safe feature set (`LEAKING_FEATURES` = `ProfitMargin`, `MarkupPct`,
+`NetMarginAfterExcisePct`, `SalesToPurchaseRatio`) was already fixed on 14 Oct against synthetic
+data; this sitting validates that fix against real data rather than diagnosing anything new.
+
+**Export friction (mechanical, not a model problem):** `sqlcmd`'s default text output embeds two
+artifacts that break a straight `pandas.read_csv` -- a dash-divider row under the header, and a
+trailing `(N rows affected)` summary row -- both stripped with a `Where-Object` regex filter
+before training. Also needed `sqlcmd -C` (trust the local self-signed cert) and `uv run python`
+instead of a bare `python` call (the project's src-layout `copilot` package is only installed
+into the `uv`-managed `.venv`, not onto the system Python resolved by a plain `python` on PATH).
+
+**Real numbers, n=10,495 real SKU rows, label balance 0.303 (30.3% at-risk):**
+
+| combo | accuracy | F1 | n_test | features |
+|---|---|---|---|---|
+| random_forest_leaky | 0.997 | 0.994 | 2624 | 14 |
+| random_forest_safe | 0.952 | 0.919 | 2624 | 13 |
+| xgboost_leaky | 0.999 | 0.999 | 2624 | 14 |
+| xgboost_safe | 0.971 | 0.953 | 2624 | 13 |
+
+Leaky-vs-safe gap present and large on real data too (RF accuracy 0.997 -> 0.952, F1 0.994 ->
+0.919; XGBoost 0.999 -> 0.971, F1 0.999 -> 0.953) -- directionally identical to the synthetic
+result above, confirming the 14 Oct leakage fix generalizes rather than being an artifact of the
+synthetic fixture's construction.
+
+Top SHAP drivers, leakage-safe Random Forest: `StockTurnover` 0.2809 (dominant), `TotalSalesQuantity`
+0.0343, `TotalSalesDollars` 0.0323, `TotalPurchaseDollars` 0.0282, `TotalExciseTax` 0.0208 -- no
+margin-family proxy among the top drivers, consistent with the leakage-safe fit actually learning
+from operational signal rather than a reconstructed margin.
+
+**These real numbers are now the reported figures** for the SKU risk classifier (see
+`docs/PROJECT_PROGRESS.md`), replacing the n=2000 synthetic-fixture numbers from the 14 Oct entry
+above, which remain in this log only as the historical record of how the leakage was first
+diagnosed and fixed.
+
+**Costs:** $0 -- local SQL Server export + local training, no LLM call, no API key.
+
 **Open:** step 6 (Model Selection Agent, Addendum A1) is the only Day 5 item left.
 
 ## 2026-10-14 · Day 5 step 6 · Model Selection Agent (Addendum A1)
