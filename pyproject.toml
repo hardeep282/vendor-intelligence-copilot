@@ -64,6 +64,11 @@ select = ["E", "F", "I", "B", "UP", "S"]
 "tests/*" = ["S101"]
 "scripts/*" = ["S608"]
 "scripts/build_golden_set.py" = ["E501", "S608", "S101"]
+# FastAPI's own DI idiom is `param: T = Depends(get_t)` -- a function call as a default value
+# is exactly how a route or dependency declares what it needs; ruff's B008 (generally a real
+# footgun -- a mutable default evaluated once at def time) doesn't apply to it, and FastAPI's
+# own docs recommend disabling B008 for files that use Depends() this way (Day 8 step 3/4).
+"src/copilot/api/*" = ["B008"]
 
 [tool.mypy]
 python_version = "3.12"

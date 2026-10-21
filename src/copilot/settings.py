@@ -51,6 +51,16 @@ class Settings(BaseSettings):
     max_question_chars: int = Field(default=4000, gt=0)
     kill_switch_enabled: bool = False
 
+    # Day 8, A2 §1.6: per-identity (API key) and per-client-IP request limits, on top of the
+    # per-role limit above -- see copilot.api.rate_limit's module docstring for why a per-role
+    # limit alone isn't enough once requests carry an identity. Also a per-identity daily cost
+    # budget, independent of (and tighter than) InputGate's global per-role daily_spend_cap_usd
+    # above -- one noisy caller's key should hit its own ceiling well before it could ever push
+    # the shared role-wide cap.
+    per_user_rate_limit_per_minute: int = Field(default=20, gt=0)
+    per_ip_rate_limit_per_minute: int = Field(default=60, gt=0)
+    per_user_daily_budget_usd: float = Field(default=1.0, gt=0)
+
     # Build metadata: the Git commit baked into the image by CI (shown by /version).
     git_sha: str = "dev"
 

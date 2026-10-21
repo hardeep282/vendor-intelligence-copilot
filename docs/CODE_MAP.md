@@ -412,7 +412,80 @@ rather than a 500.
 
 ### `src/copilot/api/main.py`
 The FastAPI HTTP entry point. Day 2 walking skeleton: `/health` says the process is alive,
-`/version` says exactly which build is deployed. `/ask` (behind auth) comes later.
+`/version` says exactly which build is deployed. Day 8 step 3/4 add the two real endpoints:
+`POST /auth/redeem` (an invite code -> a usable API key, the one HTTP-reachable half of
+`copilot.api.auth` -- see that module for why there is no HTTP way to *mint* an invite or a
+key, only to redeem one) and `POST /ask` (the Orchestrator, behind auth + rate limiting,
+streamed over SSE). `_sse_lines()` turns each `copilot.agents.orchestrator.StreamEvent` from
+`Orchestrator.stream_answer()` into one `event: <type>\ndata: <json>\n\n` block -- hand-rolled
+rather than pulling in `sse-starlette`, since this project's whole stream is "one JSON object
+per typed event," nothing a small helper and Starlette's own `StreamingResponse` don't already
+cover. It's also where the caller's per-identity daily budget (A2 §1.6) actually accrues:
+the run's real `total_cost_usd` isn't known until the trailing `result` event, so it's recorded
+there, not before.
+**Takes in:** HTTP requests; `RedeemInviteRequest`/`AskRequest` bodies; an `Authorization:
+Bearer <api-key>` header on `/ask`.
+**Gives out:** JSON for `/health`/`/version`/`/auth/redeem`; a `text/event-stream` body for
+`/ask`.
+**Talks to:** `copilot.api.auth`/`dependencies`/`rate_limit`; `copilot.agents.orchestrator`
+(`Orchestrator`, `StreamEvent`); `copilot.secrets` (SSM at start-up, unchanged from Day 2).
+
+### `src/copilot/api/dependencies.py` *(day: 8, isNew: true)*
+Everything `/ask`/`/auth/redeem` inject via `Depends()`: `get_auth_store`/`get_user_rate_
+limiter`/`get_ip_rate_limiter`/`get_user_budget_tracker` (cheap, `@lru_cache`'d singletons) and
+`get_orchestrator` (the one expensive, real-key-requiring singleton -- built lazily on first
+`/ask` call, exactly `scripts/run_orchestrator_golden.py`'s own real-service wiring reused, so
+`/health`/`/version` never fail to start a process missing an `ANTHROPIC_API_KEY` or the real
+snapshot/Chroma index). `require_role(*allowed)` is a dependency *factory* (a route states its
+own allowed roles) that authenticates the `Authorization` header against `AuthStore` and
+returns a `Principal`; `require_any_role` is the one shared instance `/ask` and
+`enforce_rate_limits` both depend on, so FastAPI's per-request dependency caching (keyed by
+callable identity) runs authentication exactly once per request, not twice.
+`enforce_rate_limits(request, principal, ...)` is the per-identity/per-IP/per-identity-daily-
+budget guard (A2 §1.6), run after auth resolves a `Principal` and before anything -- the
+Orchestrator, even the input gate -- ever sees the request; raises `HTTPException(429)` on the
+first of the three checks that fails.
+**Takes in:** a `Request` (for the client IP) and, via other dependencies, the `Authorization`
+header.
+**Gives out:** a `Principal`, or raises `HTTPException` (401/403/429).
+**Talks to:** `copilot.api.auth`, `copilot.api.rate_limit`, `copilot.agents.wiring`
+(`build_executors`), every real service `get_orchestrator` wires up (same list `scripts/
+run_orchestrator_golden.py` already names).
+
+### `src/copilot/api/auth.py` -- `AuthStore` *(day: 8, isNew: true)*
+Invite-code + API-key authentication (Day 8 step 4). Both are `secrets.token_urlsafe(24)`,
+hashed with SHA-256 before ever touching disk -- the raw value is returned to the caller exactly
+once (at issue/redeem time) and never again; there is no "show my key" endpoint, by design.
+File-backed (`data/auth/auth_store.json`, never committed), loaded fresh per call -- same shape
+`copilot.guardrails.input_gate.SpendTracker` already established for "needs to survive a
+restart, isn't worth a database yet." An invite redeems exactly once (its hash is marked `used`
+in the same write that issues the key). There is no HTTP endpoint that *issues* an invite or an
+API key directly -- only `AuthStore.issue_invite`/`.issue_api_key`, called from `scripts/
+issue_invite_code.py` on the operator's own machine, and `POST /auth/redeem`, which only ever
+*exchanges* an already-issued invite.
+**Takes in:** a `Role` + label (issuing); a raw invite code or API key (redeeming/
+authenticating).
+**Gives out:** the raw invite code / API key (once, at issue time); a `Principal(key_id, role,
+label)` from `authenticate()` -- `key_id` (never the raw key) is the stable identity `copilot.
+api.rate_limit`'s per-user limiter/budget key on.
+**Talks to:** `copilot.guardrails.policy` (`Role`); `scripts/issue_invite_code.py`;
+`copilot.api.dependencies`/`main` (every auth-gated route).
+
+### `src/copilot/api/rate_limit.py` *(day: 8, isNew: true)*
+Day 8, A2 §1.6: per-identity (API key) and per-client-IP request limits, plus a per-identity
+daily cost budget -- on top of (not instead of) Day 7's `InputGate`, which only limits per-
+*role* (one noisy API key would otherwise share a `viewer`-wide bucket with every other viewer).
+`RequestRateLimiter` is the exact same sliding-window mechanism `copilot.guardrails.input_gate.
+RateLimiter` already uses, reused rather than reimplemented, just keyed by an arbitrary identity
+string instead of a `Role`. `DailyBudgetTracker` is a thin wrapper around `SpendTracker` itself
+(that class's `role: str` parameter is really just a dict key, so a `key_id` fits it exactly),
+pointed at its own file (`data/spend/daily_user_spend.json`) so per-user and per-role totals
+never share rows.
+**Takes in:** an identity string (a `Principal.key_id`, or a client IP) per check; a cost in USD
+to record.
+**Gives out:** `bool` (allowed or not); today's cumulative spend for an identity.
+**Talks to:** `copilot.guardrails.input_gate` (`SpendTracker`, reused); `copilot.api.
+dependencies`/`main`.
 
 ---
 

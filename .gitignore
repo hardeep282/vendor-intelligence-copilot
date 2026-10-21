@@ -24,8 +24,11 @@ data/chroma/
 # Guardian audit log (Day 7 step 3): a local, append-only record of every decision -- same
 # never-commit-local-runtime-data rule as the entries above, never *.jsonl in general.
 data/audit/*.jsonl
-# Input gate's daily spend tracker (Day 7 step 6): local runtime state, same rule.
+# Input gate's daily spend tracker (Day 7 step 6) and the per-user daily budget tracker
+# (Day 8, A2 §1.6): local runtime state, same rule.
 data/spend/*.json
+# Auth store (Day 8 step 4): hashed invite codes and API keys -- never commit, even hashed.
+data/auth/*.json
 
 # Tooling
 .ipynb_checkpoints/

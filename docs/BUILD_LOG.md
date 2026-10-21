@@ -1461,3 +1461,70 @@ source files — tests stay outside strict mypy by design, see `pyproject.toml`)
 instrumentation row every call already returns (Day 3). Fallback-model routing and
 graceful-degradation-on-exhaustion are new *behaviour*, but not a new *architectural or
 build-vs-buy* decision — A2 already made that call; this is its implementation.
+
+## 22 Oct — Day 8 steps 3-5: `/ask` SSE endpoint, invite-code + API-key auth, per-user/IP rate
+limiting + daily budget (A2 §1.6)
+
+Three closely-coupled pieces, built together because `/ask` literally cannot pick a `Role` to
+run a question as without auth resolving one first:
+
+- **Step 3, `/ask`:** `Orchestrator.answer()` was refactored into a two-line wrapper around a
+  new generator, `stream_answer()` (`src/copilot/agents/orchestrator.py`) — all of `answer()`'s
+  own logic (input-gate check, run the graph, detect a paused approval-gate interrupt, record
+  spend) moved there unchanged, confirmed by every pre-existing orchestrator test passing
+  unmodified plus new tests on the generator itself. `stream_answer()` switches from
+  `graph.invoke()` to `graph.stream(..., stream_mode="updates")` — confirmed by a throwaway
+  probe script (not kept) to yield one `{node_name: partial_state}` dict per node in execution
+  order, and an `"__interrupt__"` key in place of a node name when `_approval_gate` pauses —
+  and yields a `StreamEvent(type="node", node=<name>)` per node, then one trailing
+  `StreamEvent(type="result", result=<OrchestratorResult>)`. `POST /ask`
+  (`src/copilot/api/main.py`) hand-rolls plain SSE (`event: <type>\ndata: <json>\n\n` per
+  `StreamEvent`) over `StreamingResponse` — no `sse-starlette` dependency added, since the
+  whole stream is "one JSON object per typed event," nothing a 6-line generator doesn't already
+  cover.
+- **Step 4, auth:** `src/copilot/api/auth.py`'s `AuthStore` — invite-code (for a human,
+  self-service, single-use) + API-key (long-lived, admin-issued directly for a programmatic
+  caller) authentication, both `secrets.token_urlsafe(24)` hashed with SHA-256 before ever
+  touching disk (`data/auth/auth_store.json`, added to `.gitignore`); the raw value is returned
+  exactly once, at issue/redeem time, by design — there is no "show my key" endpoint. There is
+  also deliberately no HTTP endpoint that *mints* an invite or key, only `POST /auth/redeem`,
+  which *exchanges* one — minting happens out-of-band via the new `scripts/
+  issue_invite_code.py`, run by whoever administers the deployment.
+- **Step 5, rate limiting:** `src/copilot/api/rate_limit.py` adds per-identity (API-key) and
+  per-client-IP request limits plus a per-identity daily cost budget, on top of (not instead
+  of) Day 7's `InputGate`, which only limits per-*role* — one noisy API key would otherwise
+  share a `viewer`-wide bucket with every other viewer. `RequestRateLimiter` reuses
+  `InputGate.RateLimiter`'s exact sliding-window mechanism, just keyed by an arbitrary identity
+  string; `DailyBudgetTracker` is a thin wrapper around `SpendTracker` itself (its `role: str`
+  param is really just a dict key), pointed at its own file so per-user and per-role totals
+  never collide.
+- **Wiring:** `src/copilot/api/dependencies.py` is the new glue — `get_orchestrator()` builds
+  the real `Orchestrator` lazily, on first `/ask` call (`@lru_cache`'d), reusing `scripts/
+  run_orchestrator_golden.py`'s own real-service wiring rather than re-deriving it, specifically
+  so `/health`/`/version` (meant to be dependency-free liveness checks, per that module's own
+  Day 2 docstring) never fail to start a process missing a real `ANTHROPIC_API_KEY` or
+  snapshot/Chroma index. `require_role(*allowed)`/`require_any_role` resolve a `Principal` from
+  the `Authorization` header; `enforce_rate_limits` runs the three new checks after that,
+  before the Orchestrator (or even the input gate) ever sees the request.
+
+Added `"src/copilot/api/*" = ["B008"]` to `pyproject.toml`'s ruff per-file-ignores — FastAPI's
+own DI idiom (`param: T = Depends(get_t)`) is exactly what ruff's B008 generally guards against
+(a function call as a default value), and FastAPI's own docs recommend disabling it for files
+that use `Depends()` this way.
+
+New tests: `test_api_auth.py` (7), `test_api_rate_limit.py` (5), `test_api_ask.py` (6, against
+the real `TestClient` + `app.dependency_overrides` — the standard FastAPI testing idiom, the
+only way `/ask`/`/auth/redeem` are testable without the real snapshot/Chroma/API key
+`get_orchestrator` would otherwise need), plus 4 new `stream_answer()` tests on the Orchestrator
+itself. Full suite: 457 passed, 15 failed (same pre-existing missing-local-data failures, no
+regressions); `ruff check`/`format` clean; `mypy --strict` clean (83 source files — tests stay
+outside strict mypy by design).
+
+**No new ADR** for auth/rate-limiting's *shape* — both reuse this project's own established
+"small JSON file, loaded fresh, hashed secrets" pattern (`SpendTracker`, `copilot.guardrails.
+audit_log`) rather than inventing a database or a new secrets format; a real production
+deployment would likely want a managed secrets store and a shared (not per-process) rate
+limiter, noted here as a known limitation rather than silently assumed away, same posture
+`RequestRateLimiter`'s own docstring already takes. The `/ask` SSE *format* itself (hand-rolled,
+not a library) is a design choice worth a sentence, not a decision with real alternatives
+weighed — covered in this entry and the `main.py` docstring instead.
