@@ -15,12 +15,15 @@ import logging
 from collections.abc import AsyncIterator, Iterator
 from contextlib import asynccontextmanager
 from importlib.metadata import version as package_version
+from pathlib import Path
+from typing import Literal
 
 from fastapi import Depends, FastAPI, HTTPException
-from fastapi.responses import StreamingResponse
+from fastapi.responses import FileResponse, StreamingResponse
+from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field
 
-from copilot.agents.orchestrator import Orchestrator
+from copilot.agents.orchestrator import Orchestrator, OrchestratorResult
 from copilot.api.auth import AuthStore, InvalidCredential, Principal
 from copilot.api.dependencies import (
     enforce_rate_limits,
@@ -28,11 +31,14 @@ from copilot.api.dependencies import (
     get_orchestrator,
     get_user_budget_tracker,
     require_any_role,
+    require_role,
 )
 from copilot.api.rate_limit import DailyBudgetTracker
 from copilot.guardrails.policy import Role
 from copilot.secrets import load_into_environ
 from copilot.settings import get_settings
+
+STATIC_DIR = Path(__file__).resolve().parent / "static"
 
 log = logging.getLogger("copilot.api")
 
@@ -168,3 +174,59 @@ def ask(
         ),
         media_type="text/event-stream",
     )
+
+
+class ApprovalRequest(BaseModel):
+    thread_id: str = Field(min_length=1)
+    decision: Literal["approve", "edit", "reject"]
+    edited_answer: str | None = None
+
+
+#: Day 8 step 7 (UI): master prompt C5's "approver role" check, lifted to the HTTP boundary --
+#: same posture `require_any_role` already gives `/ask`. A separate factory call (not
+#: `require_any_role`) is correct here, not a missed reuse: these two routes are meant to accept
+#: different role sets, so they must resolve to different dependency callables.
+require_approver_role = require_role("approver", "admin")
+
+
+@app.post("/ask/approve", response_model=OrchestratorResult)
+def approve(
+    body: ApprovalRequest,
+    principal: Principal = Depends(require_approver_role),
+    orchestrator: Orchestrator = Depends(get_orchestrator),
+) -> OrchestratorResult:
+    """Day 8 step 7 (UI): the one HTTP way to resume a run `/ask` paused at the approval gate
+    (`OrchestratorResult.pending_approval=True` on that run's final `StreamEvent`) -- a thin
+    wrapper over `Orchestrator.resume_approval`, which does the actual role check and
+    `Command(resume=...)` call; see that method's own docstring for why the check has to happen
+    before the graph is ever touched again. `require_approver_role` already stops a non-
+    approver/admin caller before this body runs at all, so the `PermissionError` branch below is
+    belt-and-suspenders, not the primary guard.
+    """
+    try:
+        return orchestrator.resume_approval(
+            body.thread_id,
+            body.decision,
+            approver_role=principal.role,
+            edited_answer=body.edited_answer,
+        )
+    except PermissionError as exc:
+        raise HTTPException(status_code=403, detail=str(exc)) from exc
+    except RuntimeError as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
+
+
+@app.get("/", include_in_schema=False)
+def ui_root() -> FileResponse:
+    """Day 8 step 7: the minimal UI -- one static page, no build step, no framework. Served
+    from the API itself (not a separate static host) so there is exactly one URL to open and no
+    CORS to configure for local use. Its own JS talks to `/auth/redeem`, `/ask` and
+    `/ask/approve` with the browser's own `fetch`, nothing server-rendered.
+    """
+    return FileResponse(STATIC_DIR / "index.html")
+
+
+# Mounted at /static, not /, so this never shadows the explicit API routes above -- Starlette
+# matches routes in the order they were added, but naming it distinctly keeps that true by
+# construction rather than by route-ordering luck.
+app.mount("/static", StaticFiles(directory=STATIC_DIR), name="static")

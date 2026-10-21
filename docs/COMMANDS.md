@@ -195,10 +195,15 @@ item here -- commands #3-#4 above already give real, final output in this sessio
 | 3 | Issue yourself an invite code, then redeem it for an API key | `uv run python scripts/issue_invite_code.py --role analyst --label "me"` then `curl -s -X POST localhost:8000/auth/redeem -d '{"invite_code": "<code>", "label": "me"}' -H 'Content-Type: application/json'` | admin CLI mints a hashed, single-use invite; `/auth/redeem` exchanges it for a hashed, reusable API key | a printed invite code, then a JSON `{"api_key": "...", "role": "analyst"}` |
 | 4 | Call `/ask` and watch the SSE stream | `curl -N -X POST localhost:8000/ask -H "Authorization: Bearer <api-key>" -H 'Content-Type: application/json' -d '{"question": "...", "role": "analyst"}'` | streams one `event: node` per executed graph node, then one `event: result` with the final `OrchestratorResult` | a sequence of `node`/`result` SSE blocks, not one long wait |
 | 5 | Stand up a local Postgres for the checkpointer's real-DB path | `docker compose -f infra/local/compose.yaml up -d` | starts a throwaway Postgres container, `127.0.0.1:5432` only | container running; set `CHECKPOINT_DATABASE_URL` in `.env` to the connection string in that file's header comment, then re-run the API -- same commands, Postgres now holds checkpoint state instead of the local SQLite file |
+| 6 | Run the API and open the UI | `uv run uvicorn copilot.api.main:app --reload` then open `http://localhost:8000/` | serves the one-page UI (`src/copilot/api/static/`) from the same process -- no separate frontend server, no CORS to configure | a page with a credentials panel, a chat box, a live agent-status strip, and (on an Action-draft run) an approval panel |
+| 7 | Approve a paused Action draft from the command line (what the UI's approval panel does under the hood) | `curl -s -X POST localhost:8000/ask/approve -H "Authorization: Bearer <approver-api-key>" -H 'Content-Type: application/json' -d '{"thread_id": "<thread-id-from-step-4>", "decision": "approve"}'` | `require_role("approver", "admin")` gate, then `Orchestrator.resume_approval` | the final `OrchestratorResult` JSON, `pending_approval: false`, `approval_decision: "approved"` |
 
 No new dependency from steps 1-4 beyond what Day 8's earlier commits already added
 (`langgraph-checkpoint-sqlite`, nothing new for auth/rate-limit/SSE -- hand-rolled on top of
 FastAPI's own `StreamingResponse`). Step 5 added `langgraph-checkpoint-postgres` and
 `psycopg[binary,pool]`; the Postgres branch itself is proven by test and by API inspection in
 this environment, not by a live round-trip -- no Docker daemon available here (see
-`docs/BUILD_LOG.md`'s Day 8 step 7 entry for exactly what was and wasn't verified).
+`docs/BUILD_LOG.md`'s Day 8 step 7 entry for exactly what was and wasn't verified). Steps 6-7
+added no new dependency at all -- the UI is vanilla JS/HTML/CSS served by Starlette's own
+`StaticFiles`, already part of FastAPI's dependency chain; `/ask/approve` is plain FastAPI/
+Pydantic, same as every other route in this module.

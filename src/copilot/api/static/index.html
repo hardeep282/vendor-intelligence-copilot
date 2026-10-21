@@ -1,0 +1,71 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Vendor Intelligence Copilot</title>
+  <link rel="stylesheet" href="/static/style.css" />
+</head>
+<body>
+  <header>
+    <h1>Vendor Intelligence Copilot</h1>
+    <p class="subtitle">Day 8 minimal UI — talks to this same server's own <code>/ask</code> and
+      <code>/ask/approve</code> endpoints, nothing else.</p>
+  </header>
+
+  <section id="auth-panel" class="panel">
+    <h2>1. Credentials</h2>
+    <p class="hint">
+      Have an invite code from an admin (<code>scripts/issue_invite_code.py</code>)? Redeem it
+      below for an API key. Already have a key? Paste it directly and skip redeeming.
+    </p>
+    <div class="row">
+      <input id="invite-code" type="text" placeholder="invite code" />
+      <input id="invite-label" type="text" placeholder="label (e.g. your name)" />
+      <button id="redeem-btn">Redeem invite</button>
+    </div>
+    <div class="row">
+      <input id="api-key" type="password" placeholder="API key" />
+      <button id="save-key-btn">Save key</button>
+      <span id="auth-status" class="status-text"></span>
+    </div>
+  </section>
+
+  <section id="chat-panel" class="panel">
+    <h2>2. Ask a question</h2>
+    <div class="row">
+      <textarea id="question" rows="3"
+        placeholder="e.g. Which vendors in the health category have the highest forecasted demand next quarter?"></textarea>
+    </div>
+    <div class="row">
+      <button id="ask-btn">Ask</button>
+      <button id="new-thread-btn" title="Start a fresh conversation thread">New thread</button>
+      <span id="thread-id" class="status-text"></span>
+    </div>
+    <div id="agent-status" class="agent-status"></div>
+  </section>
+
+  <section id="answer-panel" class="panel" hidden>
+    <h2>3. Answer</h2>
+    <div id="badges" class="badges"></div>
+    <div id="answer-text" class="answer-text"></div>
+
+    <div id="approval-panel" class="sub-panel" hidden>
+      <h3>Approval needed (Guardian flagged an Action draft)</h3>
+      <p class="hint">Requires an <code>approver</code> or <code>admin</code> API key.</p>
+      <textarea id="edited-answer" rows="3" placeholder="optional edited answer text"></textarea>
+      <div class="row">
+        <button id="approve-btn" class="ok">Approve</button>
+        <button id="edit-btn" class="warn">Approve with edit</button>
+        <button id="reject-btn" class="danger">Reject</button>
+      </div>
+      <div id="approval-result" class="status-text"></div>
+    </div>
+
+    <h3>Citations (specialist findings behind this answer)</h3>
+    <div id="citations"></div>
+  </section>
+
+  <script src="/static/app.js"></script>
+</body>
+</html>

@@ -463,12 +463,24 @@ per typed event," nothing a small helper and Starlette's own `StreamingResponse`
 cover. It's also where the caller's per-identity daily budget (A2 §1.6) actually accrues:
 the run's real `total_cost_usd` isn't known until the trailing `result` event, so it's recorded
 there, not before.
-**Takes in:** HTTP requests; `RedeemInviteRequest`/`AskRequest` bodies; an `Authorization:
-Bearer <api-key>` header on `/ask`.
-**Gives out:** JSON for `/health`/`/version`/`/auth/redeem`; a `text/event-stream` body for
-`/ask`.
+**Day 8 step 7: `POST /ask/approve` and the UI.** `/ask/approve` is the one HTTP way to resume a
+run `/ask` paused at the approval gate -- a thin wrapper over `Orchestrator.resume_approval`,
+gated by its own `require_role("approver", "admin")` dependency (`require_approver_role`, a
+*separate* factory call from `/ask`'s `require_any_role` -- these two routes intentionally allow
+different role sets, so they must resolve to different dependency callables even though the
+factory itself is shared). `GET /` serves `static/index.html`; `/static/*` is a mounted
+`StaticFiles` directory for its JS/CSS -- a single self-contained page with no build step, no
+framework, talking to this same server's `/auth/redeem`, `/ask` (SSE, parsed by hand with
+`fetch`'s `ReadableStream` since `EventSource` can't set an `Authorization` header) and
+`/ask/approve`. Both mounted under paths that never collide with the API routes above, so route
+order doesn't matter.
+**Takes in:** HTTP requests; `RedeemInviteRequest`/`AskRequest`/`ApprovalRequest` bodies; an
+`Authorization: Bearer <api-key>` header on `/ask` and `/ask/approve`.
+**Gives out:** JSON for `/health`/`/version`/`/auth/redeem`/`/ask/approve`; a `text/event-stream`
+body for `/ask`; the static UI for `/` and `/static/*`.
 **Talks to:** `copilot.api.auth`/`dependencies`/`rate_limit`; `copilot.agents.orchestrator`
-(`Orchestrator`, `StreamEvent`); `copilot.secrets` (SSM at start-up, unchanged from Day 2).
+(`Orchestrator`, `OrchestratorResult`, `StreamEvent`); `copilot.secrets` (SSM at start-up,
+unchanged from Day 2); `starlette.staticfiles` (the UI's own files).
 
 ### `src/copilot/api/dependencies.py` *(day: 8, isNew: true)*
 Everything `/ask`/`/auth/redeem` inject via `Depends()`: `get_auth_store`/`get_user_rate_
@@ -540,6 +552,27 @@ to record.
 **Gives out:** `bool` (allowed or not); today's cumulative spend for an identity.
 **Talks to:** `copilot.guardrails.input_gate` (`SpendTracker`, reused); `copilot.api.
 dependencies`/`main`.
+
+### `src/copilot/api/static/{index.html,style.css,app.js}` *(day: 8, isNew: true)*
+Day 8 step 7: the minimal UI -- chat box, a live agent-status strip (one chip per `StreamEvent
+(type="node")`, in the real execution order the graph reported), result badges (verified/
+not-verified, Guardian escalated/blocked, pending-review with its `review_id`, pending-approval),
+a citations section (one card per `AgentResult` in `OrchestratorResult.results`: agent, status,
+confidence, findings, `evidence`), and an approval panel (Approve / Approve-with-edit / Reject,
+shown only when `pending_approval` is true) that posts to `/ask/approve`. No framework, no build
+step -- vanilla JS, `fetch` for everything, including SSE (parsed by hand: `EventSource` can't
+carry an `Authorization` header, so `/ask`'s stream is read via `response.body.getReader()` and
+split on blank lines). The API key lives in `localStorage`, this browser only; the thread ID is
+a fresh `crypto.randomUUID()` per page load/"New thread" click, kept only in a page-level JS
+variable, so the same thread survives an approval round-trip within one conversation. Bundled
+into the wheel automatically (`[tool.hatch.build.targets.wheel]` already packages the whole
+`src/copilot` tree; confirmed by inspecting a real built wheel's file list).
+**Takes in:** nothing server-side -- served as static files by `main.py`'s `/`/`/static/*`
+routes; the browser's own form input.
+**Gives out:** nothing server-side; renders whatever `/auth/redeem`/`/ask`/`/ask/approve`
+return.
+**Talks to:** `/auth/redeem`, `/ask`, `/ask/approve` -- this server's own HTTP API, nothing else
+(no external CDN, no analytics, no other origin).
 
 ---
 

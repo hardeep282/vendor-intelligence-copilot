@@ -1650,3 +1650,45 @@ Day 6 step 6 already established (the Orchestrator takes a storage object/path, 
 its own notion of "the" checkpoint store), just widened from one concrete type (`SqliteSaver`
 over a `sqlite3.Connection`) to any `BaseCheckpointSaver`, with the concrete choice pushed to the
 caller -- not a new pattern.
+
+## 22 Oct — Day 8 step 7: minimal UI, plus the missing /ask/approve endpoint
+
+**What:** a minimal, framework-free UI for the Copilot, and the one HTTP endpoint it needed
+that didn't exist yet.
+
+- **Found while building the UI, not before:** `Orchestrator.resume_approval()` (Day 7 step 5)
+  had no HTTP route. Every approval-gate test exercised it as a direct Python call; nothing
+  outside the process could ever actually approve, edit or reject a paused Action draft. Added
+  `POST /ask/approve` in `src/copilot/api/main.py` -- `ApprovalRequest(thread_id, decision,
+  edited_answer)`, gated by a new `require_approver_role = require_role("approver", "admin")`
+  dependency (a separate factory call from `/ask`'s `require_any_role`, deliberately -- the two
+  routes allow different role sets). Maps `PermissionError` -> 403, `RuntimeError` (no
+  checkpointer) -> 409.
+- `GET /` serves `src/copilot/api/static/index.html`; `/static/*` is a mounted `StaticFiles`
+  directory for `style.css`/`app.js`. One page: a credentials panel (redeem an invite, or paste
+  an existing key, saved to `localStorage`), a chat box, a live agent-status strip built from
+  `StreamEvent(type="node")` events, result badges (verified, Guardian escalated/blocked,
+  pending-review with its `review_id`, pending-approval), a citations section built from
+  `OrchestratorResult.results` (every real field already on `AgentResult` -- no new data
+  invented for the UI), and an approval panel that calls the new endpoint.
+- `/ask`'s SSE stream is parsed by hand in `app.js` (`response.body.getReader()`, split on blank
+  lines) because `EventSource` cannot set a custom `Authorization` header and this project
+  authenticates with a bearer API key, not a cookie.
+- Confirmed the static files are actually bundled into the package: built a real wheel with
+  `uv build --wheel` and inspected its file list -- `copilot/api/static/{app.js,index.html,
+  style.css}` are present, so `[tool.hatch.build.targets.wheel]`'s existing `packages =
+  ["src/copilot"]` needed no change.
+
+**Verification:** `uv run mypy`/`ruff check`/`ruff format --check` clean; full `uv run pytest -q`
+-- 465 passed (same 15 known missing-data failures, unchanged), 4 new tests in
+`tests/test_api_ask.py`: an approver successfully resuming a paused Action draft end to end
+through `/ask` then `/ask/approve`, a non-approver (`analyst`) getting a 403 from the same
+endpoint, and `GET /` / `GET /static/app.js` actually serving the page and its script. Also
+started the real server (`uv run uvicorn copilot.api.main:app`) and hit `/`, `/static/app.js`,
+`/static/style.css`, and `/openapi.json` with `curl` by hand -- all 200, and the schema lists
+`/ask/approve` alongside the pre-existing routes.
+
+**No new ADR** -- `/ask/approve` reuses the exact `require_role(*allowed)` factory + `Depends()`
+shape `/ask`/`enforce_rate_limits` already established (Day 8 step 4), just with a different
+allowed-role set; the UI is a static-files mount, the simplest option for "serve one HTML page
+and its JS/CSS from the same process," not a build-vs-buy decision between frameworks.
