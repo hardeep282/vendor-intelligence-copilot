@@ -20,6 +20,9 @@ One typed place for every config value and secret in the project.
 Day 7 step 6 added the input gate's knobs: `daily_spend_cap_usd` (already present, now actually
 enforced), `rate_limit_per_minute` (default 30), `max_question_chars` (default 4000),
 `kill_switch_enabled` (default `False` — the one flag an operator flips first in an incident).
+Day 8, A2 §1.1 added `fallback_model` (default `None` — no fallback, so a primary-model outage
+still surfaces as an error exactly as before this existed; an operational choice, left unset in
+`.env.example` on purpose since ADR-005 already names the primary).
 **Takes in:** environment variables, plus a local `.env` file (never committed).
 **Gives out:** a cached `Settings` object via `get_settings()`.
 **Talks to:** everything else that needs a key or a path — `LLMClient`, all the `scripts/*.py`,
@@ -267,11 +270,24 @@ recorded trace is masked (PII/secrets redacted, a Restricted-table mention hides
 payload) before anything reaches LangSmith, with no change needed at any call site elsewhere
 in the codebase. See that module's own entry for why a plain function here, not a
 `Client(anonymizer=...)`, was the right call.
-**Takes in:** model id, system prompt, messages, optionally a Pydantic output model (`structured()`).
-**Gives out:** `LLMResult` or a validated Pydantic object, paired with `CallMetrics`.
-**Talks to:** `InsightService`, `TextToSqlService`, `run_effort_lab.py`, `run_tokenization_lab.py`
-all call through this instead of touching the Anthropic SDK directly; `copilot.guardrails.
-trace_masking` (Day 7).
+Day 8, Addendum A2 §1.1 "reliability layer": a new `_with_fallback()` wraps every `complete()`/
+`structured()` call — if the primary model's own `_retrying()` budget (4 attempts) is fully
+exhausted on a retryable error, and a different `fallback_model` is configured (constructor arg,
+default reads `Settings.fallback_model`; `None` means no fallback, today's default), one more
+attempt runs against the fallback with its own fresh retry budget (and, for `structured()`, its
+own fresh repair loop — a fallback model's output shape/wording shouldn't inherit repair turns
+built against the primary). A2 §1.5 "version pinning": both methods now take optional
+`prompt_name`/`prompt_version` kwargs (the caller's loaded `Prompt.name`/`.version`) and thread
+them straight onto the returned `CallMetrics`, so every trace and eval row carries exactly which
+versioned prompt file produced it — no separate wiring, since `CallMetrics` is already what
+`process_outputs=mask_run_payload` serializes into the trace.
+**Takes in:** model id, system prompt, messages, optionally a Pydantic output model (`structured()`),
+optionally `prompt_name`/`prompt_version`.
+**Gives out:** `LLMResult` or a validated Pydantic object, paired with `CallMetrics` (now also
+carrying `prompt_name`, `prompt_version`, `used_fallback_model`).
+**Talks to:** `InsightService`, `TextToSqlService`, every specialist/orchestrator/RAG/model-
+selection call site, `run_effort_lab.py`, `run_tokenization_lab.py` all call through this instead
+of touching the Anthropic SDK directly; `copilot.guardrails.trace_masking` (Day 7).
 
 ### `src/copilot/llm/prompts.py`
 Versioned prompt loader — prompt text lives in reviewable YAML, not buried in Python strings. A
@@ -289,7 +305,10 @@ Turns a call's token counts into a USD figure — one source of truth for prices
 
 ### `src/copilot/llm/types.py`
 The shared result shape every LLM call returns, so logging/LangSmith/tests never branch on which
-call path produced it. Holds `CallMetrics` (TTFT, latency, tokens, cost).
+call path produced it. Holds `CallMetrics` (TTFT, latency, tokens, cost). Day 8, A2 §1.1/§1.5:
+`CallMetrics` also carries `prompt_name`/`prompt_version` (which versioned prompt file produced
+this call, if any) and `used_fallback_model` (whether `LLMClient._with_fallback()` actually had
+to fail over — tells "fallback succeeded" apart from "primary succeeded on the first try").
 
 ---
 
@@ -375,8 +394,16 @@ Empty package markers — no logic, just make the folder importable.
 A grounded narrative insight for one vendor at a time — the typed, testable refactor of the legacy
 analytics repo's `vendor_insights.py`. The model id lives in the prompt YAML, not hardcoded, and
 every number the model may use is handed to it explicitly; nothing is looked up by the model itself.
+Day 8, A2 §1.1 "graceful degradation": `vendor_insight()` is the first call site to actually use
+this pattern — if the narration step fails outright (an outage covering every configured model,
+or a repeatedly-malformed response, after `LLMClient`'s own retries and fallback are exhausted),
+it returns a `VendorInsight(narration_available=False, narrative=<the deterministic data block as
+JSON>, ...)` and a zeroed `CallMetrics(stop_reason="degraded")` instead of raising — the caller
+still gets the real, correct numbers for a question the data layer could answer on its own,
+rather than a 500.
 **Takes in:** a vendor name + the caller's role.
-**Gives out:** `VendorInsight` (forced structured output) + `CallMetrics`.
+**Gives out:** `VendorInsight` (forced structured output, now with `narration_available: bool`) +
+`CallMetrics`.
 **Talks to:** `LLMClient`, `prompts/vendor_insight/v1.yaml`, `guard.py`'s masking rules.
 
 ---

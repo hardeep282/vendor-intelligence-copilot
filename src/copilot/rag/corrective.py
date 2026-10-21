@@ -211,9 +211,9 @@ class CorrectiveRagService:
             return {"relevant_ids": set()}
 
         prompt = load_prompt("crag_grade")
-        system = prompt.render_system(
-            chunks_block=_format_chunks_block(retrieved)
-        ) + canary_line("knowledge_grade")
+        system = prompt.render_system(chunks_block=_format_chunks_block(retrieved)) + canary_line(
+            "knowledge_grade"
+        )
         messages: list[MessageParam] = [
             {"role": "user", "content": prompt.render_user(question=state["question"])}
         ]
@@ -227,6 +227,8 @@ class CorrectiveRagService:
                 max_tokens=prompt.max_tokens,
                 effort=self._effort or prompt.effort,
                 cache_system=prompt.cache_system,
+                prompt_name=prompt.name,
+                prompt_version=prompt.version,
             ),
         )
         retrieved_ids = {r.chunk.chunk_id for r in retrieved}
@@ -252,9 +254,9 @@ class CorrectiveRagService:
     def _rewrite(self, state: _State) -> dict[str, object]:
         prompt = load_prompt("crag_rewrite")
         previous = state["rewritten_queries"] or [state["question"]]
-        system = prompt.render_system(
-            previous_queries="; ".join(previous)
-        ) + canary_line("knowledge_rewrite")
+        system = prompt.render_system(previous_queries="; ".join(previous)) + canary_line(
+            "knowledge_rewrite"
+        )
         messages: list[MessageParam] = [
             {"role": "user", "content": prompt.render_user(question=state["question"])}
         ]
@@ -268,6 +270,8 @@ class CorrectiveRagService:
                 max_tokens=prompt.max_tokens,
                 effort=self._effort or prompt.effort,
                 cache_system=prompt.cache_system,
+                prompt_name=prompt.name,
+                prompt_version=prompt.version,
             ),
         )
         return {
@@ -282,9 +286,9 @@ class CorrectiveRagService:
     def _generate(self, state: _State) -> dict[str, object]:
         relevant = [r for r in state["retrieved"] if r.chunk.chunk_id in state["relevant_ids"]]
         prompt = load_prompt("crag_generate")
-        system = prompt.render_system(
-            chunks_block=_format_chunks_block(relevant)
-        ) + canary_line("knowledge_generate")
+        system = prompt.render_system(chunks_block=_format_chunks_block(relevant)) + canary_line(
+            "knowledge_generate"
+        )
         messages: list[MessageParam] = [
             {"role": "user", "content": prompt.render_user(question=state["question"])}
         ]
@@ -298,6 +302,8 @@ class CorrectiveRagService:
                 max_tokens=prompt.max_tokens,
                 effort=self._effort or prompt.effort,
                 cache_system=prompt.cache_system,
+                prompt_name=prompt.name,
+                prompt_version=prompt.version,
             ),
         )
         shown_ids = {r.chunk.chunk_id for r in relevant}

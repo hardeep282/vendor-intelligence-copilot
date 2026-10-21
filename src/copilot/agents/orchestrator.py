@@ -405,9 +405,7 @@ class Orchestrator:
         # Day 7 step 5: "guardian" no longer edges straight to END -- an allowed/redacted Action
         # draft routes through "approval_gate" first (`_route_after_guardian` decides per-run;
         # everything else still goes straight to END, same as before this step).
-        graph.add_conditional_edges(
-            "guardian", self._route_after_guardian, ["approval_gate", END]
-        )
+        graph.add_conditional_edges("guardian", self._route_after_guardian, ["approval_gate", END])
         graph.add_edge("approval_gate", END)
         return graph.compile(checkpointer=self._checkpointer)
 
@@ -449,6 +447,8 @@ class Orchestrator:
                 max_tokens=prompt.max_tokens,
                 effort=self._effort or prompt.effort,
                 cache_system=prompt.cache_system,
+                prompt_name=prompt.name,
+                prompt_version=prompt.version,
                 langsmith_extra=self._ls_extra("plan", state["role"]),
             ),
         )
@@ -483,9 +483,7 @@ class Orchestrator:
         """
         if not state["plan"]:
             return [Send("draft", state)]
-        return [
-            Send("run_specialist", {**state, "current_task": task}) for task in state["plan"]
-        ]
+        return [Send("run_specialist", {**state, "current_task": task}) for task in state["plan"]]
 
     def _run_specialist(self, state: _State) -> dict[str, object]:
         task = state["current_task"]
@@ -556,11 +554,14 @@ class Orchestrator:
 
     def _draft(self, state: _State) -> dict[str, object]:
         results = state["results"]
-        findings_block = "\n".join(
-            f"[{r.task_id}] {r.agent} (status={r.status}, confidence={r.confidence}): "
-            f"{r.findings}" + (f" | gaps: {'; '.join(r.gaps)}" if r.gaps else "")
-            for r in results
-        ) or "(no specialists were needed for this question)"
+        findings_block = (
+            "\n".join(
+                f"[{r.task_id}] {r.agent} (status={r.status}, confidence={r.confidence}): "
+                f"{r.findings}" + (f" | gaps: {'; '.join(r.gaps)}" if r.gaps else "")
+                for r in results
+            )
+            or "(no specialists were needed for this question)"
+        )
 
         # Only present on a redraft (loop back from _revise_draft); on the first pass the
         # specialists haven't been second-guessed yet, so the prompt gets a plain default line
@@ -594,6 +595,8 @@ class Orchestrator:
                 max_tokens=prompt.max_tokens,
                 effort=self._effort or prompt.effort,
                 cache_system=prompt.cache_system,
+                prompt_name=prompt.name,
+                prompt_version=prompt.version,
                 langsmith_extra=self._ls_extra(
                     "draft", state["role"], attempt=str(state["verify_attempt"])
                 ),
@@ -614,11 +617,14 @@ class Orchestrator:
             raise RuntimeError("verify invoked with no draft")
 
         results = state["results"]
-        findings_block = "\n".join(
-            f"[{r.task_id}] {r.agent} (status={r.status}, confidence={r.confidence}): "
-            f"{r.findings}" + (f" | gaps: {'; '.join(r.gaps)}" if r.gaps else "")
-            for r in results
-        ) or "(no specialists were needed for this question)"
+        findings_block = (
+            "\n".join(
+                f"[{r.task_id}] {r.agent} (status={r.status}, confidence={r.confidence}): "
+                f"{r.findings}" + (f" | gaps: {'; '.join(r.gaps)}" if r.gaps else "")
+                for r in results
+            )
+            or "(no specialists were needed for this question)"
+        )
 
         prompt = load_prompt("orchestrator_verify")
         system = prompt.render_system(
@@ -638,6 +644,8 @@ class Orchestrator:
                 max_tokens=prompt.max_tokens,
                 effort=self._effort or prompt.effort,
                 cache_system=prompt.cache_system,
+                prompt_name=prompt.name,
+                prompt_version=prompt.version,
                 langsmith_extra=self._ls_extra(
                     "verify", state["role"], attempt=str(state["verify_attempt"])
                 ),
@@ -727,9 +735,7 @@ class Orchestrator:
         # decision actually needs a reviewer; every other outcome logs review_id=None (nothing
         # to review, nothing to join on).
         review_id = str(uuid.uuid4()) if verdict.outcome == "escalate" else None
-        log_decision(
-            verdict, question=result.question, role=result.role, review_id=review_id
-        )
+        log_decision(verdict, question=result.question, role=result.role, review_id=review_id)
         pending_review = (
             PendingReview(review_id=review_id, reason_codes=verdict.reason_codes)
             if review_id is not None
@@ -805,15 +811,12 @@ class Orchestrator:
                 "reason_codes": verdict.reason_codes if verdict else [],
             }
         )
-        decision = (
-            decision_payload.get("decision") if isinstance(decision_payload, dict) else None
-        )
+        decision = decision_payload.get("decision") if isinstance(decision_payload, dict) else None
 
         if decision == "reject":
             updated = result.model_copy(
                 update={
-                    "answer": "This action draft was rejected by an approver and will not be "
-                    "sent.",
+                    "answer": "This action draft was rejected by an approver and will not be sent.",
                     "approval_decision": "rejected",
                 }
             )
@@ -836,9 +839,7 @@ class Orchestrator:
             # Same ADR-006-question-2 join-key logic as `_guardian_node` above: an approver's
             # edit can re-trigger ESCALATE just as easily as it could reintroduce a leak, and
             # that needs the same visible pending-review status, not a second silent path.
-            new_review_id = (
-                str(uuid.uuid4()) if new_verdict.outcome == "escalate" else None
-            )
+            new_review_id = str(uuid.uuid4()) if new_verdict.outcome == "escalate" else None
             log_decision(
                 new_verdict,
                 question=edited_result.question,

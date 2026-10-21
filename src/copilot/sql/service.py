@@ -86,12 +86,9 @@ class TextToSqlService:
         prompt = load_prompt("text_to_sql")
         schema_card = build_schema_card(self._policy, role)
         examples_block = format_examples(retrieve_examples(question, role))
-        system = (
-            prompt.render_system(
-                role=role, schema_card=schema_card, examples_block=examples_block
-            )
-            + canary_line("data_analyst")
-        )
+        system = prompt.render_system(
+            role=role, schema_card=schema_card, examples_block=examples_block
+        ) + canary_line("data_analyst")
         convo: list[MessageParam] = [
             {"role": "user", "content": prompt.render_user(question=question)}
         ]
@@ -168,5 +165,7 @@ class TextToSqlService:
             max_tokens=prompt.max_tokens,
             effort=effort or prompt.effort,
             cache_system=prompt.cache_system,
+            prompt_name=prompt.name,
+            prompt_version=prompt.version,
         )
         return cast("tuple[SqlGeneration, CallMetrics]", result)

@@ -1405,3 +1405,59 @@ the right API surface for it to actually hold under repeated use.
 **Verified-local state after the fix: 425/440 pass, 15 fail only for missing local data; ruff
 clean; mypy --strict clean on the changed file.** This is this session's working baseline for
 Day 8 — the user's own machine, with the real snapshot built, should still read 440/440.
+
+## 22 Oct — Day 8: Addendum A2 §1.1 (fallback model, graceful degradation) + §1.5 (version
+pinning into traces)
+
+Closed two A2 §1 gaps the user flagged as overlapping Day 8's own planned work, both on
+`LLMClient` (`src/copilot/llm/client.py`), the single chokepoint every LLM call in the project
+goes through:
+
+- **§1.1 fallback model:** new `LLMClient._with_fallback()` wraps `complete()`/`structured()`.
+  If the primary model's own `_retrying()` budget (4 attempts, already shipped Day 3) is fully
+  exhausted on a retryable error and a different `fallback_model` is configured
+  (`Settings.fallback_model`, default `None`), one more attempt runs against the fallback with
+  its own fresh retry budget — and, for `structured()`, its own fresh repair loop, since a
+  fallback model's output shape/wording shouldn't inherit repair turns built against the
+  primary's. No fallback configured, or fallback == primary: the primary's exception propagates
+  unchanged, exactly Day 3's original behaviour.
+- **§1.1 graceful degradation:** `InsightService.vendor_insight()` is the first real call site
+  to use the pattern. If narration fails outright even after `LLMClient`'s retries/fallback are
+  exhausted (an outage covering every configured model, or a repeatedly-malformed response), it
+  now returns `VendorInsight(narration_available=False, narrative=<the deterministic data block
+  as JSON>)` and a zeroed `CallMetrics(stop_reason="degraded")` instead of raising — the caller
+  still gets the real, correct numbers for a question the data layer could answer on its own
+  (A2's own "no fabricated numbers" rule: zeros, not a fake-looking successful `CallMetrics`
+  row).
+- **§1.5 version pinning:** `CallMetrics` gained `prompt_name`/`prompt_version`/
+  `used_fallback_model`. `complete()`/`structured()` both take optional `prompt_name`/
+  `prompt_version` kwargs and thread them onto the returned metrics — carried on `CallMetrics`
+  itself (not a separate parameter) so they reach every LangSmith trace automatically via the
+  existing `process_outputs=mask_run_payload` serialization, no extra wiring. Threaded through
+  every real call site: `insights/service.py`, `sql/service.py`, `agents/model_selection.py`
+  (×2), `agents/orchestrator.py` (×3), `agents/specialists.py`, `rag/corrective.py` (×3) — all
+  13 of them now pass `prompt_name=prompt.name, prompt_version=prompt.version` from the
+  `Prompt` object they already load via `copilot.llm.prompts.load_prompt()`.
+
+Two A2 §1.1 items the sprint plan lists as new were actually already shipped Day 3 and were
+**not** rebuilt here: timeouts and retries+backoff+jitter (`_retrying()`, already existed) and
+schema validation (the structured-output repair loop, already existed). The genuinely new work
+this entry covers is only the fallback-model routing and the graceful-degradation return path.
+
+New tests (none of this behaviour existed in the suite before): `test_llm_client.py` —
+`test_complete_falls_back_to_configured_model_after_primary_exhausts_retries`,
+`test_structured_falls_back_to_configured_model_after_primary_exhausts_retries`,
+`test_complete_raises_primary_error_when_no_fallback_configured`,
+`test_complete_does_not_fall_back_when_fallback_equals_primary`,
+`test_complete_records_prompt_name_and_version_on_metrics`,
+`test_structured_records_prompt_name_and_version_on_metrics`; `test_insight_service.py` —
+`test_vendor_insight_degrades_gracefully_when_narration_fails`. Full suite after: 435 passed, 15
+failed (same pre-existing missing-local-data failures as the previous entry, no regressions);
+`ruff check .` clean; `ruff format` clean on every touched file; `mypy --strict` clean (79
+source files — tests stay outside strict mypy by design, see `pyproject.toml`).
+
+**No new ADR** — this reuses the project's own established shapes: retry/backoff via tenacity
+(Day 3), the `Prompt.name`/`.version` versioning scheme (Day 3), and `CallMetrics` as the one
+instrumentation row every call already returns (Day 3). Fallback-model routing and
+graceful-degradation-on-exhaustion are new *behaviour*, but not a new *architectural or
+build-vs-buy* decision — A2 already made that call; this is its implementation.

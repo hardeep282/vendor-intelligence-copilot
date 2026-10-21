@@ -41,7 +41,7 @@ from __future__ import annotations
 import logging
 import os
 import time
-from collections.abc import Sequence
+from collections.abc import Callable, Sequence
 from typing import Any, Literal, TypeVar, cast
 
 import anthropic
@@ -63,6 +63,7 @@ from copilot.settings import get_settings
 log = logging.getLogger("copilot.llm")
 
 T = TypeVar("T", bound=BaseModel)
+R = TypeVar("R")  # LLMResult or tuple[T, CallMetrics] -- whatever _with_fallback is wrapping.
 
 Effort = Literal["low", "medium", "high", "xhigh", "max"]
 
@@ -104,6 +105,9 @@ def _metrics_from_usage(
     stop_reason: str | None,
     attempt: int,
     repair_attempt: int = 0,
+    prompt_name: str | None = None,
+    prompt_version: int | None = None,
+    used_fallback_model: bool = False,
 ) -> CallMetrics:
     return CallMetrics(
         model=model,
@@ -123,13 +127,21 @@ def _metrics_from_usage(
         stop_reason=stop_reason,
         attempt=attempt,
         repair_attempt=repair_attempt,
+        prompt_name=prompt_name,
+        prompt_version=prompt_version,
+        used_fallback_model=used_fallback_model,
     )
 
 
 class LLMClient:
     """Thin, instrumented wrapper over `anthropic.Anthropic`. One instance per process is fine."""
 
-    def __init__(self, api_key: str | None = None, timeout_s: float = 60.0) -> None:
+    def __init__(
+        self,
+        api_key: str | None = None,
+        timeout_s: float = 60.0,
+        fallback_model: str | None | Literal["_unset"] = "_unset",
+    ) -> None:
         settings_key = get_settings().anthropic_api_key
         key = api_key or (settings_key.get_secret_value() if settings_key is not None else None)
         if not key:
@@ -139,6 +151,14 @@ class LLMClient:
             )
         # max_retries=0: tenacity below owns retry/backoff so every attempt is logged and costed.
         self._client = anthropic.Anthropic(api_key=key, timeout=timeout_s, max_retries=0)
+        # Day 8, Addendum A2 §1.1: "_unset" (not None) as the sentinel default lets a caller
+        # explicitly pass fallback_model=None to disable fallback even when Settings configures
+        # one -- a plain `None` default couldn't tell "caller wants no fallback" apart from
+        # "caller didn't say, use Settings". Every existing construction site (no fallback_model
+        # argument at all) is unaffected: it still reads Settings, same as before this existed.
+        self._fallback_model = (
+            get_settings().fallback_model if fallback_model == "_unset" else fallback_model
+        )
         self._configure_tracing()
 
     @staticmethod
@@ -151,6 +171,31 @@ class LLMClient:
             os.environ.setdefault("LANGSMITH_TRACING", "true")
             os.environ.setdefault("LANGSMITH_API_KEY", s.langsmith_api_key.get_secret_value())
             os.environ.setdefault("LANGSMITH_PROJECT", s.langsmith_project)
+
+    def _with_fallback(self, primary_model: str, attempt: Callable[[str, bool], R]) -> R:
+        """Day 8, Addendum A2 §1.1: run `attempt(primary_model, False)` (itself already wrapped
+        in `_retrying()` by the caller); if every retry against the primary model is exhausted
+        and a different fallback model is configured, log the fallback and run
+        `attempt(fallback_model, True)` once (with its own fresh retry budget). If the fallback
+        also fails, its exception is what propagates -- the most recent, most relevant failure,
+        not the primary's now-stale one.
+
+        No fallback configured, or it's the same model as the primary (nothing to fail over
+        to): the primary's exception propagates unchanged, exactly Day 3's original behaviour.
+        """
+        try:
+            return attempt(primary_model, False)
+        except _RETRYABLE as primary_exc:
+            fb = self._fallback_model
+            if fb is None or fb == primary_model:
+                raise
+            log.warning(
+                "llm.fallback primary=%s fallback=%s after exhausting retries: %s",
+                primary_model,
+                fb,
+                primary_exc,
+            )
+            return attempt(fb, True)
 
     @traceable(
         run_type="llm",
@@ -167,55 +212,74 @@ class LLMClient:
         max_tokens: int,
         effort: Effort | None = None,
         cache_system: bool = False,
+        prompt_name: str | None = None,
+        prompt_version: int | None = None,
     ) -> LLMResult:
         """Plain text completion. Streams internally so TTFT is measured, not estimated.
 
         No `temperature`: this model generation's API does not accept it (see module docstring).
         `effort` is this generation's nearest per-call lever and is optional.
+        `prompt_name`/`prompt_version` (Day 8, A2 §1.5): pass the `Prompt` you loaded via
+        `copilot.llm.prompts.load_prompt`'s own `.name`/`.version` so the version that produced
+        this call is on the returned `CallMetrics` and therefore in the trace -- optional, since
+        not every call necessarily goes through a versioned prompt file.
         """
-        attempt_count = 0
 
-        @_retrying()  # type: ignore[untyped-decorator]
-        def _call() -> LLMResult:
-            nonlocal attempt_count
-            attempt_count += 1
-            t0 = time.perf_counter()
-            ttft: float | None = None
-            kwargs: dict[str, Any] = {}
-            if effort is not None:
-                kwargs["output_config"] = {"effort": effort}
-            with self._client.messages.stream(
-                model=model,
-                system=_system_blocks(system, cache_system),
-                messages=list(messages),
-                max_tokens=max_tokens,
-                **kwargs,
-            ) as stream:
-                for event in stream:
-                    if ttft is None and event.type == "content_block_delta":
-                        ttft = time.perf_counter() - t0
-                final = stream.get_final_message()
-            total = time.perf_counter() - t0
-            metrics = _metrics_from_usage(
-                model, final.usage, ttft, total, final.stop_reason, attempt_count
-            )
-            text = "".join(b.text for b in final.content if b.type == "text")
-            log.info(
-                "llm.complete model=%s attempt=%d ttft=%.3fs total=%.3fs tokens_in=%d "
-                "tokens_out=%d cache_read=%d cost_usd=%.5f stop=%s",
-                model,
-                attempt_count,
-                metrics.ttft_s,
-                metrics.total_latency_s,
-                metrics.input_tokens,
-                metrics.output_tokens,
-                metrics.cache_read_tokens,
-                metrics.cost_usd,
-                metrics.stop_reason,
-            )
-            return LLMResult(text=text, metrics=metrics)
+        def _attempt(call_model: str, is_fallback: bool) -> LLMResult:
+            attempt_count = 0
 
-        return cast(LLMResult, _call())
+            @_retrying()  # type: ignore[untyped-decorator]
+            def _call() -> LLMResult:
+                nonlocal attempt_count
+                attempt_count += 1
+                t0 = time.perf_counter()
+                ttft: float | None = None
+                kwargs: dict[str, Any] = {}
+                if effort is not None:
+                    kwargs["output_config"] = {"effort": effort}
+                with self._client.messages.stream(
+                    model=call_model,
+                    system=_system_blocks(system, cache_system),
+                    messages=list(messages),
+                    max_tokens=max_tokens,
+                    **kwargs,
+                ) as stream:
+                    for event in stream:
+                        if ttft is None and event.type == "content_block_delta":
+                            ttft = time.perf_counter() - t0
+                    final = stream.get_final_message()
+                total = time.perf_counter() - t0
+                metrics = _metrics_from_usage(
+                    call_model,
+                    final.usage,
+                    ttft,
+                    total,
+                    final.stop_reason,
+                    attempt_count,
+                    prompt_name=prompt_name,
+                    prompt_version=prompt_version,
+                    used_fallback_model=is_fallback,
+                )
+                text = "".join(b.text for b in final.content if b.type == "text")
+                log.info(
+                    "llm.complete model=%s attempt=%d ttft=%.3fs total=%.3fs tokens_in=%d "
+                    "tokens_out=%d cache_read=%d cost_usd=%.5f stop=%s fallback=%s",
+                    call_model,
+                    attempt_count,
+                    metrics.ttft_s,
+                    metrics.total_latency_s,
+                    metrics.input_tokens,
+                    metrics.output_tokens,
+                    metrics.cache_read_tokens,
+                    metrics.cost_usd,
+                    metrics.stop_reason,
+                    is_fallback,
+                )
+                return LLMResult(text=text, metrics=metrics)
+
+            return cast(LLMResult, _call())
+
+        return self._with_fallback(model, _attempt)
 
     @traceable(
         run_type="llm",
@@ -234,112 +298,126 @@ class LLMClient:
         effort: Effort | None = None,
         cache_system: bool = False,
         max_repairs: int = 1,
+        prompt_name: str | None = None,
+        prompt_version: int | None = None,
     ) -> tuple[T, CallMetrics]:
         """Forced structured output via the SDK's native `output_format`, with one repair loop.
 
         A repair loop matters because a model can emit JSON that satisfies the API's schema
         check but still fails *our* stricter Pydantic validators (business rules, enums with
         extra checks) -- `output_format` guarantees shape, not business-rule validity.
+        `prompt_name`/`prompt_version`: see `complete()`'s docstring -- same purpose here.
         """
-        convo: list[MessageParam] = list(messages)
-        last_error: Exception | None = None
 
-        for repair_attempt in range(max_repairs + 1):
-            attempt_count = 0
+        def _attempt(call_model: str, is_fallback: bool) -> tuple[T, CallMetrics]:
+            # A fallback model gets its own fresh repair loop and its own fresh conversation --
+            # repair turns built against the primary's possibly-different output shape/wording
+            # shouldn't carry over to a different model.
+            convo: list[MessageParam] = list(messages)
+            last_error: Exception | None = None
 
-            @_retrying()  # type: ignore[untyped-decorator]
-            def _call(
-                _convo: list[MessageParam] = convo, _repair: int = repair_attempt
-            ) -> tuple[T, CallMetrics]:
-                nonlocal attempt_count
-                attempt_count += 1
-                t0 = time.perf_counter()
-                ttft: float | None = None
-                kwargs: dict[str, Any] = {}
-                if effort is not None:
-                    kwargs["output_config"] = {"effort": effort}
-                with self._client.messages.stream(
-                    model=model,
-                    system=_system_blocks(system, cache_system),
-                    messages=_convo,
-                    max_tokens=max_tokens,
-                    output_format=output_model,
-                    **kwargs,
-                ) as stream:
-                    for event in stream:
-                        if ttft is None and event.type == "content_block_delta":
-                            ttft = time.perf_counter() - t0
-                    final = stream.get_final_message()
-                total = time.perf_counter() - t0
-                metrics = _metrics_from_usage(
-                    model,
-                    final.usage,
-                    ttft,
-                    total,
-                    final.stop_reason,
-                    attempt_count,
-                    _repair,
-                )
-                parsed = next(
-                    (
-                        b.parsed_output
-                        for b in final.content
-                        if b.type == "text" and b.parsed_output
-                    ),
-                    None,
-                )
-                if parsed is None:
-                    raise StructuredOutputError(
-                        f"model did not return a parseable {output_model.__name__} "
-                        f"(stop_reason={final.stop_reason})"
+            for repair_attempt in range(max_repairs + 1):
+                attempt_count = 0
+
+                @_retrying()  # type: ignore[untyped-decorator]
+                def _call(
+                    _convo: list[MessageParam] = convo, _repair: int = repair_attempt
+                ) -> tuple[T, CallMetrics]:
+                    nonlocal attempt_count
+                    attempt_count += 1
+                    t0 = time.perf_counter()
+                    ttft: float | None = None
+                    kwargs: dict[str, Any] = {}
+                    if effort is not None:
+                        kwargs["output_config"] = {"effort": effort}
+                    with self._client.messages.stream(
+                        model=call_model,
+                        system=_system_blocks(system, cache_system),
+                        messages=_convo,
+                        max_tokens=max_tokens,
+                        output_format=output_model,
+                        **kwargs,
+                    ) as stream:
+                        for event in stream:
+                            if ttft is None and event.type == "content_block_delta":
+                                ttft = time.perf_counter() - t0
+                        final = stream.get_final_message()
+                    total = time.perf_counter() - t0
+                    metrics = _metrics_from_usage(
+                        call_model,
+                        final.usage,
+                        ttft,
+                        total,
+                        final.stop_reason,
+                        attempt_count,
+                        _repair,
+                        prompt_name=prompt_name,
+                        prompt_version=prompt_version,
+                        used_fallback_model=is_fallback,
                     )
-                # Re-validate through our own model in case the SDK's TypeAdapter and our
-                # model's stricter validators (if any were added later) diverge.
-                validated = output_model.model_validate(
-                    parsed.model_dump() if isinstance(parsed, BaseModel) else parsed
-                )
-                log.info(
-                    "llm.structured model=%s output=%s attempt=%d repair=%d ttft=%.3fs "
-                    "total=%.3fs tokens_in=%d tokens_out=%d cost_usd=%.5f",
-                    model,
-                    output_model.__name__,
-                    attempt_count,
-                    _repair,
-                    metrics.ttft_s,
-                    metrics.total_latency_s,
-                    metrics.input_tokens,
-                    metrics.output_tokens,
-                    metrics.cost_usd,
-                )
-                return validated, metrics
-
-            try:
-                return cast("tuple[T, CallMetrics]", _call())
-            except (ValidationError, StructuredOutputError) as exc:
-                last_error = exc
-                if repair_attempt >= max_repairs:
-                    break
-                log.warning(
-                    "llm.structured repair %d/%d after validation failure: %s",
-                    repair_attempt + 1,
-                    max_repairs,
-                    exc,
-                )
-                convo = [
-                    *convo,
-                    {"role": "assistant", "content": str(exc)[:500]},
-                    {
-                        "role": "user",
-                        "content": (
-                            f"That did not validate against the required schema: {exc}\n"
-                            "Return corrected output matching the schema exactly."
+                    parsed = next(
+                        (
+                            b.parsed_output
+                            for b in final.content
+                            if b.type == "text" and b.parsed_output
                         ),
-                    },
-                ]
+                        None,
+                    )
+                    if parsed is None:
+                        raise StructuredOutputError(
+                            f"model did not return a parseable {output_model.__name__} "
+                            f"(stop_reason={final.stop_reason})"
+                        )
+                    # Re-validate through our own model in case the SDK's TypeAdapter and our
+                    # model's stricter validators (if any were added later) diverge.
+                    validated = output_model.model_validate(
+                        parsed.model_dump() if isinstance(parsed, BaseModel) else parsed
+                    )
+                    log.info(
+                        "llm.structured model=%s output=%s attempt=%d repair=%d ttft=%.3fs "
+                        "total=%.3fs tokens_in=%d tokens_out=%d cost_usd=%.5f fallback=%s",
+                        call_model,
+                        output_model.__name__,
+                        attempt_count,
+                        _repair,
+                        metrics.ttft_s,
+                        metrics.total_latency_s,
+                        metrics.input_tokens,
+                        metrics.output_tokens,
+                        metrics.cost_usd,
+                        is_fallback,
+                    )
+                    return validated, metrics
 
-        raise StructuredOutputError(
-            f"gave up after {max_repairs} repair attempt(s) producing {output_model.__name__}"
-        ) from last_error
+                try:
+                    return cast("tuple[T, CallMetrics]", _call())
+                except (ValidationError, StructuredOutputError) as exc:
+                    last_error = exc
+                    if repair_attempt >= max_repairs:
+                        break
+                    log.warning(
+                        "llm.structured repair %d/%d after validation failure: %s",
+                        repair_attempt + 1,
+                        max_repairs,
+                        exc,
+                    )
+                    convo = [
+                        *convo,
+                        {"role": "assistant", "content": str(exc)[:500]},
+                        {
+                            "role": "user",
+                            "content": (
+                                f"That did not validate against the required schema: {exc}\n"
+                                "Return corrected output matching the schema exactly."
+                            ),
+                        },
+                    ]
+
+            raise StructuredOutputError(
+                f"gave up after {max_repairs} repair attempt(s) producing {output_model.__name__}"
+            ) from last_error
+
+        return self._with_fallback(model, _attempt)
 
 
 __all__ = ["Effort", "LLMClient", "MessageParam"]

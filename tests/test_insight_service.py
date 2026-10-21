@@ -7,6 +7,9 @@ database built from a handful of rows, not the real snapshot.
 
 from __future__ import annotations
 
+import time
+
+import anthropic
 import duckdb
 import pytest
 
@@ -126,3 +129,43 @@ def test_vendor_insight_unknown_vendor_never_calls_llm(con, policy) -> None:  # 
     with pytest.raises(VendorNotFoundError):
         service.vendor_insight("NO SUCH VENDOR", role="viewer")
     assert fake.calls == []
+
+
+def test_vendor_insight_degrades_gracefully_when_narration_fails(
+    con,  # noqa: ANN001
+    policy,  # noqa: ANN001
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Day 8, A2 §1.1: an outage that exhausts LLMClient's own retries (and has no fallback
+    model configured) must not raise out of vendor_insight -- the caller still gets the real,
+    computed data back, flagged narration_available=False, not a 500."""
+    monkeypatch.setattr(time, "sleep", lambda _seconds: None)  # skip tenacity's real backoff
+    always_down = anthropic.InternalServerError(
+        message="down",
+        response=_fake_httpx_response(500),
+        body=None,
+    )
+    llm = LLMClient(api_key="sk-test-not-real")
+    fake = FakeMessagesResource([always_down] * 4)  # stop_after_attempt(4), no fallback set
+    llm._client.messages = fake  # type: ignore[attr-defined]
+    service = InsightService(llm, con=con, policy=policy)
+
+    insight, metrics = service.vendor_insight("BIG CO", role="viewer")
+
+    assert insight.narration_available is False
+    assert insight.vendor_name == "BIG CO"
+    assert insight.key_metrics_cited == []
+    assert insight.risk_flags == []
+    assert "BIG CO" in insight.narrative  # the deterministic data block, not a model sentence
+    assert metrics.cost_usd == 0.0
+    assert metrics.stop_reason == "degraded"
+    assert len(fake.calls) == 4
+
+
+def _fake_httpx_response(status_code: int) -> object:
+    """A minimal stand-in for the httpx.Response the SDK's errors wrap, with only what their
+    __init__ touches (request + status_code)."""
+    import httpx2
+
+    request = httpx2.Request("POST", "https://api.anthropic.com/v1/messages")
+    return httpx2.Response(status_code=status_code, request=request)

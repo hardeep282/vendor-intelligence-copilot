@@ -358,6 +358,8 @@ def run_action(spec: TaskSpec, llm: LLMClient, effort: Effort | None = None) -> 
             max_tokens=prompt.max_tokens,
             effort=effort or prompt.effort,
             cache_system=prompt.cache_system,
+            prompt_name=prompt.name,
+            prompt_version=prompt.version,
             langsmith_extra=cast(
                 "LangSmithExtra",
                 {

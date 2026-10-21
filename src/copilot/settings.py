@@ -34,6 +34,14 @@ class Settings(BaseSettings):
     langsmith_api_key: SecretStr | None = None
     langsmith_project: str = "vendor-copilot-dev"
 
+    # Day 8, Addendum A2 §1.1: if the primary model (whatever the caller's prompt.yaml names)
+    # exhausts its own retries, LLMClient routes one more attempt to this model before giving
+    # up. None (the default) means no fallback -- a primary-model outage surfaces as an error,
+    # same as every day before this one. Verify the exact current model id before setting this
+    # in a real environment; left unset in .env.example on purpose (ADR-005 already names the
+    # primary; a fallback is an operational choice, not a code default).
+    fallback_model: str | None = None
+
     # Spend control: a global daily cap in USD enforced by the input gate (Day 7).
     daily_spend_cap_usd: float = Field(default=5.0, gt=0)
     # Input gate (Day 7 step 6): per-role requests/minute, max question length, and a kill

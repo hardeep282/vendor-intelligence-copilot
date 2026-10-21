@@ -200,9 +200,7 @@ class ModelSelectionAgent:
         feedback_block = state["feedback"] or (
             "This is the first proposal for this requirement; no prior feedback yet."
         )
-        system = prompt.render_system(
-            catalog_block=_catalog_block(), feedback_block=feedback_block
-        )
+        system = prompt.render_system(catalog_block=_catalog_block(), feedback_block=feedback_block)
         messages: list[MessageParam] = [
             {"role": "user", "content": prompt.render_user(requirement=state["requirement"])}
         ]
@@ -216,6 +214,8 @@ class ModelSelectionAgent:
                 max_tokens=prompt.max_tokens,
                 effort=self._effort or prompt.effort,
                 cache_system=prompt.cache_system,
+                prompt_name=prompt.name,
+                prompt_version=prompt.version,
             ),
         )
         return {
@@ -247,6 +247,8 @@ class ModelSelectionAgent:
                 max_tokens=prompt.max_tokens,
                 effort=self._effort or prompt.effort,
                 cache_system=prompt.cache_system,
+                prompt_name=prompt.name,
+                prompt_version=prompt.version,
             ),
         )
         return {

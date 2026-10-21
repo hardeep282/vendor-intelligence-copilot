@@ -16,8 +16,10 @@ told explicitly when one was withheld rather than being handed a silent gap.
 from __future__ import annotations
 
 import json
+import logging
 from typing import Any, cast
 
+import anthropic
 import duckdb
 from pydantic import BaseModel, Field
 
@@ -25,7 +27,26 @@ from copilot.data import store
 from copilot.guardrails.policy import DisclosurePolicy, Role, load_policy
 from copilot.llm.client import Effort, LLMClient
 from copilot.llm.prompts import load_prompt
-from copilot.llm.types import CallMetrics
+from copilot.llm.types import CallMetrics, LLMCallError, StructuredOutputError
+
+log = logging.getLogger("copilot.insights")
+
+# Day 8, Addendum A2 §1.1 "graceful degradation": the narration step can fail even after
+# LLMClient's own retries and fallback model are exhausted (provider outage covering every
+# configured model). These are exactly the exceptions worth degrading on -- an outage, a
+# repeated malformed/invalid response, or (defensively) a missing key -- not a bug in our own
+# code, which should still crash loudly.
+_DEGRADE_ON: tuple[type[Exception], ...] = (
+    anthropic.APIConnectionError,
+    anthropic.APITimeoutError,
+    anthropic.RateLimitError,
+    anthropic.InternalServerError,
+    anthropic.ServiceUnavailableError,
+    anthropic.OverloadedError,
+    anthropic.DeadlineExceededError,
+    StructuredOutputError,
+    LLMCallError,
+)
 
 # Grounding sources for one insight -- all three are tagged `internal` in disclosure.yaml, so a
 # viewer-role insight never has to reach for a confidential or restricted table.
@@ -53,6 +74,14 @@ class VendorInsight(BaseModel):
         description="Exact input field names the narrative's numbers came from.",
     )
     risk_flags: list[str] = Field(default_factory=list)
+    # Day 8, Addendum A2 §1.1 "graceful degradation": True for every normal response. Set False
+    # only when the LLM narration step failed outright (after LLMClient's own retries and
+    # fallback-model attempt, if one is configured) -- `narrative` then holds the deterministic
+    # `vendor_data_block` as plain JSON instead of a model-written sentence, so the caller still
+    # gets the real, correct numbers rather than an HTTP error for a question the data layer
+    # could answer perfectly well on its own. `key_metrics_cited`/`risk_flags` are empty in this
+    # case (nothing to cite -- there was no narration), not fabricated.
+    narration_available: bool = True
 
 
 def _vendor_row(
@@ -113,23 +142,54 @@ class InsightService:
         role: Role = "viewer",
         effort: Effort | None = None,
     ) -> tuple[VendorInsight, CallMetrics]:
-        """Fetch this vendor's grounding data and ask the model for a cited narrative."""
+        """Fetch this vendor's grounding data and ask the model for a cited narrative.
+
+        Degrades gracefully (A2 §1.1) rather than raising if narration fails outright: the
+        caller still gets the real, computed `data` back, flagged `narration_available=False`,
+        instead of a 500 for a question Python already had the correct answer to.
+        """
         data = gather_vendor_data(self._con, vendor_name, self._policy, role)
         prompt = load_prompt("vendor_insight")
         system = prompt.render_system(role=role)
-        user = prompt.render_user(
-            vendor_name=vendor_name,
-            vendor_data_block=json.dumps(data, indent=2, default=str),
-        )
-        insight, metrics = self._llm.structured(
-            model=prompt.model,
-            system=system,
-            messages=[{"role": "user", "content": user}],
-            output_model=VendorInsight,
-            max_tokens=prompt.max_tokens,
-            effort=effort or prompt.effort,
-            cache_system=prompt.cache_system,
-        )
+        data_block = json.dumps(data, indent=2, default=str)
+        user = prompt.render_user(vendor_name=vendor_name, vendor_data_block=data_block)
+        try:
+            insight, metrics = self._llm.structured(
+                model=prompt.model,
+                system=system,
+                messages=[{"role": "user", "content": user}],
+                output_model=VendorInsight,
+                max_tokens=prompt.max_tokens,
+                effort=effort or prompt.effort,
+                cache_system=prompt.cache_system,
+                prompt_name=prompt.name,
+                prompt_version=prompt.version,
+            )
+        except _DEGRADE_ON as exc:
+            log.warning(
+                "insights.narration_unavailable vendor=%s role=%s error=%s: %s",
+                vendor_name,
+                role,
+                type(exc).__name__,
+                exc,
+            )
+            degraded = VendorInsight(
+                vendor_name=vendor_name,
+                headline=f"{vendor_name}: narration unavailable, computed data below",
+                narrative=data_block,
+                narration_available=False,
+            )
+            # No metrics to report -- the call never produced usable output. Zeros, not a fake
+            # successful-looking CallMetrics row (A2's own "never invent numbers" rule).
+            return degraded, CallMetrics(
+                model=prompt.model,
+                input_tokens=0,
+                output_tokens=0,
+                cost_usd=0.0,
+                ttft_s=0.0,
+                total_latency_s=0.0,
+                stop_reason="degraded",
+            )
         return cast("VendorInsight", insight), metrics
 
 
