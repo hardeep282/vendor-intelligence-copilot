@@ -364,8 +364,37 @@ def test_verification_that_never_passes_finalizes_unverified_after_max_loops() -
     assert result.guardian_verdict.outcome == "escalate"
     assert "unverified_grounding" in result.guardian_verdict.reason_codes
     assert result.answer != "attempt 3"
+    # Day 8, ADR-006 q2: ESCALATE is now visibly flagged, not just embedded in `answer`'s text --
+    # a caller (the /ask API, the UI) can branch on `pending_review` without parsing the message.
+    assert result.pending_review is not None
+    assert result.pending_review.review_id  # a real, non-empty join key for the audit log
+    assert result.pending_review.reason_codes == result.guardian_verdict.reason_codes
     # plan(1) + 3x(draft+verify) + specialist(1) = 1 + 6 + 1
     assert result.llm_calls == 8
+
+
+def test_an_allowed_result_has_no_pending_review() -> None:
+    # The flip side of the escalate test above: a clean ALLOW must not leave pending_review set.
+    llm = _llm_with(
+        [
+            structured_response(
+                {"tasks": [{"agent": "data_analyst", "objective": "x", "constraints": {}}]}
+            ),
+            structured_response(
+                {"answer": "freight is $1.64M", "cited_tasks": [], "conflicts_noted": []}
+            ),
+            structured_response(_verdict(grounded=True)),
+        ]
+    )
+    orch = Orchestrator(
+        llm, executors={"data_analyst": _ok("data_analyst", "x", ["internal"])}
+    )
+
+    result = orch.answer("What is freight cost?", role="analyst")
+
+    assert result.guardian_verdict is not None
+    assert result.guardian_verdict.outcome == "allow"
+    assert result.pending_review is None
 
 
 def test_a_specialist_that_outlives_its_latency_budget_becomes_a_failed_result() -> None:

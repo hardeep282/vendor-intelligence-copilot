@@ -159,6 +159,19 @@ class DraftAnswer(BaseModel):
     conflicts_noted: list[str] = Field(default_factory=list)
 
 
+class PendingReview(BaseModel):
+    """Day 8, ADR-006 question 2: set on `OrchestratorResult` whenever the Guardian's outcome is
+    ESCALATE, so a caller (the `/ask` API, the UI) can render a visible "pending review" status
+    instead of the Day-7-shipped behaviour of silently withholding the result until someone
+    manually finds it in `guardian_log.jsonl`. `answer` on the result is still the Guardian's
+    `_ESCALATE_MESSAGE` text either way -- this is the structured, reason-coded companion to it,
+    not a replacement for it.
+    """
+
+    review_id: str
+    reason_codes: list[str]
+
+
 class VerifierVerdict(BaseModel):
     """Forced structured output for the orchestrator_verify prompt (Day 6 step 4)."""
 
@@ -201,6 +214,9 @@ class OrchestratorResult(BaseModel):
     # nothing was spent. `None` means the gate allowed the request through (its ALLOW verdict
     # isn't worth keeping -- there's nothing to show for it).
     input_gate_verdict: InputGateVerdict | None = None
+    # Day 8, ADR-006 question 2: set by `_guardian_node` when `guardian_verdict.outcome ==
+    # "escalate"` -- see `PendingReview`'s own docstring. `None` for every other outcome.
+    pending_review: PendingReview | None = None
 
 
 class _State(TypedDict):
@@ -706,9 +722,25 @@ class Orchestrator:
             # same -O-survival guard `answer()`'s own check at the bottom of this class uses).
             raise RuntimeError("guardian invoked with no result to review")
         verdict = self._guardian.review(result)
-        log_decision(verdict, question=result.question, role=result.role)
+        # Day 8, ADR-006 question 2: generate the join key *before* logging, so the audit-log
+        # row and the `PendingReview` the caller sees carry the identical id -- only when this
+        # decision actually needs a reviewer; every other outcome logs review_id=None (nothing
+        # to review, nothing to join on).
+        review_id = str(uuid.uuid4()) if verdict.outcome == "escalate" else None
+        log_decision(
+            verdict, question=result.question, role=result.role, review_id=review_id
+        )
+        pending_review = (
+            PendingReview(review_id=review_id, reason_codes=verdict.reason_codes)
+            if review_id is not None
+            else None
+        )
         reviewed = result.model_copy(
-            update={"answer": verdict.safe_answer, "guardian_verdict": verdict}
+            update={
+                "answer": verdict.safe_answer,
+                "guardian_verdict": verdict,
+                "pending_review": pending_review,
+            }
         )
         return {"result": reviewed}
 
@@ -801,12 +833,29 @@ class Orchestrator:
             )
             edited_result = result.model_copy(update={"answer": edited_text})
             new_verdict = self._guardian.review(edited_result)
-            log_decision(new_verdict, question=edited_result.question, role=edited_result.role)
+            # Same ADR-006-question-2 join-key logic as `_guardian_node` above: an approver's
+            # edit can re-trigger ESCALATE just as easily as it could reintroduce a leak, and
+            # that needs the same visible pending-review status, not a second silent path.
+            new_review_id = (
+                str(uuid.uuid4()) if new_verdict.outcome == "escalate" else None
+            )
+            log_decision(
+                new_verdict,
+                question=edited_result.question,
+                role=edited_result.role,
+                review_id=new_review_id,
+            )
+            new_pending_review = (
+                PendingReview(review_id=new_review_id, reason_codes=new_verdict.reason_codes)
+                if new_review_id is not None
+                else None
+            )
             updated = edited_result.model_copy(
                 update={
                     "answer": new_verdict.safe_answer,
                     "guardian_verdict": new_verdict,
                     "approval_decision": "edited",
+                    "pending_review": new_pending_review,
                 }
             )
             log_approval(

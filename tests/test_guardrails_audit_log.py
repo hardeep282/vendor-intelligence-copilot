@@ -48,3 +48,20 @@ def test_write_failure_returns_false(tmp_path: Path) -> None:
     blocker.write_text("not a directory")
     bad_path = blocker / "sub" / "guardian_log.jsonl"
     assert log_decision(_verdict(), question="q", role="viewer", path=bad_path) is False
+
+
+def test_review_id_defaults_to_none(tmp_path: Path) -> None:
+    # Day 8, ADR-006 q2: a non-escalate decision has nothing to review, so nothing to join on.
+    path = tmp_path / "guardian_log.jsonl"
+    log_decision(_verdict("block"), question="q", role="viewer", path=path)
+    assert read_decisions(path)[0]["review_id"] is None
+
+
+def test_review_id_is_recorded_when_given(tmp_path: Path) -> None:
+    path = tmp_path / "guardian_log.jsonl"
+    log_decision(
+        _verdict("escalate"), question="q", role="viewer", path=path, review_id="rid-123"
+    )
+    row = read_decisions(path)[0]
+    assert row["outcome"] == "escalate"
+    assert row["review_id"] == "rid-123"

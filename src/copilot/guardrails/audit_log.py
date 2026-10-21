@@ -37,12 +37,19 @@ def log_decision(
     question: str,
     role: str,
     path: Path = DEFAULT_AUDIT_LOG_PATH,
+    review_id: str | None = None,
 ) -> bool:
     """Append one row. Returns True on a successful write, False on a logging failure (disk
     full, permissions) -- never raises into the caller's request path, because an audit-log
     write problem must not itself take down an answer that already passed the Guardian. A
     caller/test can still notice via the return value without the Guardian call becoming
     load-bearing on filesystem health.
+
+    `review_id` (Day 8, ADR-006 question 2): the orchestrator passes a fresh uuid4 string here
+    whenever `verdict.outcome == "escalate"`, so this row and the `PendingReview` object the
+    caller gets back both carry the same id -- the join key a future reviewer (or, today, anyone
+    grepping the log by hand) uses to find the exact decision a `pending_review` status refers
+    to. `None` for every non-escalate decision (nothing to review, nothing to join on).
     """
     row = {
         "ts": time.time(),
@@ -53,6 +60,7 @@ def log_decision(
         "reason_codes": verdict.reason_codes,
         "policy_version": verdict.policy_version,
         "findings": [f.model_dump() for f in verdict.findings],
+        "review_id": review_id,
     }
     return _append_row(row, path)
 

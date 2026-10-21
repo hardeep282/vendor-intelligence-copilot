@@ -151,9 +151,12 @@ row from the re-review). Both never raise into the caller: a write wrapped in `t
 returns `True`/`False` instead, because an audit-log write problem must not itself block an
 already-decided answer from reaching the user. `read_decisions(path)` returns `[]` for a log that
 doesn't exist yet. Local-only, never committed (`data/audit/*.jsonl` added to `.gitignore`
-alongside this file -- no existing wildcard covered `.jsonl`).
-**Takes in:** a `GuardianVerdict` + question/role (`log_decision`), or question/role/decision/
-final_answer (`log_approval`).
+alongside this file -- no existing wildcard covered `.jsonl`). Day 8: `log_decision` takes an
+optional `review_id=` (a uuid4 string the orchestrator generates only for an ESCALATE outcome),
+written into the row so a future reviewer can join a `pending_review` status back to its exact
+audit-log entry -- `None`/absent for every other outcome.
+**Takes in:** a `GuardianVerdict` + question/role + optional `review_id` (`log_decision`), or
+question/role/decision/final_answer (`log_approval`).
 **Gives out:** `True`/`False` per write; `list[dict]` from `read_decisions`.
 **Talks to:** `copilot.guardrails.guardian` (`GuardianVerdict`); `copilot.settings`
 (`REPO_ROOT`). Called from `copilot.agents.orchestrator._guardian_node` and `_approval_gate`.
@@ -793,6 +796,16 @@ the gate entirely (`_route_after_guardian` routes straight to `END`) rather than
 nothing can ever resume. `OrchestratorResult.pending_approval` is set only by `answer()`'s own
 wrapper when `final_state` carries a `__interrupt__` key -- it's never written into graph state
 itself, so a resumed/decided result always reports `pending_approval=False`.
+**Day 8, ADR-006 question 2: visible ESCALATE status.** `_guardian_node` (and `_approval_gate`'s
+edit-re-review branch) now generates a `review_id` (uuid4) whenever a verdict's `outcome ==
+"escalate"`, passes it to `log_decision(..., review_id=)` so the audit-log row and the caller's
+object share one join key, and sets `OrchestratorResult.pending_review` to a `PendingReview
+(review_id, reason_codes)` -- `None` for every other outcome. `answer` is still the Guardian's
+`_ESCALATE_MESSAGE` text either way; `pending_review` is the structured status a caller (`/ask`,
+the UI) branches on instead of parsing that text, replacing Day 7's actual behaviour (an
+ESCALATE was fully reviewable only by grepping `guardian_log.jsonl` by hand) with the "visible
+pending review" ADR-006 decided on, without changing the Guardian's own checks or severity
+ordering (both confirmed as-shipped by that ADR).
 **Takes in:** an `LLMClient`, `executors: dict[AgentName, SpecialistExecutor]` -- the Day 6
 step 2 `run_*` functions, wired in by the caller (never constructed here: each needs a
 different real dependency the Orchestrator has no business reproducing) -- plus a question,
