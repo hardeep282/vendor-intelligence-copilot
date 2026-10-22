@@ -1,9 +1,8 @@
 # Project Progress: Vendor Intelligence Copilot
 
-Last updated: Thu 22 Oct 2026 (Day 8 of the 10-day sprint, sprint plan v3 + Addendum A2 --
-7 of 7 Day 8 steps shipped: `/ask` + SSE, invite-code/API-key auth + per-user/IP rate limiting,
-the CI eval gate, the determinism note, a Postgres checkpointer option, and the minimal UI +
-its missing `/ask/approve` endpoint)
+Last updated: Thu 22 Oct 2026 (Day 9 of the 10-day sprint, sprint plan v3 + Addendum A2 --
+Day 8's 7 of 7 steps shipped and tagged `v0.1.0`; Day 9 steps 1 and 4 (SQL pair generator, MCP
+server) done and run for real against a real snapshot built in this session)
 
 ## Sprint status
 
@@ -17,7 +16,7 @@ its missing `/ask/approve` endpoint)
 | 6 | Multi-agent system in LangGraph | **Build done: 7 of 7 steps shipped** |
 | 7 | Guardian, guardrails, approvals | **Build done: 8 of 8 steps shipped** (injection classifier cut-first) |
 | 8 | Product, API keys, latency budget, evals in CI, release v0.1 (Addendum A2 §1) | **Build done: 7 of 7 steps shipped** -- v0.1.0 not yet tagged, see "Next step" |
-| 9 | Fine-tuning benchmark and MCP (MCP never cut) | Not started |
+| 9 | Fine-tuning benchmark and MCP (MCP never cut) | In progress: step 1 (SQL pair generator) and step 4 (MCP server) **done and run for real**; steps 2-3 and 5-6 (Colab QLoRA fine-tune, the base/few-shot/QLoRA comparison, results table + ADR) not started -- need a GPU (Colab) this environment doesn't have |
 | 10 | Package and launch the job campaign | Not started |
 
 ## Day 3 checklist (sprint doc v2/v3 D3)
@@ -30,7 +29,7 @@ its missing `/ask/approve` endpoint)
 | 4 | Text-to-SQL: schema linking, business rules, 3 retrieved golden examples | **Done** (`copilot.sql.service.TextToSqlService`, `copilot.sql.schema`, `copilot.sql.examples`) |
 | 5 | Layered sqlglot validator + `policies/sql_rules.yaml` | **Done** (`copilot.sql.validator`; built ahead of step 4 since step 4's self-correction loop needs it; a 6th layer, data-coverage, was added while building step 4) |
 | 6 | Golden v2 as a LangSmith dataset + evaluators | **Done** (`copilot.evals.evaluators`, `copilot.evals.langsmith_sync`; actual push needs your `LANGSMITH_API_KEY` -- run `scripts/push_golden_to_langsmith.py` on your machine) |
-| 7 | Question->SQL pair generator | Not started (cut-first item; may move to Day 9 regardless) |
+| 7 | Question->SQL pair generator | **Done, as Day 9 step 1** (`copilot.sql.pair_generation`; real run on 22 Oct: 1016 candidates, 0 execution failures, 0 validator failures, sampled to 400 -- `evals/datasets/sql_pairs_v1.jsonl`) |
 | 8 | Temperature lab | **Done, as an effort lab** -- see correction below (`copilot.evals.effort_lab`; real sweep needs your `ANTHROPIC_API_KEY` -- run `scripts/run_effort_lab.py` on your machine) |
 | 9 | Tokenization lab | **Done** (`copilot.evals.tokenization_lab`; real sweep needs network access beyond just your API key -- run `scripts/run_tokenization_lab.py` on your machine) |
 
@@ -493,5 +492,24 @@ What's genuinely left, none of it blocking the tag itself:
    Day 8 needed these to build or test, but the actual deployed `/health` URL still waits on
    them (see "Live URLs" below).
 
-Day 9 (fine-tuning benchmark + MCP) and Day 10 (packaging and the job campaign) haven't started
-and aren't blocked by anything above -- they're next once you say go.
+**Update, 22 Oct, same day as Day 9's build started:** item 2's "real-key runs" is specifically
+an `ANTHROPIC_API_KEY` gap, not a data gap -- worth separating those explicitly now that the
+data half is resolved. You uploaded `Vendor_Summary.xlsx` directly to the build chat (never
+committed to Git -- ADR-002 restricts that, not uploading it to a session), so the real
+snapshot was built and verified for real in this cloud session: full suite went from
+465 passed/15 known failures to **499 passed/0 failed**, with two canonical numbers
+(DIAGEO's $68,739,834.97 revenue, MARTIGNETTI's 31.98% blended margin) spot-checked directly
+rather than just trusting the green suite. Everything in item 2 above that only needed data, not
+an API key, is now also real rather than smoke-tested -- but every item in that list that also
+needs an LLM call (the eval gate's `llm_judged` layer, `run_orchestrator_golden.py`, a real
+`TextToSqlService`/`ask_vendor_question` call) still needs `ANTHROPIC_API_KEY`, which this
+session still doesn't have -- a credential gap, not a data gap, and the two turned out to be
+fully independent of each other.
+
+Day 9 (fine-tuning benchmark + MCP) is now in progress: step 1 (the SQL pair generator) and
+step 4 (the Vendor Analytics MCP server, "never cut" per the sprint's own cut-first list) are
+both done and run for real against the real snapshot above -- see `docs/BUILD_LOG.md`'s Day 9
+entries. Steps 2-3 and 5-6 (the Colab QLoRA fine-tune itself, the base/few-shot/QLoRA/frontier
+comparison, and the results table + ADR) haven't started -- they need a GPU (Colab), which this
+environment doesn't have, so that part is still correctly "next once you run it." Day 10
+(packaging and the job campaign) hasn't started and isn't blocked by anything above.

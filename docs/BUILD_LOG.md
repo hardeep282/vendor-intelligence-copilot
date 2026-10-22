@@ -1802,20 +1802,29 @@ to teach a fine-tuned model to produce (e.g. one the validator would reject or c
 them separately (`FilterReport.execution_failed` / `.validator_failed`) means a future run's
 printed breakdown tells you *why* a candidate was dropped instead of just a shrunk total.
 
-**Couldn't run for real in this session** -- `scripts/build_snapshot.py` needs
-`Vendor_Summary.xlsx`, which by the same licence rule never enters this repo or this cloud
-sandbox, so the actual 300-500-pair dataset (`evals/datasets/sql_pairs_v1.jsonl`) and its real
-execution/validator-failure counts still need a run on your machine, after
-`scripts/build_snapshot.py "path/to/Vendor_Summary.xlsx"`:
-`uv run python scripts/generate_sql_pairs.py --target 400`.
+**Correction, same session, once the real workbook was uploaded to this chat (not committed --
+see the entry below):** the paragraph originally here said this needed a run on your own
+machine, since `Vendor_Summary.xlsx` can never enter this repo or (it was assumed) this cloud
+sandbox. That second half was wrong -- the licence rule (ADR-002) is about never committing the
+raw workbook to *Git*, not about the file never reaching this session. Uploaded directly to the
+chat (never written to the repo, never committed), it ran for real right here: `uv run python
+scripts/generate_sql_pairs.py --target 400` against the real snapshot produced
+**1016 candidates, 0 execution failures, 0 validator failures, all 1016 passed both filters**,
+sampled down to the requested 400 (by category: 285 lookup, 51 comparison, 43 trend, 21
+aggregation). Zero failures on both filters is itself a real result, not a shortfall: it says
+the templates and the real safety validator agree on every shape this run generated. Real
+output committed: `evals/datasets/sql_pairs_v1.jsonl` + its manifest -- same "vendor-level
+aggregates only, no SKU-level columns" posture `golden_v1`/`golden_v2` already established as
+safe to commit (RAID R7), not a new exception.
 
-**Verification:** `uv run pytest tests/test_generate_sql_pairs.py -v` -- 9 passed. Full suite:
-474 passed (465 + these 9), same 15 known missing-snapshot failures as every prior day. `ruff
-check .` and `uv run mypy` both clean (added file-scoped `S608`/`S311` ignores to
-`pyproject.toml` for this module and its script/test -- the whole point of the module is
-building parameterized SQL template strings with a non-cryptographic RNG for training-data
-sampling, not a security boundary; every kept string is re-validated by the real safety
-validator before being written out).
+**Verification (at the time this module was first written, before the real run above):**
+`uv run pytest tests/test_generate_sql_pairs.py -v` -- 9 passed. Full suite: 474 passed (465 +
+these 9), same 15 known missing-snapshot failures as every prior day. `ruff check .` and
+`uv run mypy` both clean (added file-scoped `S608`/`S311` ignores to `pyproject.toml` for this
+module and its script/test -- the whole point of the module is building parameterized SQL
+template strings with a non-cryptographic RNG for training-data sampling, not a security
+boundary; every kept string is re-validated by the real safety validator before being written
+out).
 
 **No new ADR** -- reuses the existing schema/policy/validator modules exactly as
 `TextToSqlService` already does; the "real logic in the package, thin script wrapper" shape
@@ -1885,3 +1894,48 @@ check .`, `ruff format --check` and `uv run mypy` all clean.
 behaves (`store.connect()`, `TextToSqlService.answer()`, `Guardian.review()`); the one real
 decision (pinning `mcp<2.0`) is a dependency-version choice with a one-line reason, not an
 architectural trade-off between real alternatives.
+
+## 22 Oct — real snapshot built in this cloud session; both known gaps narrowed to one
+
+You uploaded `Vendor_Summary.xlsx` directly to this chat (not committed, never written into the
+repo -- `scripts/build_snapshot.py` read it straight from the chat's attachment path). This
+corrects something stated incorrectly earlier today (see the Day 9 step 1 entry above): the
+licence rule (ADR-002) says the raw workbook never enters *Git*, not that it can never reach
+this session -- uploading it to the chat and this cloud sandbox are different things, and only
+the first one is restricted.
+
+`scripts/build_snapshot.py` ran for real: 126 vendors across every vendor-grain table (matches
+every row count already documented), 1400 vendor-month rows, 399 vendor-health rows -- exact
+match against `data/snapshot/MANIFEST.json` already committed to the repo (`git diff` against
+it: empty). `data/snapshot/*.parquet` and `*.duckdb` stayed exactly where the licence rule
+wants them: gitignored, confirmed with `git status --short data/snapshot/` (nothing to commit).
+
+**Full suite re-run with the real snapshot present: 499 passed, 0 failed** -- the 15 tests that
+failed in every environment without a snapshot (`test_canonical_metrics`,
+`test_manifest_matches_files`, both golden sets' re-execution tests, the ML forecast and agent-
+specialist tests, `test_aggregate_reads_still_work`) all pass for real now, not just
+differently-explained failures. Spot-checked two canonical numbers directly against the golden
+set rather than trusting the green suite alone: DIAGEO's total revenue ($68,739,834.97) and
+MARTIGNETTI's blended margin (31.98%) both matched exactly before the snapshot was even built
+(computed straight from an earlier raw CSV export of the same underlying data), then again
+through the real `vendor_metrics` MCP tool afterward.
+
+**Both of Day 9's "never run for real" caveats are now addressed, with one real one left:**
+`scripts/generate_sql_pairs.py` ran for real (separate entry above) and the MCP server's
+`vendor_metrics`/`portfolio_summary` tools were re-verified over real stdio against real data
+(DIAGEO's exact figures came back through the actual MCP Inspector round trip). `ruff check .`
+and `uv run mypy` both clean against the full tree. **Still genuinely missing, unrelated to
+data:** no `ANTHROPIC_API_KEY` in this session, so `ask_vendor_question`'s real-LLM path, the
+CI eval gate's `llm_judged` layer, and the Postgres-checkpointer live round trip are still
+exactly the gaps they were before -- a missing credential, not a missing dataset, and the two
+are genuinely independent of each other.
+
+**One real-world data-quality observation surfaced by the real run, not a bug:** vendor names
+in the real data are inconsistently cased (`"TY KU LLC"` vs `"Dunn Wine Brokers"`, both from the
+same `VendorName` column) -- confirmed by direct query, not assumed. `copilot.sql.pair_
+generation` already handles this correctly (it round-trips whatever casing is actually stored,
+never re-cases a value used in a `WHERE` clause), but it's worth knowing if a future agent or
+prompt ever assumes vendor names are uniformly upper-case.
+
+**No new ADR** -- this is a data-provisioning correction and a verification run, not an
+architectural decision.
