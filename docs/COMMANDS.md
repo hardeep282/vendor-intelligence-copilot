@@ -207,3 +207,21 @@ this environment, not by a live round-trip -- no Docker daemon available here (s
 added no new dependency at all -- the UI is vanilla JS/HTML/CSS served by Starlette's own
 `StaticFiles`, already part of FastAPI's dependency chain; `/ask/approve` is plain FastAPI/
 Pydantic, same as every other route in this module.
+
+## Day 9 (step 1: SQL pair generator; step 4: Vendor Analytics MCP server)
+
+| # | What this step does | Command | What each part does | Expected result |
+|---|---|---|---|---|
+| 1 | Generate the 300-500-pair fine-tuning dataset for real | `uv run python scripts/build_snapshot.py "path/to/Vendor_Summary.xlsx"` then `uv run python scripts/generate_sql_pairs.py --target 400` | builds the real snapshot, then templates question/SQL pairs against it, filtered through execution then the real safety validator | `evals/datasets/sql_pairs_v1.jsonl` (400 lines) + `sql_pairs_v1.manifest.json`; printed execution/validator-failure counts |
+| 2 | List the MCP server's tools over real stdio (no snapshot needed to list, just to call) | `npx -y @modelcontextprotocol/inspector --cli --method tools/list -- uv run python -m copilot.mcp.server` | MCP Inspector's CLI mode starts the server as a stdio subprocess and sends a real `tools/list` JSON-RPC request | the 3 tools (`vendor_metrics`, `portfolio_summary`, `ask_vendor_question`) with their real input/output schemas |
+| 3 | Call a tool over real stdio | `npx -y @modelcontextprotocol/inspector --cli --method tools/call --tool-name vendor_metrics --tool-arg vendor_name="Diageo" -- uv run python -m copilot.mcp.server` | real `tools/call` JSON-RPC round trip | real vendor metrics once the snapshot is built; a clean `isError: true` with the DuckDB catalog error if it isn't (confirmed in this sandbox -- see `docs/BUILD_LOG.md`) |
+| 4 | Point Claude Desktop at the server | add to its `claude_desktop_config.json`: `{"mcpServers": {"vendor-analytics": {"command": "uv", "args": ["run", "--directory", "<repo path>", "python", "-m", "copilot.mcp.server"]}}}`, then restart Claude Desktop | Claude Desktop launches the same stdio command Inspector used above, as a managed subprocess | the 3 tools appear in Claude Desktop's tool picker for a new chat; not run in this cloud sandbox (no Claude Desktop here) -- run and confirm on your machine |
+| 5 | Run the new unit tests on their own | `uv run pytest tests/test_generate_sql_pairs.py tests/test_mcp_server.py -v` | synthetic in-memory DuckDB fixtures for both -- no snapshot, no API key needed | 19 passed (9 + 10) |
+
+Added one new dependency: `mcp` (pinned `>=1.2.0,<2.0.0` -- the installed default resolved to
+`mcp` 2.x, whose `FastMCP` class was renamed `MCPServer` with a materially different
+constructor; pinning to the 1.x line keeps the widely-documented `FastMCP` API that MCP
+Inspector and Claude Desktop setup guides assume, rather than building untested against an SDK
+major version released after this project's own knowledge cutoff). No other new dependency --
+the MCP server wraps `copilot.data.store`, `copilot.sql.service.TextToSqlService` and
+`copilot.guardrails.guardian.Guardian` exactly as they already exist.

@@ -1820,3 +1820,68 @@ validator before being written out).
 **No new ADR** -- reuses the existing schema/policy/validator modules exactly as
 `TextToSqlService` already does; the "real logic in the package, thin script wrapper" shape
 follows `train_risk_classifier.py`'s established pattern, not a new build-vs-buy decision.
+
+## 22 Oct — Day 9 step 4: Vendor Analytics MCP server (never cut, per the sprint's own list)
+
+`copilot.mcp.server` -- 3 read-only tools (`vendor_metrics`, `portfolio_summary`,
+`ask_vendor_question`) over `mcp.server.fastmcp.FastMCP`, stdio transport. Added `mcp` as a new
+dependency, pinned `>=1.2.0,<2.0.0`: the unpinned resolve picked `mcp` 2.3.0, whose `FastMCP`
+class was renamed `MCPServer` with a materially larger constructor (`auth_server_provider`,
+`resource_security`, `subscriptions`, `middleware`, ...) -- released after this project's
+working knowledge cutoff, so building against its real shape untested would have been guessing.
+Pinning to the 1.x line (resolved to `1.30.0`) keeps the `FastMCP` API that MCP Inspector's own
+docs and Claude Desktop's setup guides assume; "remote MCP with API-key or OAuth auth" is
+already the depth-track item that would revisit this (X1 #5), not Day 9's.
+
+**Why every tool is hardcoded to `role="viewer"` rather than accepting a `role` argument:** an
+MCP tool parameter is just a string the calling client chooses to pass -- accepting `role` here
+would let any caller claim `role="analyst"` and read confidential data with no authentication
+behind that claim, exactly the privilege-escalation vector this project's least-privilege
+posture (R11, ADR-006) exists to close everywhere else. Documented in the module's own
+docstring so the reasoning doesn't need rediscovering at the X1 #5 remote-MCP-auth point, where
+an actually-authenticated role should start flowing in.
+
+**`ask_vendor_question` still goes through the mandatory Guardian pass** (docs/adr/
+006-guardian-design.md) before returning an answer -- MCP is a new path into the system that
+didn't exist before Day 9, so it gets the same "no path to the end node skips the Guardian"
+treatment Day 7's topology test enforces for the Orchestrator's own graph, via a small
+`_ToolReviewable` duck-typed to the Guardian's `_Reviewable` Protocol (no fake
+`OrchestratorResult` needed -- same reason the Protocol exists in the first place).
+
+**A real finding worth recording, not quietly working around:** the first implementation
+rendered SQL result rows as `"ColumnName: value"` pairs (e.g. `"VendorName: ACME BEVERAGES,
+TotalRevenue: 100000.0"`). Testing that end to end (`tests/test_mcp_server.py`, fakes --
+no real API key) through the real Guardian showed TWO real false positives from Presidio's
+generic recognizers, not an MCP-specific bug: (1) a bare 6+ digit number matched
+`US_DRIVER_LICENSE` -- fixed by formatting numbers with thousands separators (`100,000.0`, not
+`100000.0`); (2) an all-caps multi-word value immediately followed by a colon then another
+field (`"VendorName: ACME BEVERAGES, TotalRevenue: ..."`) made the vendor name itself match
+`LOCATION` via Presidio's spaCy-backed NER -- fixed by rendering the first column as `"For
+ACME BEVERAGES: TotalRevenue 100,000.0"` instead (confirmed empirically which exact phrasing
+stops triggering it, not guessed). Both fixes are recorded in `_format_rows`'s own docstring.
+Left as Guardian's call rather than bypassed: if Presidio flags something, Guardian redacts --
+that's the system working as designed, even when the specific trigger is a false positive;
+the fix here is choosing an answer format that doesn't manufacture one, not overriding the
+verdict.
+
+**Tested over the real stdio protocol, not just as plain Python function calls:** MCP Inspector
+(`npx -y @modelcontextprotocol/inspector --cli`) was available in this sandbox (Node 22) and
+used for a real `tools/list` (all 3 tools, correct schemas) and two real `tools/call` round
+trips: `portfolio_summary` against this sandbox's absent snapshot (clean `isError: true` with
+the real DuckDB catalog error, not a crash) and `ask_vendor_question` with no API key configured
+(clean `isError: false`, structured `{"answered": false, "error": "..."}`, no fabricated
+answer). **Not run here, genuinely needs your machine:** Claude Desktop itself (no desktop app
+in this cloud sandbox) and both tools against the real, built snapshot (same licence-gap as
+Day 9 step 1 and every other "real data" item) -- `docs/COMMANDS.md`'s new Day 9 section has
+the exact commands for both.
+
+**Verification:** `uv run pytest tests/test_mcp_server.py -v` -- 10 passed (3 deterministic-tool
+tests, 1 withheld-below-min-k test, 1 unknown-vendor test, 2 `ask_vendor_question` tests against
+fakes, 3 `_format_rows` regression tests covering the Presidio finding above). Full suite: 484
+passed (474 + these 10), same 15 known missing-snapshot failures as every prior day. `ruff
+check .`, `ruff format --check` and `uv run mypy` all clean.
+
+**No new ADR** -- every tool wraps an existing, already-tested service exactly as it already
+behaves (`store.connect()`, `TextToSqlService.answer()`, `Guardian.review()`); the one real
+decision (pinning `mcp<2.0`) is a dependency-version choice with a one-line reason, not an
+architectural trade-off between real alternatives.
