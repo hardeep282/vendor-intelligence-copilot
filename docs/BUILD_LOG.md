@@ -1775,3 +1775,48 @@ own machine, `git fetch && git push origin v0.1.0` (the tag already exists local
 container's clone's history once pulled) -- or simplest, just re-create it: `git tag -a v0.1.0
 -m "<message>" && git push origin v0.1.0` from a machine with normal push access, or create the
 release directly on GitHub's web UI, pointing at commit `ff65007`.
+
+## 22 Oct — Day 9 step 1: template-based question->SQL pair generator (B7)
+
+`copilot.sql.pair_generation` (pure, testable: `generate_candidates()` builds the template x
+parameter grid against a connection without executing anything; `verify_and_filter()` runs two
+separately-counted filters -- execution against the real snapshot, then the real
+`copilot.sql.validator.validate()` safety layers) plus `scripts/generate_sql_pairs.py`, a thin
+CLI wrapper (same shape as `scripts/train_risk_classifier.py`: real logic in the package, the
+script just wires it to the real snapshot and writes the output file) that needs a built
+snapshot to run for real -- same licence rule as every other "real data" script in this repo
+(ADR-002). Real vendor names are read from the connected database at generation time, never
+hardcoded.
+
+Six template families (single-vendor lookup across 7 headline columns, pairwise comparison,
+top-N ranking both directions, portfolio-level aggregation, monthly-demand trend, health-mix
+breakdown), each skipped automatically if its table isn't present in the connection -- lets the
+9 new unit tests run against a tiny synthetic in-memory DuckDB fixture (invented vendor names
+and numbers, real table/column shape -- the same "schema, not licensed data" convention
+`tests/test_sql_validator.py` already uses) with only 3 of the real tables created, rather than
+needing every one of them.
+
+**Why two filters, not one:** the spec's own bar for Day 9 is "keeps only pairs that execute
+correctly," but execution alone doesn't catch a template whose shape the project doesn't want
+to teach a fine-tuned model to produce (e.g. one the validator would reject or cap). Counting
+them separately (`FilterReport.execution_failed` / `.validator_failed`) means a future run's
+printed breakdown tells you *why* a candidate was dropped instead of just a shrunk total.
+
+**Couldn't run for real in this session** -- `scripts/build_snapshot.py` needs
+`Vendor_Summary.xlsx`, which by the same licence rule never enters this repo or this cloud
+sandbox, so the actual 300-500-pair dataset (`evals/datasets/sql_pairs_v1.jsonl`) and its real
+execution/validator-failure counts still need a run on your machine, after
+`scripts/build_snapshot.py "path/to/Vendor_Summary.xlsx"`:
+`uv run python scripts/generate_sql_pairs.py --target 400`.
+
+**Verification:** `uv run pytest tests/test_generate_sql_pairs.py -v` -- 9 passed. Full suite:
+474 passed (465 + these 9), same 15 known missing-snapshot failures as every prior day. `ruff
+check .` and `uv run mypy` both clean (added file-scoped `S608`/`S311` ignores to
+`pyproject.toml` for this module and its script/test -- the whole point of the module is
+building parameterized SQL template strings with a non-cryptographic RNG for training-data
+sampling, not a security boundary; every kept string is re-validated by the real safety
+validator before being written out).
+
+**No new ADR** -- reuses the existing schema/policy/validator modules exactly as
+`TextToSqlService` already does; the "real logic in the package, thin script wrapper" shape
+follows `train_risk_classifier.py`'s established pattern, not a new build-vs-buy decision.

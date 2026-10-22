@@ -71,6 +71,14 @@ select = ["E", "F", "I", "B", "UP", "S"]
 # footgun -- a mutable default evaluated once at def time) doesn't apply to it, and FastAPI's
 # own docs recommend disabling B008 for files that use Depends() this way (Day 8 step 3/4).
 "src/copilot/api/*" = ["B008"]
+# Day 9 step 1: every function in this module's whole job is building parameterized SQL
+# template strings (S608) sampled with a non-cryptographic RNG (S311) -- training-data
+# generation, not a security boundary; the SQL it builds is re-validated by the real
+# `copilot.sql.validator` before anything is kept (see `verify_and_filter`), same posture
+# `scripts/*` already gets for its own S608 template-building above.
+"src/copilot/sql/pair_generation.py" = ["S608", "S311"]
+"scripts/generate_sql_pairs.py" = ["S311"]
+"tests/test_generate_sql_pairs.py" = ["S311"]
 
 [tool.mypy]
 python_version = "3.12"
