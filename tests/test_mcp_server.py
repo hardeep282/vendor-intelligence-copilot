@@ -115,7 +115,18 @@ def test_portfolio_summary_aggregates_across_every_vendor(con) -> None:
 
 
 def test_ask_vendor_question_reports_a_clean_error_with_no_api_key(con, monkeypatch) -> None:
-    monkeypatch.delenv("ANTHROPIC_API_KEY", raising=False)
+    # setenv("", not delenv: Settings (src/copilot/settings.py) reads a local .env file as a
+    # fallback source, and pydantic-settings' own precedence is os.environ > .env file. delenv
+    # only removes the OS variable -- on any machine that has a real ANTHROPIC_API_KEY in a
+    # .env file (every machine that's ever run the real LLM path locally, almost certainly
+    # including whoever runs this test outside a from-scratch CI container), Settings falls
+    # straight through to that file's real key regardless of get_settings.cache_clear() above.
+    # Reproduced and confirmed directly before writing this fix: delenv + cache_clear alone
+    # still returned a real key with a .env file present; setenv("", ...) + cache_clear did not,
+    # because an empty string in os.environ outranks the .env file's value. An empty string is
+    # the same falsy-key case `scripts/run_eval_gate.py` already hardens against, not a new
+    # pattern invented for this test.
+    monkeypatch.setenv("ANTHROPIC_API_KEY", "")
     result = mcp_server.ask_vendor_question("What is the total revenue?")
     assert result["answered"] is False
     assert "error" in result
