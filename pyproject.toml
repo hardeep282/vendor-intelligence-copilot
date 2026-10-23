@@ -80,6 +80,13 @@ select = ["E", "F", "I", "B", "UP", "S"]
 "src/copilot/sql/pair_generation.py" = ["S608", "S311"]
 "scripts/generate_sql_pairs.py" = ["S311"]
 "tests/test_generate_sql_pairs.py" = ["S311"]
+# Day 9 scaffolding (finetuning/): the Colab notebook splits its own train/held-out set with a
+# non-cryptographic RNG (S311, same reproducible-shuffle reasoning as generate_sql_pairs.py
+# above, not a security boundary) and is linted as a notebook, where ruff's own import-sort
+# fixer (I001) can't safely reorder cells without a real Colab run to re-verify against -- same
+# "don't let the linter rewrite code it can't run" judgment as the rest of finetuning/'s
+# isolation from the strict src/scripts checks (see finetuning/README.md).
+"finetuning/day9_qlora_colab.ipynb" = ["S311", "I001"]
 
 [tool.mypy]
 python_version = "3.12"

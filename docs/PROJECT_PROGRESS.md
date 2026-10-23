@@ -1,8 +1,9 @@
 # Project Progress: Vendor Intelligence Copilot
 
-Last updated: Thu 22 Oct 2026 (Day 9 of the 10-day sprint, sprint plan v3 + Addendum A2 --
+Last updated: Fri 23 Oct 2026 (Day 9 of the 10-day sprint, sprint plan v3 + Addendum A2 --
 Day 8's 7 of 7 steps shipped and tagged `v0.1.0`; Day 9 steps 1 and 4 (SQL pair generator, MCP
-server) done and run for real against a real snapshot built in this session)
+server) done and run for real against a real snapshot built in this session; Day 9 steps 2-3
+and 5-6, the QLoRA fine-tuning benchmark, scaffolded and ready to run in Colab)
 
 ## Sprint status
 
@@ -16,7 +17,7 @@ server) done and run for real against a real snapshot built in this session)
 | 6 | Multi-agent system in LangGraph | **Build done: 7 of 7 steps shipped** |
 | 7 | Guardian, guardrails, approvals | **Build done: 8 of 8 steps shipped** (injection classifier cut-first) |
 | 8 | Product, API keys, latency budget, evals in CI, release v0.1 (Addendum A2 §1) | **Build done: 7 of 7 steps shipped** -- v0.1.0 not yet tagged, see "Next step" |
-| 9 | Fine-tuning benchmark and MCP (MCP never cut) | In progress: step 1 (SQL pair generator) and step 4 (MCP server) **done and run for real**; steps 2-3 and 5-6 (Colab QLoRA fine-tune, the base/few-shot/QLoRA comparison, results table + ADR) not started -- need a GPU (Colab) this environment doesn't have |
+| 9 | Fine-tuning benchmark and MCP (MCP never cut) | In progress: step 1 (SQL pair generator) and step 4 (MCP server) **done and run for real**; steps 2-3 and 5-6 (Colab QLoRA fine-tune, the base/few-shot/QLoRA comparison, results table + ADR) **scaffolded and ready to run** (`finetuning/`, ADR-007 PENDING) -- actual run still needs a GPU (Colab) this environment doesn't have |
 | 10 | Package and launch the job campaign | Not started |
 
 ## Day 3 checklist (sprint doc v2/v3 D3)
@@ -509,7 +510,17 @@ fully independent of each other.
 Day 9 (fine-tuning benchmark + MCP) is now in progress: step 1 (the SQL pair generator) and
 step 4 (the Vendor Analytics MCP server, "never cut" per the sprint's own cut-first list) are
 both done and run for real against the real snapshot above -- see `docs/BUILD_LOG.md`'s Day 9
-entries. Steps 2-3 and 5-6 (the Colab QLoRA fine-tune itself, the base/few-shot/QLoRA/frontier
-comparison, and the results table + ADR) haven't started -- they need a GPU (Colab), which this
-environment doesn't have, so that part is still correctly "next once you run it." Day 10
-(packaging and the job campaign) hasn't started and isn't blocked by anything above.
+entries.
+
+**Update, 23 Oct ("Option A"):** steps 2-3 and 5-6 are now **scaffolded and ready to run**, not
+started-for-real -- the actual GPU training run still needs Colab, which this environment
+doesn't have, so the honest status stays "ready, not yet executed." What's ready: a 19-cell
+Colab notebook (`finetuning/day9_qlora_colab.ipynb`, QLoRA fine-tune of
+Qwen2.5-1.5B-Instruct on the 400 real pairs, completion-only loss), the comparison harness
+(`finetuning/eval_compare.py`, base/few-shot/QLoRA/optional-frontier, re-executed against the
+real snapshot and compared row-for-row using the project's own existing
+`copilot.evals.golden`-style convention), and templates for the results
+(`finetuning/results_template.md`) and the decision (`docs/adr/007-finetuning-outcome.md`,
+status PENDING with the adopt/don't-adopt framework spelled out) -- see
+`finetuning/README.md` for exactly how to run it. Day 10 (packaging and the job campaign)
+hasn't started and isn't blocked by anything above.

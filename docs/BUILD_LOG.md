@@ -1939,3 +1939,57 @@ prompt ever assumes vendor names are uniformly upper-case.
 
 **No new ADR** -- this is a data-provisioning correction and a verification run, not an
 architectural decision.
+
+## 23 Oct — Day 9 steps 2-3, 5-6: QLoRA fine-tuning benchmark, scaffolded (B7, "Option A")
+
+Scope: the Colab notebook, the comparison harness, and the results/ADR templates for the
+base-vs-few-shot-vs-QLoRA fine-tuning benchmark -- everything except the actual training run
+and real numbers, which need a GPU this cloud sandbox doesn't have. User explicitly chose this
+("Prooceed with option A") over pausing at the GPU gap.
+
+New top-level `finetuning/` directory, deliberately outside `src/`/`scripts/` (and outside
+`pyproject.toml`'s deployed `dependencies` and `mypy`'s `files=["src","scripts"]`), same
+isolation judgment already applied to `mcp<2.0` pinning and `infra/local/`'s Docker-only
+pieces -- see `finetuning/README.md` for the full reasoning. Contents:
+
+- `README.md` -- scope, why the isolation, why no real run happened here, base-model choice
+  with 3 cited sources (chose **Qwen2.5-1.5B-Instruct**, Apache 2.0 -- researched via web
+  search rather than relied on from training knowledge, since this is a fast-moving area), and
+  step-by-step run instructions.
+- `requirements-colab.txt` -- the Colab-only pip list (torch, transformers, peft,
+  bitsandbytes, trl, accelerate, datasets, duckdb), loosely pinned (minimums only) so it
+  doesn't fight Colab's own base-image CUDA versions.
+- `day9_qlora_colab.ipynb` -- 19-cell notebook: installs deps, uploads
+  `evals/datasets/sql_pairs_v1.jsonl` + `MANIFEST.json`, rebuilds the schema card and prompt
+  template from the manifest (not a hand-copied schema), 85/15 train/held-out split
+  (seed=42, writes `held_out.jsonl`), loads the base model in 4-bit NF4 with a LoRA adapter
+  (r=16, alpha=32, standard QLoRA defaults -- no hyperparameter sweep, out of scope for a
+  Day-9 benchmark), tokenizes with completion-only loss (prompt tokens + padding masked to
+  -100, so the loss only ever grades the SQL tokens), trains (3 epochs, batch 4 x grad-accum
+  4, bf16), saves the adapter, runs a 3-example sanity check, and downloads the adapter zip +
+  `held_out.jsonl`. Built via a one-off generator script in the scratchpad (not committed --
+  the repo gets the resulting `.ipynb` only) and validated with `nbformat.validate()`.
+- `eval_compare.py` -- the comparison harness. Re-implements (standalone, so it can run in
+  Colab without the private repo cloned) the project's own existing "re-execute SQL, round
+  floats to 2dp, compare row-for-row" convention from `copilot.evals.golden.run_rows()`/
+  `verify()` -- confirmed by reading those functions before writing this one, not invented
+  fresh. Evaluates base (zero-shot), base + few-shot (lexical Jaccard retrieval, same shape as
+  production's `copilot.sql.examples.retrieve_examples`), and the QLoRA-adapted model against
+  `held_out.jsonl`, each executed against the real snapshot and compared to the ground-truth
+  SQL's own freshly-executed rows. Optional `--include-frontier` row (needs
+  `ANTHROPIC_API_KEY`) is the sprint's own named cut-first item. Reports executable rate,
+  execution accuracy, and mean latency per variant, printed as a table and written to JSON.
+  `ruff check .` clean (added a scoped per-file-ignore for the notebook's S311/I001, same
+  precedent as `scripts/generate_sql_pairs.py`'s own S311 ignore -- see `pyproject.toml`).
+- `results_template.md` -- empty results table + how-to-read-the-numbers notes, explicitly
+  marked "template, not a result."
+- `docs/adr/007-finetuning-outcome.md` -- status PENDING, decision framework spelled out
+  (three conditions: clear accuracy win over both base variants beyond split-seed noise,
+  executable rate at least matching the few-shot baseline, acceptable latency), decision and
+  consequences left as fill-in-after-running.
+
+**Still genuinely not run for real, same honest gap as before:** no GPU in this sandbox. The
+notebook, the harness, and the templates are ready; the actual numbers, the actual adopt/don't
+decision, and the actual results-table fill-in all still need the user to open the notebook in
+Colab (free T4 tier is enough) and run `eval_compare.py` afterward. This is recorded here and
+in `finetuning/README.md` rather than implied otherwise.

@@ -1,0 +1,12 @@
+# Colab-only dependencies for the Day 9 QLoRA fine-tuning benchmark (B7).
+# Deliberately NOT part of pyproject.toml -- see finetuning/README.md for why. Pin loosely
+# (minimum versions only) since Colab's own base image already carries compatible CUDA/driver
+# versions and an exact pin here would fight that rather than help it.
+torch>=2.3.0
+transformers>=4.44.0
+peft>=0.12.0
+bitsandbytes>=0.43.0
+trl>=0.9.6
+accelerate>=0.33.0
+datasets>=2.20.0
+duckdb>=1.0.0
