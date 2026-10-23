@@ -68,7 +68,7 @@ def test_restricted_name_blocks() -> None:
 
 
 def test_raw_row_dump_blocks() -> None:
-    rows = "\n".join(f"SKU{i}|Vendor{i}|{i*10}" for i in range(15))
+    rows = "\n".join(f"SKU{i}|Vendor{i}|{i * 10}" for i in range(15))
     verdict = Guardian().review(_result(answer=f"Here are the rows:\n{rows}"))
     assert verdict.outcome == "block"
     assert "suspected_raw_row_dump" in verdict.reason_codes
@@ -76,7 +76,7 @@ def test_raw_row_dump_blocks() -> None:
 
 def test_short_markdown_table_does_not_block() -> None:
     # A handful of summary rows is normal output, not a raw dump -- must not false-positive.
-    table = "\n".join(f"Vendor{i}|${i*1000}|Tier{i % 3}" for i in range(4))
+    table = "\n".join(f"Vendor{i}|${i * 1000}|Tier{i % 3}" for i in range(4))
     verdict = Guardian().review(_result(answer=f"Summary:\n{table}"))
     assert verdict.outcome == "allow"
 
@@ -111,9 +111,7 @@ def test_vendor_audience_violation_blocks_when_internal_data_feeds_a_draft() -> 
 
 
 def test_action_alone_with_public_only_does_not_trip_audience_check() -> None:
-    verdict = Guardian().review(
-        _result(role="approver", results=[_ar("action", ["confidential"])])
-    )
+    verdict = Guardian().review(_result(role="approver", results=[_ar("action", ["confidential"])]))
     # Only the Action agent's own confidential (its target vendor's terms) touched the
     # answer -- no OTHER specialist contributed internal/confidential, so the audience check
     # does not fire. (Role policy for the approver still allows confidential.)
@@ -149,9 +147,7 @@ def test_unverified_draft_escalates() -> None:
 def test_block_outranks_redact_and_escalate() -> None:
     # A PII hit (redact) AND an unverified draft (escalate) AND a canary leak (block) all in
     # one answer -- block must win, and every finding is still recorded.
-    answer = (
-        f"Contact buyer@example.com. {canary_token('action')}"
-    )
+    answer = f"Contact buyer@example.com. {canary_token('action')}"
     verdict = Guardian().review(_result(answer=answer, verified=False))
     assert verdict.outcome == "block"
     assert {"canary_leak", "pii:email_address", "unverified_grounding"}.issubset(

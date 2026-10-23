@@ -43,9 +43,7 @@ from copilot.rag.permissions import PermissionedRetriever
 from copilot.sql.service import TextToSqlService
 
 
-def _inventory_executor(
-    spec: TaskSpec, con: duckdb.DuckDBPyConnection | None
-) -> AgentResult:
+def _inventory_executor(spec: TaskSpec, con: duckdb.DuckDBPyConnection | None) -> AgentResult:
     forecast = forecast_result_for_inventory(spec, con=con)
     return run_inventory_planning(spec, forecast)
 

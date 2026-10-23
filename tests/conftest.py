@@ -27,6 +27,4 @@ def _isolated_spend_log(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None
     default path can still pass its own `SpendTracker`/`path=` explicitly without this fixture
     getting in the way (it only changes what the *unpatched* default resolves to).
     """
-    monkeypatch.setattr(
-        input_gate_module, "DEFAULT_SPEND_LOG_PATH", tmp_path / "daily_spend.json"
-    )
+    monkeypatch.setattr(input_gate_module, "DEFAULT_SPEND_LOG_PATH", tmp_path / "daily_spend.json")

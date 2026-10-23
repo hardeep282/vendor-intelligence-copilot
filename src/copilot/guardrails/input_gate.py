@@ -65,9 +65,7 @@ _INJECTION_PATTERNS: dict[str, re.Pattern[str]] = {
         r"\bpretend\s+(you('re| are)\s+)?|\bact\s+as\s+(if\s+you('re| are)\s+)?|"
         r"\b(DAN|developer)\s+mode\b|\bjailbreak\b"
     ),
-    "override_instructions": re.compile(
-        r"(?i)\boverride\s+(your\s+)?(system\s+)?instructions?\b"
-    ),
+    "override_instructions": re.compile(r"(?i)\boverride\s+(your\s+)?(system\s+)?instructions?\b"),
 }
 
 # A deliberately small, heuristic scope check: this app answers vendor/procurement/supply-chain

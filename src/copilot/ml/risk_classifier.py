@@ -146,9 +146,9 @@ def make_synthetic_skus(n: int = 2000, seed: int = 42) -> pd.DataFrame:
     markup_pct = (actual_price - purchase_price) / np.maximum(purchase_price, 1e-6)
     sales_to_purchase = total_sales_dollars / np.maximum(total_purchase_dollars, 1e-6)
     excise_burden = excise / np.maximum(total_sales_dollars, 1e-6)
-    volume_category = pd.cut(
-        volume, bins=[0, 10, 25, 50], labels=["Low", "Medium", "High"]
-    ).astype(str)
+    volume_category = pd.cut(volume, bins=[0, 10, 25, 50], labels=["Low", "Medium", "High"]).astype(
+        str
+    )
 
     # Ground truth: thresholded directly on the noisy ProfitMargin value above (plus a small
     # independent label-flip rate) -- not on z, and not on StockTurnover. This is the real
@@ -211,9 +211,7 @@ def build_pipeline(
     clf = (
         RandomForestClassifier(n_estimators=200, max_depth=8, random_state=seed)
         if model == "random_forest"
-        else XGBClassifier(
-            n_estimators=200, max_depth=4, random_state=seed, eval_metric="logloss"
-        )
+        else XGBClassifier(n_estimators=200, max_depth=4, random_state=seed, eval_metric="logloss")
     )
     return Pipeline([("pre", pre), ("clf", clf)]), numeric + categorical
 

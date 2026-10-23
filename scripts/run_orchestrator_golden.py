@@ -50,8 +50,7 @@ def main() -> int:
 
     if not (get_settings().snapshot_dir / "MANIFEST.json").exists():
         print(
-            "error: data/snapshot/ is empty -- run `uv run python scripts/build_snapshot.py` "
-            "first",
+            "error: data/snapshot/ is empty -- run `uv run python scripts/build_snapshot.py` first",
             file=sys.stderr,
         )
         return 1
@@ -67,8 +66,10 @@ def main() -> int:
     else:
         questions = all_questions
 
-    print(f"Running {len(questions)} multi-hop question(s) end to end through the real "
-          "Orchestrator (real LLM calls)...\n")
+    print(
+        f"Running {len(questions)} multi-hop question(s) end to end through the real "
+        "Orchestrator (real LLM calls)...\n"
+    )
 
     llm = LLMClient()
     policy = load_policy()
@@ -79,8 +80,7 @@ def main() -> int:
     chunk_store = ChunkStore(get_chroma_client())
     if chunk_store.count() == 0:
         print(
-            "error: data/chroma/ is empty -- run `uv run python scripts/build_rag_index.py` "
-            "first",
+            "error: data/chroma/ is empty -- run `uv run python scripts/build_rag_index.py` first",
             file=sys.stderr,
         )
         return 1
@@ -88,7 +88,11 @@ def main() -> int:
     rag_service = CorrectiveRagService(llm, retriever)
 
     executors = build_executors(
-        llm=llm, sql_service=sql_service, rag_service=rag_service, retriever=retriever, con=con,
+        llm=llm,
+        sql_service=sql_service,
+        rag_service=rag_service,
+        retriever=retriever,
+        con=con,
         policy=policy,
     )
     orch = Orchestrator(

@@ -19,9 +19,7 @@ from pydantic import BaseModel
 from copilot.agents.model_selection import TaskType
 from copilot.settings import REPO_ROOT
 
-MODEL_SELECTION_GOLDEN_PATH = (
-    REPO_ROOT / "evals" / "datasets" / "model_selection_golden_v1.jsonl"
-)
+MODEL_SELECTION_GOLDEN_PATH = REPO_ROOT / "evals" / "datasets" / "model_selection_golden_v1.jsonl"
 
 
 class ModelSelectionGoldenQuestion(BaseModel):

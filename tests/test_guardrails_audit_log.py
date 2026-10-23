@@ -59,9 +59,7 @@ def test_review_id_defaults_to_none(tmp_path: Path) -> None:
 
 def test_review_id_is_recorded_when_given(tmp_path: Path) -> None:
     path = tmp_path / "guardian_log.jsonl"
-    log_decision(
-        _verdict("escalate"), question="q", role="viewer", path=path, review_id="rid-123"
-    )
+    log_decision(_verdict("escalate"), question="q", role="viewer", path=path, review_id="rid-123")
     row = read_decisions(path)[0]
     assert row["outcome"] == "escalate"
     assert row["review_id"] == "rid-123"

@@ -45,8 +45,11 @@ def test_task_type_correct_scores_1_on_a_match_and_0_on_a_mismatch() -> None:
 
     wrong_type = "regression" if golden.expected_task_type != "regression" else "clustering"
     wrong = ModelSelectionResult(
-        requirement=golden.requirement, task_type=wrong_type, model_family="x",  # type: ignore[arg-type]
-        reasoning="x", abstained=False,
+        requirement=golden.requirement,
+        task_type=wrong_type,
+        model_family="x",  # type: ignore[arg-type]
+        reasoning="x",
+        abstained=False,
     )
     assert task_type_correct(wrong, golden).score == 0.0
 
