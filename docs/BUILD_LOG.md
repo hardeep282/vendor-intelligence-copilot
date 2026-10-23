@@ -1993,3 +1993,49 @@ notebook, the harness, and the templates are ready; the actual numbers, the actu
 decision, and the actual results-table fill-in all still need the user to open the notebook in
 Colab (free T4 tier is enough) and run `eval_compare.py` afterward. This is recorded here and
 in `finetuning/README.md` rather than implied otherwise.
+
+## 23 Oct — real root cause of the CI "Build image" failure (not a new bug, a week-old one)
+
+User reported ~40 GitHub failure notifications. Checked `gh run list`: both `ci.yml` jobs
+(`checks`'s Format check, `image`'s Build image) had been failing on **every** push since
+~14 Oct -- the volume was that one standing pair of failures repeating, not 40 separate bugs.
+
+**Format check -- fixed, verified:** 11 files had drifted from `ruff format`'s output (10
+pre-existing, unrelated to any one day's work, plus the Day 9 notebook's code cells added
+today). `uv run ruff format .` reformatted all 11; `ruff check .`, `mypy`, and the full test
+suite (499 passed) stayed clean. Pushed separately from the root-cause fix below.
+
+**Build image -- real cause found from the actual log, not guessed.** This sandbox can't fetch
+GitHub Actions' raw logs directly (`results-receiver.actions.githubusercontent.com` and the
+Azure blob-storage log URL it redirects to are both outside this session's network allowlist --
+confirmed via direct `curl`, not assumed), so the user pulled the "Build image" step's own
+output from github.com and pasted it in. The real error:
+
+```
+error: Failed to install: torch-2.14.1-...-x86_64.whl (torch==2.14.1)
+  Caused by: failed to copy file ... libtorch_cpu.so ...: No space left on device (os error 28)
+```
+
+Not a network/download failure at all -- the runner's disk filled up. Root cause, traced from
+the log's own download list: `sentence-transformers` (a direct dependency, used for RAG
+embeddings since Day 5) requires `torch`, and PyPI's default linux wheel for `torch` pulls in
+the *entire* NVIDIA CUDA toolkit as separate packages (`nvidia-cublas` 403MB, `nvidia-cudnn-
+cu13` 527MB, `nvidia-cusolver` 191MB, `nvidia-cufft` 204MB, `triton` 236MB, `nvidia-nccl-cu13`
+206MB, `nvidia-cusparselt-cu13` 162MB, more) -- several GB on top of torch's own 528MB -- even
+though this API runs CPU-only in production and never touches a GPU at inference time.
+
+**Fix:** declared `torch` as a direct dependency (required for `[tool.uv.sources]` to apply --
+it only overrides a source for a package already in the project's own dependency graph, not an
+arbitrary transitive one; confirmed by testing both ways) and pointed it at PyTorch's own
+CPU-only wheel index (`download.pytorch.org/whl/cpu`), which has no CUDA packages at all. Same
+"don't carry a dependency this environment can't support" judgment already applied to keeping
+GPU/ML training deps out of `pyproject.toml` entirely (`finetuning/README.md`) -- here applied
+to a dependency that does need to ship, minus its GPU half.
+
+**Known limitation, stated plainly:** `uv.lock` is *not* regenerated as part of this fix.
+`download.pytorch.org` is outside this cloud sandbox's own network allowlist (confirmed with a
+direct `curl` -- 403 at the proxy level, same kind of restriction as the Actions-log fetch
+above), so `uv lock` cannot complete here. The `pyproject.toml` change is pushed; `uv.lock`
+still needs regenerating from a machine with normal internet access (the user's own laptop),
+then committing on top. Until that happens, `uv sync --frozen` correctly reports the lock file
+as out of date -- an expected, named gap, not a new failure mode.
