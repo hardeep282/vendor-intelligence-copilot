@@ -15,6 +15,7 @@ import pytest
 
 import copilot.mcp.server as mcp_server
 from copilot.llm.client import LLMClient
+from copilot.settings import get_settings
 from copilot.sql.service import TextToSqlService
 from tests.fakes.anthropic_fakes import FakeMessagesResource, structured_response
 
@@ -28,6 +29,17 @@ def _clear_lru_caches() -> None:
         getter = getattr(mcp_server, name)
         if hasattr(getter, "cache_clear"):
             getter.cache_clear()
+    # get_settings() is ALSO @lru_cache'd (src/copilot/settings.py) -- on a machine with a real
+    # ANTHROPIC_API_KEY set (in the OS environment or a local .env file), whichever test in the
+    # whole run calls get_settings() first caches a Settings object with that real key baked in,
+    # for the rest of the process. test_ask_vendor_question_reports_a_clean_error_with_no_api_key
+    # below then monkeypatches *os.environ*, which does nothing to that already-cached object --
+    # LLMClient() still sees the real key and the test sees `answered: True` where it expected a
+    # clean "no key" error. Invisible on a machine with no key configured anywhere (this is why
+    # it passed throughout Day 9); real once a real key exists. Same fix already applied in
+    # test_api.py, test_api_ask.py and test_api_dependencies.py -- this file just didn't have it
+    # yet, not a new gap.
+    get_settings.cache_clear()
 
 
 @pytest.fixture(autouse=True)
