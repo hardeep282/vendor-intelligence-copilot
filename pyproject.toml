@@ -20,6 +20,10 @@ dependencies = [
     "rank-bm25>=0.2.2",
     "scikit-learn>=1.9.0",
     "sentence-transformers>=6.1.0",
+    # Declared directly (not just left as sentence-transformers' transitive pull) so
+    # [tool.uv.sources] below actually takes effect -- uv only honors a source override for a
+    # package named in this project's own dependency graph, not an arbitrary transitive one.
+    "torch>=2.2",
     "shap>=0.49.0",
     "sqlglot>=27.0.0",
     "statsforecast>=2.0.4",
@@ -87,6 +91,25 @@ select = ["E", "F", "I", "B", "UP", "S"]
 # "don't let the linter rewrite code it can't run" judgment as the rest of finetuning/'s
 # isolation from the strict src/scripts checks (see finetuning/README.md).
 "finetuning/day9_qlora_colab.ipynb" = ["S311", "I001"]
+
+# `sentence-transformers` (RAG embeddings, Day 5) pulls in `torch` as a required dependency.
+# PyPI's default linux wheel for torch bundles the full NVIDIA CUDA toolkit as separate
+# packages (nvidia-cublas, nvidia-cudnn, nvidia-nccl, triton, ...) -- several GB on top of
+# torch itself -- even though this API runs CPU-only in production and never touches a GPU at
+# inference time (embeddings run fine on CPU for this project's data volumes). That's what was
+# actually filling up the Docker build runner's disk (confirmed from the real CI log on 23 Oct:
+# "No space left on device" while copying torch's .so files), not a network or download issue.
+# Pointing torch at PyTorch's own CPU-only wheel index removes ~2GB of unneeded CUDA packages --
+# same "don't carry a dependency this environment can't actually support" judgment already
+# applied to keeping GPU/ML training deps out of pyproject.toml entirely (see finetuning/
+# README.md), just applied here to a dependency that does need to ship, minus its GPU half.
+[tool.uv.sources]
+torch = [{ index = "pytorch-cpu" }]
+
+[[tool.uv.index]]
+name = "pytorch-cpu"
+url = "https://download.pytorch.org/whl/cpu"
+explicit = true
 
 [tool.mypy]
 python_version = "3.12"
