@@ -6,13 +6,21 @@ from collections import Counter
 
 import pytest
 
-from copilot.data.store import connect
+from copilot.data.store import DB_NAME, connect
 from copilot.evals.golden import GOLDEN_PATH, dataset_hash, load_golden, verify
 from copilot.guardrails.policy import load_policy
 from copilot.settings import get_settings
 
 QUESTIONS = load_golden()
-HAS_SNAPSHOT = (get_settings().snapshot_dir / "MANIFEST.json").exists()
+# Checks for the real database file (DB_NAME, gitignored -- never committed per ADR-002), not
+# MANIFEST.json: the manifest is schema-only and licence-safe, so it IS committed and exists in
+# every environment including a bare CI checkout with no real data at all. Checking the manifest
+# made this skip condition always false in CI, so these tests ran for real against an empty
+# DuckDB connection and failed with CatalogException instead of skipping -- confirmed directly
+# from a real CI run on 23 Oct (test_every_stored_answer_re_executes_identically, among 14
+# others with the same copy-pasted bug across test_golden_v2.py, test_ml_forecast.py,
+# test_agent_specialists.py, and test_orchestrator_wiring.py).
+HAS_SNAPSHOT = (get_settings().snapshot_dir / DB_NAME).exists()
 
 
 def test_forty_unique_questions() -> None:

@@ -11,6 +11,7 @@ import pytest
 
 from copilot.agents.contracts import AgentResult, TaskSpec
 from copilot.agents.wiring import build_executors
+from copilot.data.store import DB_NAME
 from copilot.settings import get_settings
 
 
@@ -72,7 +73,7 @@ def test_inventory_planning_executor_chains_off_a_forecast_without_a_second_call
     # Against this repo's real snapshot (skipped gracefully if it isn't built), a real
     # forecast_demand() call runs -- proving _inventory_executor's internal chaining actually
     # produces a usable AgentResult, not just that it doesn't raise on import.
-    if not (get_settings().snapshot_dir / "MANIFEST.json").exists():
+    if not (get_settings().snapshot_dir / DB_NAME).exists():
         pytest.skip("snapshot not built")
 
     result = executors["inventory_planning"](_spec("inventory_planning", level="portfolio"))

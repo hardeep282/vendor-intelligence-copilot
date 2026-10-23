@@ -10,7 +10,7 @@ from __future__ import annotations
 
 import pytest
 
-from copilot.data.store import connect
+from copilot.data.store import DB_NAME, connect
 from copilot.ml.forecast import (
     SEASONALITY_NOTE,
     ForecastRequest,
@@ -20,7 +20,7 @@ from copilot.ml.forecast import (
 from copilot.settings import get_settings
 
 pytestmark_snapshot = pytest.mark.skipif(
-    not (get_settings().snapshot_dir / "MANIFEST.json").exists(), reason="snapshot not built"
+    not (get_settings().snapshot_dir / DB_NAME).exists(), reason="snapshot not built"
 )
 
 

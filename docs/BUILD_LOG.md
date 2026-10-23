@@ -2039,3 +2039,56 @@ above), so `uv lock` cannot complete here. The `pyproject.toml` change is pushed
 still needs regenerating from a machine with normal internet access (the user's own laptop),
 then committing on top. Until that happens, `uv sync --frozen` correctly reports the lock file
 as out of date -- an expected, named gap, not a new failure mode.
+
+**Follow-up, same day:** `uv.lock` regenerated on the user's laptop (normal internet, so
+`download.pytorch.org` was reachable there) -- confirmed removing every CUDA package except
+one (`nvidia-nccl-cu13`, pulled in separately by `xgboost`, much smaller, left as-is). A
+"fetch first" push rejection while reconciling the laptop's commit with this session's own
+pushed commits was normal git divergence-protection, not data loss -- resolved with a plain
+`git pull` + `git push`.
+
+## 23 Oct (cont.) -- the two real bugs behind the "Tests" step's 15 failures
+
+With Format check and Build image both finally green, the user hit a third failure: CI's
+"Tests" step reporting 15 failed, 484 passed, every failure a
+`duckdb.CatalogException: Catalog Error: Table with name <vendor table> does not exist!` --
+found from the actual uploaded CI log, not guessed.
+
+**Bug 1 -- `.env` fallback made `monkeypatch.delenv` a no-op.**
+`test_ask_vendor_question_reports_a_clean_error_with_no_api_key` in `test_mcp_server.py` used
+`monkeypatch.delenv("ANTHROPIC_API_KEY", raising=False)` to simulate "no key configured."
+`pydantic-settings`' source precedence is `os.environ > .env file > field default` -- deleting
+the OS env var does nothing to hide a real key sitting in the repo's own `.env` file, so
+`Settings()` still read the real key straight out of `.env` and the test's "no key" assumption
+was false from the start. Two sub-fixes were needed: (a) `get_settings()`'s `@lru_cache` was
+not cleared in this file's autouse fixture (three other test files already did this) --
+without clearing it, a *previous* test's cached `Settings` instance could leak in regardless
+of env changes; added `get_settings.cache_clear()` to `_clear_lru_caches()`. (b) even with the
+cache cleared, `delenv` still couldn't hide a key in `.env` -- changed to
+`monkeypatch.setenv("ANTHROPIC_API_KEY", "")`, which *does* win over `.env` since `os.environ`
+ranks first in pydantic-settings' precedence, and an empty string is still falsy to the
+`if not settings.anthropic_api_key` check in `llm/client.py`. Reproduced both the original
+failure and the fix directly in this sandbox with a temporary fake `.env` file (created, used,
+then removed) before trusting it on the user's own laptop. Laptop confirmed 499/499 passed
+afterward.
+
+**Bug 2 -- six test files were checking the wrong file to decide "is the real snapshot here."**
+`MANIFEST.json` (schema and column names only, no data -- see ADR-002) is always committed and
+licence-safe, so it is always present, even in a bare CI checkout with no real vendor data.
+`snapshot.duckdb` (the `DB_NAME` constant in `src/copilot/data/store.py`) is the actual data
+file, correctly `.gitignore`d, and genuinely absent in CI. Six files had copy-pasted a
+skip-if-not-built check against `MANIFEST.json` instead of `DB_NAME`, so the check always
+evaluated to "snapshot exists" and these tests always ran for real in CI against an empty
+DuckDB connection -- `test_golden.py`, `test_golden_v2.py`, `test_ml_forecast.py`,
+`test_agent_specialists.py`, `test_orchestrator_wiring.py`, `test_snapshot.py`,
+`test_store_security.py`. (`test_store_security.py`'s parametrized attack tests happened to
+keep passing anyway -- most attacks fail for a security reason regardless of whether real
+tables exist, and `pytest.raises(duckdb.Error)` accepts `CatalogException` too; only its one
+exact-row-count assertion actually surfaced the bug.) Fixed all six to check `DB_NAME` instead.
+Verified by temporarily moving the real snapshot out of `data/snapshot/`, confirming the 27
+previously-crashing tests now skip cleanly ("32 passed, 27 skipped"), restoring the real
+snapshot, then running the full suite again for real ("499 passed, 0 failed") to confirm the
+fix broke nothing else. `ruff check`, `ruff format --check`, and `mypy` all stayed clean.
+
+**Net effect:** all three CI jobs (`checks`'s Format check, Type check, and Tests; `image`'s
+Build image) should now be green on the same push, for the first time since before 14 Oct.

@@ -6,13 +6,15 @@ import re
 
 import pytest
 
-from copilot.data.store import connect
+from copilot.data.store import DB_NAME, connect
 from copilot.evals.golden import GOLDEN_V2_PATH, dataset_hash, load_golden, verify
 from copilot.guardrails.policy import load_policy
 from copilot.settings import get_settings
 
 QUESTIONS = load_golden(GOLDEN_V2_PATH)
-HAS_SNAPSHOT = (get_settings().snapshot_dir / "MANIFEST.json").exists()
+# See the matching comment in test_golden.py -- checks the real database file, not the always-
+# committed, licence-safe manifest, so this actually skips in CI instead of failing.
+HAS_SNAPSHOT = (get_settings().snapshot_dir / DB_NAME).exists()
 
 
 def test_forty_six_unique_questions() -> None:

@@ -8,11 +8,17 @@ that an LLM could be tricked into writing; the engine must refuse it even if the
 import duckdb
 import pytest
 
-from copilot.data.store import connect
+from copilot.data.store import DB_NAME, connect
 from copilot.settings import get_settings
 
+# Checks the real database file (DB_NAME), not MANIFEST.json -- see the matching fix and
+# comment in tests/test_golden.py. The parametrized `test_engine_refuses` attacks happened to
+# keep passing even with this check broken (most of them fail for a security reason regardless
+# of whether real tables exist, and `pytest.raises(duckdb.Error)` accepts any duckdb error,
+# CatalogException included); only `test_aggregate_reads_still_work`'s exact-count assertion
+# actually surfaced the bug.
 pytestmark = pytest.mark.skipif(
-    not (get_settings().snapshot_dir / "MANIFEST.json").exists(), reason="snapshot not built"
+    not (get_settings().snapshot_dir / DB_NAME).exists(), reason="snapshot not built"
 )
 
 ATTACKS = {

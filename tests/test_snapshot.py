@@ -8,12 +8,16 @@ import json
 import pytest
 
 from copilot.data.guard import SKU_LEVEL_COLUMNS
-from copilot.data.store import connect, snapshot_tables
+from copilot.data.store import DB_NAME, connect, snapshot_tables
 from copilot.guardrails.policy import load_policy
 from copilot.settings import get_settings
 
 SNAP = get_settings().snapshot_dir
-pytestmark = pytest.mark.skipif(not (SNAP / "MANIFEST.json").exists(), reason="snapshot not built")
+# Checks the real database file (DB_NAME), not MANIFEST.json -- the manifest is schema-only and
+# licence-safe, so it's always committed and always present, even in a bare CI checkout with no
+# real data. Checking it made this module-wide skip never actually trigger in CI; see the
+# matching fix and comment in tests/test_golden.py.
+pytestmark = pytest.mark.skipif(not (SNAP / DB_NAME).exists(), reason="snapshot not built")
 
 
 def test_every_table_is_tagged_in_the_policy() -> None:

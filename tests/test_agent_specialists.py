@@ -25,6 +25,7 @@ from copilot.agents.specialists import (
     run_inventory_planning,
     run_knowledge,
 )
+from copilot.data.store import DB_NAME
 from copilot.guardrails.policy import load_policy
 from copilot.ml.forecast import forecast_demand
 from copilot.ml.inventory import demand_stats_from_backtest
@@ -34,7 +35,7 @@ from copilot.settings import get_settings
 from copilot.sql.service import TextToSqlResult
 
 pytestmark_snapshot = pytest.mark.skipif(
-    not (get_settings().snapshot_dir / "MANIFEST.json").exists(), reason="snapshot not built"
+    not (get_settings().snapshot_dir / DB_NAME).exists(), reason="snapshot not built"
 )
 
 
