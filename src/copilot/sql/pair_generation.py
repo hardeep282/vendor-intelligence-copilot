@@ -79,6 +79,34 @@ def _quote(name: str) -> str:
     return name.replace("'", "''")
 
 
+def _display(name: str) -> str:
+    """How a vendor name appears in question text. Title case reads naturally in English, but it
+    is NOT how names are stored -- most are uppercase ('VINEYARD BRANDS INC') and a handful are
+    mixed case ('Dunn Wine Brokers', 'HOOD RIVER DISTILLERS, Inc.')."""
+    return name.title()
+
+
+def _vendor_eq(name: str) -> str:
+    """Case-insensitive vendor filter that copies the name exactly as the question shows it.
+
+    sql_pairs_v1 wrote the stored casing into the SQL (`VendorName = 'VINEYARD BRANDS INC'`)
+    while the question showed `Vineyard Brands Inc` -- so the target needed information that is
+    not in the prompt, and 314 of 327 vendor-filtered pairs had a literal that did not appear in
+    their own question. A model can't learn casing it never sees; a model that guesses
+    "uppercase it" is still wrong for the mixed-case vendors, and a wrong-case `=` returns zero
+    rows with no error (a silent wrong answer). Matching on lower() of both sides removes the
+    guess. Result rows are unchanged: the SELECT still returns the stored VendorName, and no two
+    vendors in the snapshot differ only by case (checked when sql_pairs_v2 was generated).
+    `lower(...) = lower(...)` rather than ILIKE because ILIKE treats `%` and `_` as wildcards.
+    """
+    return f"lower(VendorName) = lower('{_quote(_display(name))}')"
+
+
+def _vendor_in(a: str, b: str) -> str:
+    """Two-vendor version of `_vendor_eq`, same reasoning."""
+    return f"lower(VendorName) IN (lower('{_quote(_display(a))}'), lower('{_quote(_display(b))}'))"
+
+
 def vendor_names(con: duckdb.DuckDBPyConnection, limit: int | None = None) -> list[str]:
     """Real vendor names meeting the min-k threshold, read from the connected database, in a
     stable order. Never hardcoded -- see ADR-002."""
@@ -109,11 +137,8 @@ def generate_candidates(
         for name in vendors:
             out.append(
                 Pair(
-                    question=f"What is {name.title()}'s {label}?",
-                    sql=(
-                        f"SELECT VendorName, {column} FROM {table} "
-                        f"WHERE VendorName = '{_quote(name)}'"
-                    ),
+                    question=f"What is {_display(name)}'s {label}?",
+                    sql=(f"SELECT VendorName, {column} FROM {table} WHERE {_vendor_eq(name)}"),
                     category="lookup",
                     table=table,
                 )
@@ -128,10 +153,10 @@ def generate_candidates(
         for a, b in zip(pool[::2], pool[1::2], strict=False):
             out.append(
                 Pair(
-                    question=f"Which has the higher {label}, {a.title()} or {b.title()}?",
+                    question=f"Which has the higher {label}, {_display(a)} or {_display(b)}?",
                     sql=(
                         f"SELECT VendorName, {column} FROM {table} "
-                        f"WHERE VendorName IN ('{_quote(a)}', '{_quote(b)}') "
+                        f"WHERE {_vendor_in(a, b)} "
                         f"ORDER BY {column} DESC"
                     ),
                     category="comparison",
@@ -207,10 +232,10 @@ def generate_candidates(
         for name in vendors:
             out.append(
                 Pair(
-                    question=f"How did {name.title()}'s monthly demand trend across the year?",
+                    question=f"How did {_display(name)}'s monthly demand trend across the year?",
                     sql=(
                         "SELECT SalesYear, SalesMonth, MonthlyDemand FROM vendor_monthly_demand "
-                        f"WHERE VendorName = '{_quote(name)}' ORDER BY SalesYear, SalesMonth"
+                        f"WHERE {_vendor_eq(name)} ORDER BY SalesYear, SalesMonth"
                     ),
                     category="trend",
                     table="vendor_monthly_demand",
@@ -246,10 +271,10 @@ def generate_candidates(
         for name in vendors:
             out.append(
                 Pair(
-                    question=f"What is {name.title()}'s SKU health mix?",
+                    question=f"What is {_display(name)}'s SKU health mix?",
                     sql=(
                         "SELECT HealthStatus, SKUs FROM vendor_health_mix "
-                        f"WHERE VendorName = '{_quote(name)}' ORDER BY HealthStatus"
+                        f"WHERE {_vendor_eq(name)} ORDER BY HealthStatus"
                     ),
                     category="lookup",
                     table="vendor_health_mix",

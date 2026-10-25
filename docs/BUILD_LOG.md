@@ -2092,3 +2092,52 @@ fix broke nothing else. `ruff check`, `ruff format --check`, and `mypy` all stay
 
 **Net effect:** all three CI jobs (`checks`'s Format check, Type check, and Tests; `image`'s
 Build image) should now be green on the same push, for the first time since before 14 Oct.
+
+## 25 Oct -- Day 9 results review: two real bugs behind the first accuracy numbers
+
+Running `finetuning/eval_compare.py` against the Colab-trained adapter and sanity-checking a
+few rows by hand (rather than trusting the summary table on sight) turned up two bugs that both
+inflated or distorted the base/few-shot/QLoRA comparison -- neither is a training problem, both
+are measurement/data problems.
+
+**Bug 1 -- few-shot retrieval leaked every held-out answer to itself.** `retrieve_few_shot`
+searched the *entire* `sql_pairs_v1.jsonl` for the question most similar to the one being asked,
+with no exclusion for the held-out split drawn from that same file. For all 60 held-out
+questions, the single most "similar" example in the file was the question itself with its own
+ground-truth SQL attached (token-overlap retrieval scores an identical question 1.0), so
+`base_few_shot`'s accuracy was measuring copy-paste, not generalisation -- not a fair third leg
+of the base/few-shot/QLoRA comparison. **Fix:** added `few_shot_pool()` to
+`finetuning/eval_compare.py`, excluding held-out rows from the retrieval pool by id *and* by
+question text (belt and braces -- a re-split or hand edit could preserve one and drop the
+other), wired into `main()` before any variant runs.
+
+**Bug 2 -- vendor-name casing in `sql_pairs_v1` was not learnable from its own question.**
+`generate_candidates` wrote the question in title case (`Vineyard Brands Inc`) but the SQL's
+`WHERE VendorName = '...'` literal used the name's *stored* casing (`VINEYARD BRANDS INC`,
+mostly upper, a few mixed) -- 314 of 327 vendor-filtered pairs. The training target held
+information absent from the prompt, so the model could only guess the casing, and a wrong-case
+`=` filter returns zero rows with no error -- a silent wrong answer, not an execution failure,
+undercounting accuracy for reasons that have nothing to do with SQL-writing ability. **Fix:**
+`src/copilot/sql/pair_generation.py` now builds every vendor filter as
+`lower(VendorName) = lower('<name exactly as the question shows it>')` (`_vendor_eq`/
+`_vendor_in`), and `finetuning/day9_qlora_colab.ipynb` + `eval_compare.py` both prepend a
+`CASE_HINT` line to the prompt (word-for-word identical in both, enforced by
+`tests/test_eval_compare.py::test_notebook_and_script_build_identical_prompts` -- train/serve
+skew on this exact prompt is what Day 8's addendum work was about avoiding elsewhere).
+Regenerated the dataset as `evals/datasets/sql_pairs_v2.jsonl` (`scripts/generate_sql_pairs.py`,
+same seed, same 400 questions, same result rows) rather than overwriting v1, so v1 stays
+available as the historical record of the pre-fix numbers. As a second, independent safety net
+-- not a substitute for the real fix above -- `copilot.evals.golden.verify()`, its
+`evaluators._values_match`, and `eval_compare.py`'s own row comparison now casefold string
+values before comparing, so a correct answer is never marked wrong purely for differing in
+letter case from the stored expectation.
+
+Added `tests/test_eval_compare.py` (few-shot pool exclusion, notebook/script prompt parity, the
+v1-vs-v2 casing rule against the committed dataset) and four new cases to
+`tests/test_generate_sql_pairs.py` for the same casing rule at the generator level. Full suite:
+508 passed. `ruff check`, `ruff format --check`, and `mypy` all clean.
+
+**Not yet done:** re-running `eval_compare.py` against `sql_pairs_v2.jsonl` and the existing
+adapter to get corrected accuracy numbers, and updating `finetuning/results_template.md` with
+them -- the adapter itself does not need retraining, only re-evaluating, since neither bug was
+in the training run.

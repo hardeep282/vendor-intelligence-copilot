@@ -42,6 +42,11 @@ def _is_number(value: Any) -> bool:
 def _values_match(got: Any, want: Any) -> bool:
     if _is_number(got) and _is_number(want):
         return abs(float(got) - float(want)) <= NUMERIC_TOLERANCE
+    if isinstance(got, str) and isinstance(want, str):
+        # Case-insensitive, same reasoning as the alias tolerance above: `ACME CORP` vs
+        # `Acme Corp` is the same vendor, not a wrong answer -- string casing isn't part of
+        # what "correct" means for execution accuracy.
+        return got.lower() == want.lower()
     return bool(got == want)
 
 

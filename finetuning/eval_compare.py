@@ -60,15 +60,43 @@ def build_schema_card(manifest_path: Path) -> str:
     return "\n".join(lines)
 
 
+# Must stay word-for-word identical to the notebook's cell 6 copy: the QLoRA model was trained
+# on prompts containing this line, so evaluating it on a different prompt would be train/serve
+# skew, and the base variants need the same hint to make the comparison fair.
+CASE_HINT = (
+    "Vendor names may be stored in any letter case, so filter them case-insensitively: "
+    "lower(VendorName) = lower('<name exactly as written in the question>')."
+)
+
+
 def build_prompt(schema_card: str, question: str) -> str:
     return (
         "You are a careful SQL analyst. Given the schema below, write ONE DuckDB SELECT "
         "statement that answers the question. Only use the tables and columns shown. "
+        f"{CASE_HINT} "
         "Respond with SQL only, no explanation.\n\n"
         f"### Schema\n{schema_card}\n\n"
         f"### Question\n{question}\n\n"
         "### SQL\n"
     )
+
+
+def few_shot_pool(
+    all_pairs: list[dict[str, Any]], held_out: list[dict[str, Any]]
+) -> list[dict[str, Any]]:
+    """The pairs few-shot retrieval may draw examples from: everything EXCEPT the held-out set.
+
+    Before 25 Oct 2026 this script retrieved from the whole sql_pairs file, held-out rows
+    included -- so for 60 of 60 held-out questions the top "similar example" was the test
+    question itself with its ground-truth SQL attached, and the few-shot row measured copying,
+    not generalisation. Excluded by id and by question text (belt and braces: a re-split or a
+    hand-edited file could keep one and change the other).
+    """
+    held_ids = {p.get("id") for p in held_out if p.get("id") is not None}
+    held_questions = {p["question"] for p in held_out}
+    return [
+        p for p in all_pairs if p.get("id") not in held_ids and p["question"] not in held_questions
+    ]
 
 
 def retrieve_few_shot(question: str, train_pairs: list[dict[str, Any]], k: int = 3) -> str:
@@ -103,6 +131,20 @@ def _extract_sql(generated_text: str) -> str:
     # Stop at the first blank line or a second statement, if the model kept talking.
     first_block = text.split("\n\n")[0]
     return first_block.strip().rstrip(";")
+
+
+def _casefold_value(v: Any) -> Any:
+    """Lowercase string leaves, recurse into dicts/lists; mirrors `copilot.evals.golden`'s own
+    `_casefold_value` (same reasoning: `ACME CORP` vs `Acme Corp` is the same vendor, not a wrong
+    answer -- a candidate query shouldn't be marked incorrect purely for returning different
+    string casing than the ground truth)."""
+    if isinstance(v, str):
+        return v.lower()
+    if isinstance(v, dict):
+        return {k: _casefold_value(x) for k, x in v.items()}
+    if isinstance(v, list):
+        return [_casefold_value(x) for x in v]
+    return v
 
 
 def run_against_snapshot(con: duckdb.DuckDBPyConnection, sql: str) -> list[dict[str, Any]]:
@@ -152,7 +194,8 @@ def evaluate_variant(
         try:
             candidate_rows = run_against_snapshot(con, candidate_sql)
             executable = True
-            correct = candidate_rows == ground_truth_rows
+            # Case-insensitive on string values -- see `_casefold_value` docstring.
+            correct = _casefold_value(candidate_rows) == _casefold_value(ground_truth_rows)
             error = None
         except duckdb.Error as exc:
             executable = False
@@ -251,8 +294,8 @@ def main() -> None:
         "--train-pairs",
         type=Path,
         default=None,
-        help="evals/datasets/sql_pairs_v1.jsonl, for few-shot retrieval (defaults to held-out's "
-        "sibling file of the same name one directory up)",
+        help="evals/datasets/sql_pairs_v2.jsonl, for few-shot retrieval (defaults to a file of "
+        "that name next to --held-out). Held-out rows are always removed from it first.",
     )
     parser.add_argument("--include-frontier", action="store_true")
     parser.add_argument("--out", type=Path, default=Path("eval_compare_results.json"))
@@ -262,8 +305,14 @@ def main() -> None:
     schema_card = build_schema_card(manifest_path)
     held_out = load_held_out(args.held_out)
 
-    train_pairs_path = args.train_pairs or (args.held_out.parent / "sql_pairs_v1.jsonl")
-    train_pairs = load_held_out(train_pairs_path) if train_pairs_path.exists() else []
+    train_pairs_path = args.train_pairs or (args.held_out.parent / "sql_pairs_v2.jsonl")
+    all_pairs = load_held_out(train_pairs_path) if train_pairs_path.exists() else []
+    train_pairs = few_shot_pool(all_pairs, held_out)
+    if all_pairs:
+        print(
+            f"few-shot pool: {len(train_pairs)} pairs "
+            f"({len(all_pairs) - len(train_pairs)} held-out rows removed from {len(all_pairs)})"
+        )
     if not train_pairs:
         print(
             f"warning: no train-pairs file found at {train_pairs_path} -- few-shot variant will "

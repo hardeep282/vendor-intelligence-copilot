@@ -6,9 +6,13 @@ Purpose : CLI entrypoint for `copilot.sql.pair_generation` (read its docstring f
           generation time rather than hardcoding any.
 Run     : uv run python scripts/generate_sql_pairs.py [--target 400] [--seed 42]
           (needs a built snapshot: scripts/build_snapshot.py "path/to/Vendor_Summary.xlsx" first)
-Outputs : evals/datasets/sql_pairs_v1.jsonl (one execution-verified, validator-passed pair per
+Outputs : evals/datasets/sql_pairs_v2.jsonl (one execution-verified, validator-passed pair per
           line) and a sibling manifest (count, per-category/table breakdown, dataset hash)
           mirroring golden_v1's own manifest pattern.
+Versions: v1 (kept, unchanged) wrote stored vendor casing into the SQL while the question showed
+          title case -- a target the model could not infer from its prompt. v2 matches vendors
+          case-insensitively on the name exactly as the question shows it; same seed, same 400
+          questions, same result rows (see docs/BUILD_LOG.md, Day 9 casing fix).
 """
 
 from __future__ import annotations
@@ -30,12 +34,18 @@ from copilot.sql.pair_generation import (
     verify_and_filter,
 )
 
-OUT_PATH = REPO_ROOT / "evals" / "datasets" / "sql_pairs_v1.jsonl"
-MANIFEST_PATH = REPO_ROOT / "evals" / "datasets" / "sql_pairs_v1.manifest.json"
+OUT_PATH = REPO_ROOT / "evals" / "datasets" / "sql_pairs_v2.jsonl"
 
 
 def _dataset_hash(path: Path) -> str:
     return hashlib.sha256(path.read_bytes()).hexdigest()
+
+
+def manifest_path_for(out_path: Path) -> Path:
+    """sql_pairs_v2.jsonl -> sql_pairs_v2.manifest.json, next to it. Derived from --out rather
+    than a fixed constant, so writing to a different file never overwrites another version's
+    manifest."""
+    return out_path.with_name(out_path.stem + ".manifest.json")
 
 
 def write_dataset(pairs: list[Pair], out_path: Path = OUT_PATH) -> dict[str, Any]:
@@ -59,7 +69,7 @@ def write_dataset(pairs: list[Pair], out_path: Path = OUT_PATH) -> dict[str, Any
         "by_table": table_breakdown(pairs),
         "sha256": _dataset_hash(out_path),
     }
-    MANIFEST_PATH.write_text(json.dumps(manifest, indent=2) + "\n", encoding="utf-8")
+    manifest_path_for(out_path).write_text(json.dumps(manifest, indent=2) + "\n", encoding="utf-8")
     return manifest
 
 

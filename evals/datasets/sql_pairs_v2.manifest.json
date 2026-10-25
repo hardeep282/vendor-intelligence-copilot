@@ -1,0 +1,22 @@
+{
+  "count": 400,
+  "by_category": {
+    "lookup": 285,
+    "comparison": 51,
+    "trend": 43,
+    "aggregation": 21
+  },
+  "by_table": {
+    "vendor_logistics_cost": 48,
+    "vendor_revenue_summary": 49,
+    "vendor_monthly_demand": 42,
+    "vendor_health_mix": 37,
+    "vendor_tiering": 40,
+    "vendor_full_cost": 48,
+    "vendor_pareto": 40,
+    "vendor_rankings": 46,
+    "vendor_profit_leakage": 49,
+    "portfolio_monthly_demand": 1
+  },
+  "sha256": "e3ea810e7bbb43e058450c860c820e741953d901c88b76161acfa2448fb6610b"
+}

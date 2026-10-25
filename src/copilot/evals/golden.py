@@ -76,14 +76,32 @@ def dataset_hash(path: Path = GOLDEN_PATH) -> str:
     return hashlib.sha256(path.read_bytes()).hexdigest()
 
 
+def _casefold_value(v: Any) -> Any:
+    """Lowercase string leaves, recurse into dicts/lists; everything else passes through
+    unchanged. Row equality here is about whether two result sets carry the same data, not
+    whether they agree on string casing -- `ACME CORP` and `Acme Corp` are the same vendor, and
+    a generated query that returns one case or the other is not a wrong answer. Comparing with
+    exact case would also make this check sensitive to upstream data-casing drift that has
+    nothing to do with whether the stored SQL is still correct."""
+    if isinstance(v, str):
+        return v.lower()
+    if isinstance(v, dict):
+        return {k: _casefold_value(x) for k, x in v.items()}
+    if isinstance(v, list):
+        return [_casefold_value(x) for x in v]
+    return v
+
+
 def verify(con: duckdb.DuckDBPyConnection, questions: list[GoldenQuestion]) -> list[str]:
-    """Re-run every SQL question; return a list of mismatch descriptions (empty = all verified)."""
+    """Re-run every SQL question; return a list of mismatch descriptions (empty = all verified).
+    Comparison is case-insensitive on string values (see `_casefold_value`) -- only the data
+    itself, not its casing, is what "stored result differs" should mean."""
     problems: list[str] = []
     for q in questions:
         if q.sql is None:
             continue
-        got = json.loads(json.dumps(run_rows(con, q.sql), default=str))
-        want = json.loads(json.dumps(q.expected_rows, default=str))
+        got = _casefold_value(json.loads(json.dumps(run_rows(con, q.sql), default=str)))
+        want = _casefold_value(json.loads(json.dumps(q.expected_rows, default=str)))
         if got != want:
             problems.append(f"{q.id}: stored result differs from a fresh execution")
     return problems

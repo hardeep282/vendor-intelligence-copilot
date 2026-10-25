@@ -11,6 +11,7 @@ snapshot and real vendor names (ADR-002); that boundary is exactly why `generate
 from __future__ import annotations
 
 import random
+import re
 
 import duckdb
 import pytest
@@ -102,7 +103,7 @@ def test_comparison_template_never_compares_a_vendor_to_itself(con, rng):
     candidates = generate_candidates(con, rng, vendors)
     comparisons = [c for c in candidates if c.category == "comparison"]
     for c in comparisons:
-        assert c.sql.count("VendorName IN") == 1
+        assert c.sql.count("lower(VendorName) IN") == 1
 
 
 def test_candidates_are_pure_sql_text_not_yet_executed(con, rng):
@@ -168,3 +169,41 @@ def test_every_kept_pair_passes_the_real_validator_rules(con, rng):
     candidates = generate_candidates(con, rng, ["ACME BEVERAGES", "NORTHWIND SPIRITS"])
     kept, _ = verify_and_filter(con, candidates)
     assert len(kept) > 0
+
+
+# -- vendor-name casing (sql_pairs_v2) -------------------------------------------------------
+# v1 put the stored casing ('ACME BEVERAGES') in the SQL but title case ('Acme Beverages') in the
+# question, so the training target held information the prompt did not. These pin the v2 rule:
+# every vendor literal in the SQL is copied verbatim from the question and matched with lower().
+
+_VENDOR_LITERAL = re.compile(r"lower\('((?:[^']|'')*)'\)")
+
+
+def test_no_template_filters_vendors_with_case_sensitive_equality(con, rng):
+    candidates = generate_candidates(con, rng, ["ACME BEVERAGES", "NORTHWIND SPIRITS"])
+    for c in candidates:
+        assert not re.search(r"WHERE VendorName (=|IN)", c.sql), c.sql
+
+
+def test_every_vendor_literal_in_the_sql_appears_verbatim_in_the_question(con, rng):
+    candidates = generate_candidates(con, rng, ["ACME BEVERAGES", "NORTHWIND SPIRITS"])
+    vendor_filtered = [c for c in candidates if "lower(VendorName)" in c.sql]
+    assert vendor_filtered
+    for c in vendor_filtered:
+        for literal in _VENDOR_LITERAL.findall(c.sql):
+            assert literal.replace("''", "'") in c.question, (c.question, c.sql)
+
+
+def test_mixed_case_stored_vendor_still_returns_its_row(con, rng):
+    # A vendor stored in mixed case -- the shape that made a wrong-case `=` filter return zero
+    # rows, with no error, in the real snapshot.
+    con.execute(
+        "INSERT INTO vendor_revenue_summary VALUES "
+        "('Harbor Wine Brokers', 3, 9000.0, 900.0, 10.0, 8100.0, 4.5, 10.0, true)"
+    )
+    candidates = generate_candidates(con, rng, ["Harbor Wine Brokers"])
+    lookup = next(
+        c for c in candidates if c.category == "lookup" and c.table == "vendor_revenue_summary"
+    )
+    assert "Harbor Wine Brokers" in lookup.question
+    assert con.execute(lookup.sql).fetchall() == [("Harbor Wine Brokers", 9000.0)]
