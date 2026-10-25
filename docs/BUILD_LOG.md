@@ -2174,3 +2174,41 @@ harness.
 numbers actually worth writing into `finetuning/results_template.md` and
 `docs/adr/007-finetuning-outcome.md`. The adapter itself still does not need retraining -- all
 three bugs found today were in the measurement script, not the training run.
+
+## 25 Oct (cont.) -- Bug 4, the real one: the adapter never trained at all
+
+Re-running `eval_compare.py` with Bug 3's fix in place made `base_zero_shot` and `qlora` come
+back with *identical* executable and correct counts -- twice, across two separate runs. With
+greedy decoding over 100+ tokens that is not a plausible coincidence, so before writing
+anything down: generated the same question from the base model and from the "fine-tuned"
+model side by side. The two outputs were byte-for-byte identical. Checked the adapter file
+itself next (`adapter_config.json` and file sizes looked completely normal -- real target
+modules, a real 74MB `adapter_model.safetensors`), then checked whether its LoRA `B` matrices
+(which PEFT initializes to all-zero before any training) had actually moved: all 196 of them
+were still exactly zero. The adapter was mathematically a no-op -- not "fine-tuning didn't
+help," but "fine-tuning never happened."
+
+Root cause, found by re-reading the training notebook's own `trainer.train()` output: training
+loss was reported as exactly `0.000000` at every logged step. Traced to
+`tokenize_example()`'s `MAX_LEN = 512`: the real prompt (schema card + question + `CASE_HINT`)
+runs 650-700+ tokens on its own (confirmed: 651 tokens for one sample, 713 as the worst case
+across the real 340-example training set) -- already past the 512-token cap *before the SQL
+answer is even appended*. Every training example therefore lost its entire answer to
+truncation, every label ended up masked to `-100` (nothing left to grade the loss on), and
+`trainer.train()` ran its full 3 epochs / 66 steps computing a loss of zero the whole way,
+never updating a single weight. The adapter saved at the end was still sitting at its
+untrained initialization -- consistent with every earlier observation: identical outputs to
+the base model, all-zero `B` matrices, a flat 0.0 training loss.
+
+**A contributing factor, not a separate bug:** the person training this had also walked away
+mid-run during an earlier attempt and the Colab runtime may have disconnected -- a real risk,
+but not what actually caused this particular all-zero result; the token-truncation bug alone
+is sufficient to explain it and would have produced the same zero-loss result even in one
+uninterrupted sitting.
+
+**Fix:** `MAX_LEN` raised from 512 to 1024 in `finetuning/day9_qlora_colab.ipynb`'s tokenization
+cell -- comfortable headroom above the measured 713-token worst case. Requires a real
+retraining run (this is the one bug today that does need the GPU step redone, not just
+re-evaluation) -- not yet executed as of this entry. Once retrained: confirm the logged loss
+actually decreases before trusting the adapter, then re-run `eval_compare.py` a third time for
+numbers worth writing into `results_template.md` and the ADR.
