@@ -102,6 +102,35 @@ def test_prompt_tells_the_model_to_match_vendor_names_case_insensitively(ec):
     assert "lower(VendorName) = lower(" in ec.build_prompt("t: a", "q?")
 
 
+# -- extraction: trailing prose after a fenced answer -----------------------------------------
+# Found 25 Oct 2026 re-running the comparison for real: an instruct model very commonly writes
+# ```sql ... ``` and then keeps explaining itself afterward. The old extraction stripped fence
+# markers with one greedy regex that also ate the blank line separating the SQL from that
+# prose, so the "extracted SQL" was valid SQL with an English paragraph glued directly onto the
+# end -- a DuckDB syntax error on every one of these, which is why `executable_rate` looked far
+# worse than the model's answers actually were.
+
+
+def test_extraction_drops_prose_that_follows_a_closed_fence(ec):
+    raw = (
+        "```sql\nSELECT VendorName FROM vendor_rankings WHERE VendorName = 'X';\n```\n\n"
+        "This query joins the `vendor_rankings` table to answer the question."
+    )
+    sql = ec._extract_sql(raw)
+    assert sql == "SELECT VendorName FROM vendor_rankings WHERE VendorName = 'X'"
+    assert "This query" not in sql
+
+
+def test_extraction_still_works_with_no_fence_at_all(ec):
+    raw = "SELECT VendorName FROM vendor_rankings WHERE VendorName = 'X'"
+    assert ec._extract_sql(raw) == raw
+
+
+def test_extraction_falls_back_to_blank_line_split_on_an_unclosed_fence(ec):
+    raw = "```sql\nSELECT VendorName FROM vendor_rankings WHERE VendorName = 'X'"
+    assert ec._extract_sql(raw) == "SELECT VendorName FROM vendor_rankings WHERE VendorName = 'X'"
+
+
 # -- the committed v2 dataset ----------------------------------------------------------------
 
 

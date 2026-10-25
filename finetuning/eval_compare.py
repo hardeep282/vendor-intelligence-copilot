@@ -122,15 +122,25 @@ def retrieve_few_shot(question: str, train_pairs: list[dict[str, Any]], k: int =
 
 
 def _extract_sql(generated_text: str) -> str:
-    """Generated text may include markdown fences or trailing prose -- take the first
-    statement-shaped chunk. Not a safety validator (this script measures a research baseline,
-    not a production path) -- `copilot.sql.validator` is what the real app runs candidate SQL
-    through; this is a much smaller "get the SQL out of the model's text" extraction."""
+    """Generated text may include markdown fences or trailing prose -- take ONLY what is
+    between an explicit fence's open/close markers when one exists, never the first blank-line-
+    delimited block of the whole text. An instruct model very commonly writes ```sql ... ```
+    and then keeps talking afterward ("This query joins..."); the old approach stripped the
+    fence markers with a single greedy regex, which also ate the blank line between the SQL and
+    that trailing prose, so prose ended up glued directly onto the SQL with nothing to split on
+    -- found 25 Oct 2026 re-running Day 9's own comparison, matching real `base_zero_shot`
+    outputs that executed as a DuckDB syntax error for exactly this reason. Falls back to the
+    old blank-line heuristic only when there's no fence at all. Not a safety validator (this
+    script measures a research baseline, not a production path) -- `copilot.sql.validator` is
+    what the real app runs candidate SQL through."""
     text = generated_text.strip()
-    text = re.sub(r"^```sql\s*|^```\s*|```$", "", text, flags=re.MULTILINE).strip()
-    # Stop at the first blank line or a second statement, if the model kept talking.
-    first_block = text.split("\n\n")[0]
-    return first_block.strip().rstrip(";")
+    fence = re.search(r"```(?:sql)?\s*\n(.*?)```", text, flags=re.DOTALL)
+    if fence:
+        text = fence.group(1).strip()
+    else:
+        text = re.sub(r"^```sql\s*|^```\s*", "", text)
+        text = text.split("\n\n")[0]
+    return text.strip().rstrip(";")
 
 
 def _casefold_value(v: Any) -> Any:

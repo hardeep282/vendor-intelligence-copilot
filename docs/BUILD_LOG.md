@@ -2137,7 +2137,40 @@ v1-vs-v2 casing rule against the committed dataset) and four new cases to
 `tests/test_generate_sql_pairs.py` for the same casing rule at the generator level. Full suite:
 508 passed. `ruff check`, `ruff format --check`, and `mypy` all clean.
 
-**Not yet done:** re-running `eval_compare.py` against `sql_pairs_v2.jsonl` and the existing
-adapter to get corrected accuracy numbers, and updating `finetuning/results_template.md` with
-them -- the adapter itself does not need retraining, only re-evaluating, since neither bug was
-in the training run.
+## 25 Oct (cont.) -- a third bug, found by actually reading 3 raw generations
+
+Re-ran `eval_compare.py` for real against the Colab-trained adapter after the two fixes above.
+The printed table (`execution_accuracy` near zero for every variant, `base_few_shot` a flat
+0.0) was implausible enough to not trust on sight, so before writing a single number into
+`results_template.md`, printed 3 raw model outputs next to what the extraction code pulled out
+of them (exactly `copilot.evals.golden`'s own "re-execute and look" standard, applied to the
+measurement script itself this time) -- 2 of 3 showed the real cause immediately.
+
+**Bug 3 -- `_extract_sql`'s fence-stripping regex ate the blank line that separated the SQL
+from an instruct model's trailing explanation.** Qwen2.5-1.5B-Instruct very commonly answers
+with `` ```sql ... ``` `` and then keeps talking afterward ("This query joins the
+`vendor_rankings` table..."). The old extraction removed both fence markers with one greedy
+`re.sub(r"^```sql\s*|^```\s*|```$", ...)`: the alternative matching the *closing* fence also
+consumed the blank line right after it (`\s*` is greedy and treats newlines as whitespace), so
+the SQL and the trailing prose ended up glued into one paragraph with nothing left to split
+on. The result was syntactically valid SQL with an English sentence appended directly to the
+end -- a guaranteed DuckDB syntax error, which is why `executable_rate` looked catastrophic
+(16.7%) for reasons that had nothing to do with whether the SQL itself was any good. **Fix:**
+`_extract_sql` now looks for an explicit fenced block first and takes *only* the text between
+its open and close markers (`re.search(r"```(?:sql)?\s*\n(.*?)```", text, flags=re.DOTALL)`),
+falling back to the old blank-line heuristic only when there's no fence at all. Verified
+against the actual failing outputs before touching the real test suite. Added three cases to
+`tests/test_eval_compare.py` pinning this exact failure mode (closed fence with trailing
+prose, no fence at all, an unclosed fence). Full suite: 511 passed.
+
+Separately, a real (non-bug) finding from the same 3 samples: the un-fine-tuned base model
+does not reliably follow the `CASE_HINT` instruction -- one sample matched vendor names with
+their title-case question spelling directly (`VendorName IN ('Ole Smoky Distillery Llc', ...)`)
+instead of wrapping both sides in `lower(...)`, which returns zero rows against the real,
+upper-case-stored data. Worth tracking once real numbers exist, not something to fix in the
+harness.
+
+**Still not yet done:** re-running `eval_compare.py` again with this third fix in place to get
+numbers actually worth writing into `finetuning/results_template.md` and
+`docs/adr/007-finetuning-outcome.md`. The adapter itself still does not need retraining -- all
+three bugs found today were in the measurement script, not the training run.
