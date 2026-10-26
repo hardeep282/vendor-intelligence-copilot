@@ -2212,3 +2212,40 @@ retraining run (this is the one bug today that does need the GPU step redone, no
 re-evaluation) -- not yet executed as of this entry. Once retrained: confirm the logged loss
 actually decreases before trusting the adapter, then re-run `eval_compare.py` a third time for
 numbers worth writing into `results_template.md` and the ADR.
+
+## 25-26 Oct (cont.) -- retrained for real; Day 9's actual result
+
+Retrained with `MAX_LEN=1024` in place, on Colab's T4, one uninterrupted sitting this time.
+Training loss: 0.551 → 0.045 → 0.015 → 0.002 → 0.0004 → 0.0006 across the 66 logged steps -- a
+real curve, not the flat `0.000000` from the broken run. Before trusting anything: the
+notebook's own three sanity-check examples (end of training) matched their ground-truth SQL
+**exactly, word for word**, including correctly using the `lower(...)` casing pattern -- a much
+stronger signal than a summary accuracy number would have been on its own.
+
+Re-ran `eval_compare.py` against the real adapter:
+
+```
+variant             n  executable_rate  execution_accuracy  mean_latency_s
+--------------------------------------------------------------------------
+base_zero_shot     60             0.25               0.017           6.764
+base_few_shot      60            0.333                 0.1           3.828
+qlora              60              1.0                 1.0           4.424
+```
+
+qlora clearly diverges from the base model this time (unlike the two broken runs, where it was
+byte-identical) -- 1.0 execution accuracy against 0.017 and 0.1 for the un-tuned variants, and
+no latency penalty either. `finetuning/results_template.md` and `docs/adr/
+007-finetuning-outcome.md` filled in with these real numbers: **adopt, conditionally** -- the
+one named condition being that `sql_pairs_v2`'s fixed question-template family means this
+proves the model learned *that* family thoroughly, not that it generalizes to arbitrary new
+question phrasings; validate against a broader set before this replaces the frontier-API call
+in `TextToSqlService`'s primary path. Full suite still 511 passed; nothing in `src/` touched
+by this entry.
+
+**Net effect, four bugs total today, in order found:** few-shot retrieval leakage (measurement
+bug), unlearnable vendor casing in `sql_pairs_v1` (training-data bug), an SQL-extraction
+regex eating trailing model prose (measurement bug), and a `MAX_LEN=512` token cap that
+silently truncated away every training example's answer (the one real training bug, requiring
+an actual GPU retrain). Every one of them was found the same way -- reading a handful of raw
+results by hand instead of trusting a summary table on sight -- before any number got written
+down as a fact.

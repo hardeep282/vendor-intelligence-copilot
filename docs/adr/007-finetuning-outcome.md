@@ -1,23 +1,25 @@
 # ADR-007: Fine-tuning outcome — adopt or don't adopt a QLoRA-tuned SQL model
 
-**Status:** PENDING — scaffolded 23 Oct 2026, not yet decided. No GPU was available in the
-cloud sandbox that built this scaffolding, so this ADR records the decision framework now and
-waits for a real run's numbers before anything under "Decision" is filled in.
+**Status:** Accepted, conditionally — 26 Oct 2026, from a real run on Colab's free T4 tier.
+See `finetuning/results_template.md` for the full numbers and the bugs found and fixed before
+trusting them (three in the measurement code, one real training bug that required retraining).
 
 ## Context
 
 Day 9 (B7 in the sprint plan) asks for a fine-tuning benchmark: take a small open model, QLoRA
 fine-tune it on this project's own execution-verified question→SQL pairs
-(`evals/datasets/sql_pairs_v1.jsonl`, 400 pairs generated and verified for real on 23 Oct — see
-`docs/BUILD_LOG.md`), and compare it honestly against the un-tuned base model (zero-shot and
-few-shot) to decide whether fine-tuning is worth adopting for this project's text-to-SQL path.
-"Honestly" per the sprint brief means either outcome — adopt or don't — is a valid, complete
-answer; this is a benchmark, not a foregone conclusion that fine-tuning must win.
+(`evals/datasets/sql_pairs_v2.jsonl` — v1 had an unlearnable vendor-casing bug, see
+`docs/BUILD_LOG.md`'s 25 Oct entries), and compare it honestly against the un-tuned base model
+(zero-shot and few-shot) to decide whether fine-tuning is worth adopting for this project's
+text-to-SQL path. "Honestly" per the sprint brief means either outcome — adopt or don't — is a
+valid, complete answer; this is a benchmark, not a foregone conclusion that fine-tuning must
+win.
 
-The fine-tuning itself needs a GPU this sandbox doesn't have. `finetuning/day9_qlora_colab.ipynb`
-and `finetuning/eval_compare.py` were built and are ready to run in Google Colab (free T4 tier);
-see `finetuning/README.md` for the full "how to run it" instructions. This ADR will be filled in
-once that run produces real numbers, written to `finetuning/results_template.md`.
+The fine-tuning ran on Google Colab's free T4 tier, via `finetuning/day9_qlora_colab.ipynb`,
+evaluated with `finetuning/eval_compare.py` (see `finetuning/README.md` for how to run both).
+The first training attempt silently failed to train at all (a token-truncation bug, fixed and
+retrained — full story in `docs/BUILD_LOG.md`); the numbers below are from the retrained
+adapter, sanity-checked against its own training examples before being trusted.
 
 ## Decision framework
 
@@ -41,18 +43,37 @@ decision is "don't adopt yet" with the specific gap named — not a forced yes.
 
 ## Decision
 
-`<fill in once finetuning/results_template.md has real numbers>`
+All three criteria pass clearly, on real numbers:
+
+1. **Execution accuracy:** qlora 1.0 vs. base_zero_shot 0.017 and base_few_shot 0.1 — not a
+   single-digit-point difference that could be split-seed noise; a 0.9-point gap.
+2. **Executable rate:** qlora 1.0 vs. base_few_shot's 0.333 — clearly better, not a regression.
+3. **Latency:** qlora's 4.424s mean is actually lower than base_zero_shot's 6.764s and close to
+   base_few_shot's 3.828s — no latency penalty for adopting it, on this benchmark's own
+   single-example, no-batching measurement (see the caveat below on what that does and doesn't
+   prove about production serving latency).
+
+**Adopt, with one explicit condition before this becomes the primary production path, not a
+caveat buried in the fine print:** `sql_pairs_v2` is built from a small, fixed family of
+question templates applied to real vendors and real data — a perfect score here is a genuine,
+non-trivial result (the model has thoroughly learned that template family on the real schema),
+but it is not evidence the model generalizes to question phrasings or intents outside that
+family. Before this replaces the frontier-API call in `TextToSqlService`'s primary path,
+validate it against a broader, more naturalistic question set than the fixed templates this
+benchmark was trained and tested on — that is the one thing this result does not yet prove.
 
 ## Consequences
 
-`<fill in — if adopted: what changes in copilot.sql.service.TextToSqlService and where the
-adapter/model gets deployed; if not adopted: what, if anything, from this benchmark is worth
-keeping (e.g. the 400-pair golden-adjacent dataset is reusable for future eval work regardless
-of this decision)>`
-
-## Status note
-
-This ADR stays PENDING until someone runs the Colab notebook and `eval_compare.py` end to end
-and fills in the three sections above with real numbers and a real decision. Do not mark this
-Accepted based on the scaffolding alone — the scaffolding is untested against a real training
-run.
+- **If/when wired into `copilot.sql.service.TextToSqlService`:** the adapter would need to be
+  hosted somewhere with GPU inference, not the CPU-only infra the rest of this project
+  deliberately targets (see `finetuning/README.md`'s reasoning for keeping GPU deps out of
+  `pyproject.toml` entirely) — this is a real deployment decision, not a drop-in swap, and is
+  explicitly **not** done as part of this ADR. Recorded here as the next concrete step, not
+  actioned.
+- **Kept either way:** `evals/datasets/sql_pairs_v2.jsonl` (400 execution-verified, case-
+  consistent pairs) is reusable for future eval work regardless of what happens with the
+  adapter itself; `finetuning/eval_compare.py`'s re-execute-and-compare pattern is a template
+  for benchmarking any future model swap the same honest way.
+- **Not done, flagged as a known gap:** the frontier-API row (`--include-frontier`) was the
+  sprint's own named cut-first item and was not run — this ADR compares against the base model,
+  not against what `TextToSqlService` actually calls in production today.
