@@ -18,7 +18,7 @@ The depth track starts next, scheduled in that report)
 | 7 | Guardian, guardrails, approvals | **Build done: 8 of 8 steps shipped** (injection classifier cut-first) |
 | 8 | Product, API keys, latency budget, evals in CI, release v0.1 (Addendum A2 §1) | **Build done: 7 of 7 steps shipped** -- v0.1.0 not yet tagged, see "Next step" |
 | 9 | Fine-tuning benchmark and MCP (MCP never cut) | **Build done: 6 of 6 steps shipped.** Step 1 (SQL pair generator) and step 4 (MCP server) done and run for real; steps 2-3 and 5-6 (Colab QLoRA fine-tune, base/few-shot/QLoRA comparison, results table + ADR) retrained for real on Colab's T4 after fixing four bugs -- see `docs/BUILD_LOG.md`'s 25-26 Oct entries. **ADR-007: adopt, conditionally** (validate against a broader question set before replacing the frontier-API call in production) |
-| 10 | Package and launch the job campaign | **Build half done** (27 Oct): README re-checked and corrected, case-study page published, Code Map page regenerated for Days 1-10, Progress Tracker Sprint tab, version 0.1.1, `docs/SPRINT_REPORT.md`. Yours: push tag `v0.1.1`, record demo, make repo public. Career half in progress |
+| 10 | Package and launch the job campaign | **Build half done** (27 Oct): README re-checked and corrected, case-study page published, Code Map page regenerated for Days 1-10, Progress Tracker Sprint tab, version 0.1.1, `docs/SPRINT_REPORT.md`. Career half prepared: 4 CV variants, interview kit, 13-role shortlist. Yours: push tag `v0.1.1`, record demo, make repo public, send applications |
 
 ## Day 3 checklist (sprint doc v2/v3 D3)
 

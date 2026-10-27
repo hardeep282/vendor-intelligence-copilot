@@ -13,7 +13,7 @@ Date: Tue 27 Oct 2026 · Release: `v0.1.1` (tag to be pushed from your machine, 
 | Progress Tracker page | **Updated:** new Sprint tab (all ten days), current RAID, next steps |
 | Code Map page, one-time end-of-sprint update | **Done, Version 9, Days 1–10.** Now generated from `docs/CODE_MAP.md` by `scripts/build_code_map_page.py` so it can't drift again |
 | Final Daily Sprint Report | This file |
-| Career half: CV variants, LinkedIn, pitch, applications | In progress in the same chat (separate deliverables, not in the repo) |
+| Career half: CV variants, LinkedIn, pitch, applications | **Prepared (27 Oct), outside the repo:** 4 CV variants built from your locked master (saved to Downloads › CVs for Country and Remote based jobs › AI_Roles_Oct2026), an interview-kit page (60-second and 5-minute pitch, LinkedIn headline/About/Featured/post, 40 Tier-A questions with project-grounded answers, tough follow-ups), and a shortlist of 13 vetted live roles (CSV in the same folder). **Sending the applications is yours** |
 
 ### Found and fixed while closing out
 
