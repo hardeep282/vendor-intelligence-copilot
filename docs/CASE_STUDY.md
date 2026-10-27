@@ -1,7 +1,9 @@
 # Case study: Vendor Intelligence Copilot
 
-*Content for the case-study page on the portfolio landing site. Publish once the landing page
-exists (Day 2 scope, still pending); keep this file as the source of truth and edit here first.*
+*Source text for the case-study page. Published 27 Oct 2026 as a hosted page
+(https://claude.ai/artifact/KyLyQ3ywwWjWuXEvKKR1YF, built from `docs/case-study/index.html`)
+until the domain and landing page exist (Day 2 scope, still pending); the same HTML moves to
+the domain unchanged once it does. Edit the text here first, then the HTML.*
 
 ---
 
@@ -54,7 +56,8 @@ still pending a credential or a local run I haven't done yet:
   data-leakage bug (a feature that algebraically reconstructed the target column) — F1 dropped
   honestly from 0.994 to 0.919 once the leak was removed, which is the real, trustworthy number.
 - **A QLoRA fine-tune of a small open model for text-to-SQL, benchmarked**: 1.0 execution
-  accuracy against a 1.7% zero-shot baseline, with no latency penalty. I scoped the claim
+  accuracy against a 1.7% zero-shot baseline, at a mean latency between the zero-shot and
+  few-shot baselines (4.4 s vs 6.8 s and 3.8 s). I scoped the claim
   honestly in the write-up (ADR-007): proven within a fixed question template, not general
   text-to-SQL, and not yet wired into the production path pending a broader validation set.
 

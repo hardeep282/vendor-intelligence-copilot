@@ -1,0 +1,653 @@
+<meta name="claude:viewport-fit-sides" content="cover">
+<title>Vendor Copilot Code Map</title>
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600&family=IBM+Plex+Sans:wght@400;500;600&display=swap">
+<style>
+/* Layout concept: a file explorer -- a flat, filterable list of every file in the left rail
+   (grouped by layer, but each FILE is the selectable unit, not the layer), and a single-file
+   detail pane on the right, the way a code-intelligence panel shows "find references" for
+   whatever's selected. Built to be re-generated from docs/CODE_MAP.md every day the repo grows. */
+:root {
+  --bg: #0b0e13;
+  --panel: #11151c;
+  --panel-raised: #161b24;
+  --border: #232a36;
+  --fg: #d9dee6;
+  --fg-dim: #8691a3;
+  --fg-faint: #5b6577;
+  --accent: #5ee6b0;
+  --accent-dim: #1c2b25;
+  --accent-border: #2f5a49;
+  --warn: #e6b65e;
+  --warn-dim: #332a17;
+  --code-bg: #0e1218;
+  color-scheme: dark;
+}
+@media (prefers-color-scheme: light) {
+  :root:not([data-theme="dark"]) {
+    --bg: #f6f4ee;
+    --panel: #fdfcf9;
+    --panel-raised: #ffffff;
+    --border: #e4e0d4;
+    --fg: #23211c;
+    --fg-dim: #6b6a60;
+    --fg-faint: #9a9890;
+    --accent: #2f7a53;
+    --accent-dim: #eae4d2;
+    --accent-border: #d9cfae;
+    --warn: #8a5a12;
+    --warn-dim: #f2e4c6;
+    --code-bg: #f0ede3;
+    color-scheme: light;
+  }
+}
+:root[data-theme="light"] {
+  --bg: #f6f4ee;
+  --panel: #fdfcf9;
+  --panel-raised: #ffffff;
+  --border: #e4e0d4;
+  --fg: #23211c;
+  --fg-dim: #6b6a60;
+  --fg-faint: #9a9890;
+  --accent: #2f7a53;
+  --accent-dim: #eae4d2;
+  --accent-border: #d9cfae;
+  --warn: #8a5a12;
+  --warn-dim: #f2e4c6;
+  --code-bg: #f0ede3;
+  color-scheme: light;
+}
+
+* { box-sizing: border-box; }
+html, body { background: var(--bg); color: var(--fg); margin: 0; }
+body {
+  font-family: "IBM Plex Sans", system-ui, sans-serif;
+  font-size: 14.5px;
+  line-height: 1.55;
+  -webkit-font-smoothing: antialiased;
+}
+code, .mono, .path { font-family: "IBM Plex Mono", "SFMono-Regular", Consolas, monospace; }
+a { color: var(--accent); }
+
+button {
+  font-family: inherit;
+  cursor: pointer;
+  border-radius: 6px;
+  border: 1px solid var(--border);
+  background: var(--panel-raised);
+  color: var(--fg-dim);
+}
+button:hover { color: var(--fg); border-color: var(--fg-faint); }
+button:focus-visible, input:focus-visible, [tabindex]:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
+.shell {
+  display: flex;
+  flex-direction: column;
+  min-height: 100vh;
+  padding-left: max(0px, env(safe-area-inset-left, 0px));
+  padding-right: max(0px, env(safe-area-inset-right, 0px));
+}
+
+/* ---------- header ---------- */
+.topbar {
+  display: flex;
+  align-items: baseline;
+  flex-wrap: wrap;
+  gap: 4px 14px;
+  padding: 16px max(16px, env(safe-area-inset-right, 0px)) 14px max(16px, env(safe-area-inset-left, 0px));
+  padding-top: calc(16px + env(safe-area-inset-top, 0px));
+  border-bottom: 1px solid var(--border);
+  background: var(--panel);
+}
+.topbar .brand {
+  font-family: "IBM Plex Mono", monospace;
+  font-weight: 600;
+  font-size: 15px;
+  letter-spacing: 0.01em;
+}
+.topbar .tagline { color: var(--fg-dim); font-size: 13px; }
+.topbar .spacer { flex: 1 1 auto; }
+.count-pill {
+  font-family: "IBM Plex Mono", monospace;
+  font-size: 12px;
+  color: var(--fg-dim);
+  background: var(--panel-raised);
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  padding: 3px 11px;
+}
+.topbar .copy-all {
+  font-size: 12px;
+  padding: 5px 11px;
+}
+
+.searchbar {
+  padding: 12px max(16px, env(safe-area-inset-right, 0px)) 12px max(16px, env(safe-area-inset-left, 0px));
+  border-bottom: 1px solid var(--border);
+  background: var(--panel);
+}
+.searchbar input {
+  width: 100%;
+  font-family: "IBM Plex Mono", monospace;
+  font-size: 13.5px;
+  background: var(--code-bg);
+  border: 1px solid var(--border);
+  color: var(--fg);
+  border-radius: 7px;
+  padding: 9px 12px;
+}
+.searchbar input::placeholder { color: var(--fg-faint); }
+
+.daybar {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  padding: 0 max(16px, env(safe-area-inset-right, 0px)) 12px max(16px, env(safe-area-inset-left, 0px));
+  border-bottom: 1px solid var(--border);
+  background: var(--panel);
+}
+.day-pill {
+  font-family: "IBM Plex Mono", monospace;
+  font-size: 12px;
+  color: var(--fg-dim);
+  background: var(--panel-raised);
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  padding: 4px 11px;
+  cursor: pointer;
+}
+.day-pill[aria-pressed="true"] {
+  color: var(--accent);
+  background: var(--accent-dim);
+  border-color: var(--accent-border);
+}
+
+.body-row { display: flex; flex: 1; min-height: 0; }
+
+/* ---------- rail (flat file list, grouped) ---------- */
+.rail {
+  width: 272px;
+  flex: none;
+  border-right: 1px solid var(--border);
+  background: var(--panel);
+  padding: 8px 8px 24px max(8px, env(safe-area-inset-left, 0px));
+  overflow-y: auto;
+}
+.rail-group {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  padding: 9px 8px 5px;
+  background: none;
+  border: none;
+  color: var(--fg-faint);
+  font-size: 11px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+.rail-group .arrow { font-size: 9px; transition: transform 0.12s; }
+.rail-group[aria-expanded="false"] .arrow { transform: rotate(-90deg); }
+.rail-group .gcount { margin-left: auto; font-family: "IBM Plex Mono", monospace; }
+.rail-files { display: block; }
+.rail-files[hidden] { display: none; }
+
+.rail button.file {
+  display: block;
+  width: 100%;
+  text-align: left;
+  padding: 7px 10px 7px 16px;
+  margin: 1px 0;
+  border: 1px solid transparent;
+  background: transparent;
+  color: var(--fg-dim);
+  font-size: 13px;
+  border-radius: 6px;
+  font-family: "IBM Plex Mono", monospace;
+}
+.rail button.file .sub {
+  display: block;
+  font-family: "IBM Plex Sans", sans-serif;
+  font-size: 10.5px;
+  color: var(--fg-faint);
+  margin-top: 2px;
+  text-transform: none;
+  letter-spacing: 0;
+}
+.rail button.file:hover { background: var(--panel-raised); color: var(--fg); }
+.rail button.file[aria-current="true"] {
+  background: var(--accent-dim);
+  color: var(--fg);
+  border-color: var(--accent-border);
+}
+.rail button.file[aria-current="true"] .sub { color: var(--accent); }
+.rail button.file .new-dot {
+  display: inline-block;
+  width: 5px;
+  height: 5px;
+  border-radius: 50%;
+  background: var(--accent);
+  margin-left: 5px;
+}
+.rail-empty { padding: 14px 12px; color: var(--fg-faint); font-size: 13px; }
+
+/* mobile: collapse rail into a select-like scroller */
+.rail-mobile {
+  display: none;
+  gap: 6px;
+  overflow-x: auto;
+  padding: 10px max(16px, env(safe-area-inset-left, 0px)) 10px max(16px, env(safe-area-inset-left, 0px));
+  border-bottom: 1px solid var(--border);
+  background: var(--panel);
+  -webkit-overflow-scrolling: touch;
+}
+.rail-mobile button {
+  flex: none;
+  white-space: nowrap;
+  padding: 7px 12px;
+  font-size: 12.5px;
+  font-family: "IBM Plex Mono", monospace;
+  color: var(--fg-dim);
+}
+.rail-mobile button[aria-current="true"] {
+  background: var(--accent-dim);
+  color: var(--fg);
+  border-color: var(--accent-border);
+}
+
+/* ---------- detail pane ---------- */
+main { flex: 1; min-width: 0; overflow-y: auto; display: flex; flex-direction: column; }
+.pane-scroll { flex: 1; padding: 26px max(20px, env(safe-area-inset-right, 0px)) 20px max(20px, env(safe-area-inset-left, 0px)); }
+.pane { max-width: 680px; margin: 0 auto; }
+
+.pane .crumb {
+  font-family: "IBM Plex Mono", monospace;
+  font-size: 13px;
+  color: var(--accent);
+  margin-bottom: 10px;
+  word-break: break-word;
+}
+.pane .headline {
+  font-size: 21px;
+  font-weight: 600;
+  line-height: 1.35;
+  margin: 0 0 14px;
+  text-wrap: balance;
+}
+.badges-row { display: flex; flex-wrap: wrap; gap: 7px; margin-bottom: 20px; }
+.pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  font-family: "IBM Plex Mono", monospace;
+  font-size: 10.5px;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  padding: 4px 10px;
+  border-radius: 999px;
+  border: 1px solid var(--accent-border);
+  color: var(--accent);
+  background: var(--accent-dim);
+}
+.pill.warn { border-color: var(--warn); color: var(--warn); background: var(--warn-dim); }
+.pill.new { border-color: var(--accent-border); color: var(--accent); background: var(--accent-dim); }
+
+.field { margin-bottom: 20px; }
+.field .label {
+  font-size: 11px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--fg-faint);
+  margin-bottom: 6px;
+}
+.field .value { color: var(--fg); }
+.field .value table { border-collapse: collapse; width: 100%; font-size: 13px; margin-top: 6px; }
+.field .value th, .field .value td { border: 1px solid var(--border); padding: 6px 8px; text-align: left; vertical-align: top; }
+.field .value th { color: var(--fg-dim); font-weight: 500; }
+.field .value .tbl { overflow-x: auto; }
+.field .value p { margin: 0 0 10px; }
+.field .value code { background: var(--code-bg); padding: 1px 5px; border-radius: 4px; font-size: 0.92em; color: var(--fg); }
+
+.chip-row { display: flex; flex-wrap: wrap; gap: 8px; }
+.chip {
+  font-family: "IBM Plex Mono", monospace;
+  font-size: 12.5px;
+  padding: 5px 11px;
+  border-radius: 7px;
+  border: 1px solid var(--border);
+  background: var(--panel-raised);
+  color: var(--fg-dim);
+}
+.chip.link:hover { color: var(--fg); border-color: var(--accent-border); }
+.chip.plain { cursor: default; }
+.chip.plain:hover { color: var(--fg-dim); border-color: var(--border); }
+
+.pane-foot {
+  border-top: 1px solid var(--border);
+  padding: 14px max(20px, env(safe-area-inset-left, 0px));
+  font-size: 12px;
+  color: var(--fg-faint);
+  text-align: center;
+  background: var(--panel);
+}
+.pane-foot code { color: var(--fg-dim); }
+
+.toast {
+  position: fixed;
+  bottom: max(18px, env(safe-area-inset-bottom, 0px));
+  left: 50%;
+  transform: translateX(-50%) translateY(8px);
+  background: var(--panel-raised);
+  border: 1px solid var(--accent-border);
+  color: var(--fg);
+  padding: 8px 14px;
+  border-radius: 7px;
+  font-size: 13px;
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 0.15s, transform 0.15s;
+  z-index: 20;
+}
+.toast.show { opacity: 1; transform: translateX(-50%) translateY(0); pointer-events: auto; }
+
+@media (max-width: 760px) {
+  .rail { display: none; }
+  .rail-mobile { display: flex; }
+  .pane .headline { font-size: 19px; }
+}
+</style>
+
+<div class="shell">
+  <div class="topbar">
+    <div class="brand">VENDOR-INTELLIGENCE-COPILOT <span style="color:var(--fg-faint)">// CODE MAP</span></div>
+    <div class="tagline">what each file does, and why</div>
+    <div class="spacer"></div>
+    <span class="count-pill" id="count-pill">-- files</span>
+    <button type="button" class="copy-all" id="copy-all">Copy full map ⧉</button>
+  </div>
+
+  <div class="searchbar">
+    <input id="search" type="text" placeholder="filter by file name or what it does…" autocomplete="off" />
+  </div>
+  <div class="daybar" id="daybar" role="tablist" aria-label="Filter by day"></div>
+
+  <div class="rail-mobile" id="rail-mobile" role="listbox" aria-label="File"></div>
+
+  <div class="body-row">
+    <nav class="rail" id="rail" aria-label="Files"></nav>
+    <main>
+      <div class="pane-scroll"><div class="pane" id="pane"></div></div>
+      <div class="pane-foot">
+        Generated from <code>docs/CODE_MAP.md</code> by <code>scripts/build_code_map_page.py</code>
+        (/*__STAMP__*/). The markdown is the source of truth; whenever a file is added or changes
+        job, its entry there changes in the same commit and this page is regenerated.
+      </div>
+    </main>
+  </div>
+</div>
+
+<div class="toast" id="toast">Copied</div>
+
+<script>
+/* ---------------------------------------------------------------------------------------
+   DATA — one entry per file, mirroring docs/CODE_MAP.md. `group` controls the rail section;
+   groups render in the order their first file appears below. `talksTo` entries with an `id`
+   are clickable cross-references (jump to that file); entries with only a `label` are plain
+   (e.g. a data file, or something outside this list). Update this array in the same commit
+   that changes CODE_MAP.md -- add a new file here, or edit one whose job changed.
+--------------------------------------------------------------------------------------- */
+const FILES = /*__FILES__*/[];
+
+/* ---------------------------------------------------------------------------------------
+   RENDER
+--------------------------------------------------------------------------------------- */
+const rail = document.getElementById("rail");
+const railMobile = document.getElementById("rail-mobile");
+const pane = document.getElementById("pane");
+const searchInput = document.getElementById("search");
+const countPill = document.getElementById("count-pill");
+const daybar = document.getElementById("daybar");
+
+const byId = new Map(FILES.map((f) => [f.id, f]));
+
+/* ---------------------------------------------------------------------------------------
+   DAY FILTER -- default view is the latest day only, not every day's files piled up at
+   once. "All" is one click away for anyone who wants the whole repo.
+--------------------------------------------------------------------------------------- */
+const allDays = Array.from(new Set(FILES.map((f) => f.day).filter((d) => d !== null))).sort((a, b) => a - b);
+const latestDay = allDays.length ? Math.max(...allDays) : null;
+
+let currentDay = latestDay; // null = "All"; a number = that day only
+try {
+  const savedDay = localStorage.getItem("codemap:lastDay");
+  if (savedDay !== null) currentDay = savedDay === "all" ? null : Number(savedDay);
+} catch (e) {}
+
+function buildDaybar() {
+  daybar.innerHTML = "";
+  const options = [...allDays.map((d) => ({ value: d, label: `Day ${d}` })), { value: null, label: "All" }];
+  for (const opt of options) {
+    const btn = document.createElement("button");
+    btn.type = "button";
+    btn.className = "day-pill";
+    btn.setAttribute("role", "tab");
+    btn.setAttribute("aria-pressed", String(opt.value === currentDay));
+    btn.textContent = opt.label;
+    btn.addEventListener("click", () => {
+      currentDay = opt.value;
+      try { localStorage.setItem("codemap:lastDay", opt.value === null ? "all" : String(opt.value)); } catch (e) {}
+      buildDaybar();
+      refresh();
+    });
+    daybar.appendChild(btn);
+  }
+}
+
+function groupOrder() {
+  const order = [];
+  for (const f of FILES) if (!order.includes(f.group)) order.push(f.group);
+  return order;
+}
+
+function basename(path) {
+  return path.split(" · ")[0].split(" + ")[0];
+}
+
+function matches(file, query) {
+  if (currentDay !== null && file.day !== currentDay) return false;
+  if (!query) return true;
+  const q = query.toLowerCase();
+  return (
+    file.path.toLowerCase().includes(q) ||
+    file.headline.toLowerCase().includes(q) ||
+    (file.does || "").toLowerCase().includes(q)
+  );
+}
+
+const collapsedGroups = new Set();
+
+function buildRail(query) {
+  rail.innerHTML = "";
+  let anyVisible = false;
+  for (const group of groupOrder()) {
+    const groupFiles = FILES.filter((f) => f.group === group && matches(f, query));
+    if (groupFiles.length === 0) continue;
+    anyVisible = true;
+
+    const header = document.createElement("button");
+    header.type = "button";
+    header.className = "rail-group";
+    const collapsed = collapsedGroups.has(group) && !query;
+    header.setAttribute("aria-expanded", String(!collapsed));
+    header.innerHTML = `<span class="arrow">▾</span><span>${group}</span><span class="gcount">${groupFiles.length}</span>`;
+
+    const list = document.createElement("div");
+    list.className = "rail-files";
+    if (collapsed) list.hidden = true;
+    groupFiles.forEach((f) => list.appendChild(makeFileButton(f)));
+
+    header.addEventListener("click", () => {
+      if (collapsedGroups.has(group)) collapsedGroups.delete(group);
+      else collapsedGroups.add(group);
+      buildRail(searchInput.value.trim());
+    });
+
+    rail.appendChild(header);
+    rail.appendChild(list);
+  }
+  if (!anyVisible) {
+    const empty = document.createElement("div");
+    empty.className = "rail-empty";
+    empty.textContent = "No files match.";
+    rail.appendChild(empty);
+  }
+}
+
+function buildRailMobile(query) {
+  railMobile.innerHTML = "";
+  FILES.filter((f) => matches(f, query)).forEach((f) => railMobile.appendChild(makeFileButton(f, true)));
+}
+
+function makeFileButton(file, flat) {
+  const btn = document.createElement("button");
+  btn.type = "button";
+  btn.className = "file";
+  btn.dataset.id = file.id;
+  btn.setAttribute("aria-current", "false");
+  const sub = (file.badges && file.badges.length) ? file.badges.map((b) => b.text).join(" · ") : "";
+  btn.innerHTML = `${flat ? basename(file.path) : basename(file.path)}${file.isNew ? '<span class="new-dot" title="new"></span>' : ""}` +
+    (sub && !flat ? `<span class="sub">${sub}</span>` : "");
+  btn.addEventListener("click", () => selectFile(file.id));
+  return btn;
+}
+
+function renderPane(file) {
+  const badges = (file.badges || []).map(
+    (b) => `<span class="pill ${b.warn ? "warn" : ""}">${b.text}</span>`
+  ).join("");
+  const newPill = file.isNew ? '<span class="pill new">new</span>' : "";
+
+  const talks = (file.talksTo || []).map((t) => {
+    if (t.id && byId.has(t.id)) {
+      return `<button type="button" class="chip link" data-jump="${t.id}">${t.label}</button>`;
+    }
+    return `<span class="chip plain">${t.label}</span>`;
+  }).join("");
+
+  pane.innerHTML = `
+    <div class="crumb">${file.path}</div>
+    <h1 class="headline">${file.headline}${file.sym ? ` <code style="font-size:0.7em;color:var(--fg-dim)">${file.sym}</code>` : ""}</h1>
+    <div class="badges-row">${newPill}${badges}</div>
+    <div class="field">
+      <div class="label">What it does</div>
+      <div class="value">${file.does}</div>
+    </div>
+    ${file.takes ? `<div class="field"><div class="label">Takes in</div><div class="value">${file.takes}</div></div>` : ""}
+    ${file.gives ? `<div class="field"><div class="label">Gives out</div><div class="value">${file.gives}</div></div>` : ""}
+    ${talks ? `<div class="field"><div class="label">Talks to</div><div class="chip-row">${talks}</div></div>` : ""}
+  `;
+  pane.querySelectorAll("[data-jump]").forEach((el) => {
+    el.addEventListener("click", () => selectFile(el.dataset.jump));
+  });
+}
+
+let currentId = null;
+function selectFile(id) {
+  if (!byId.has(id)) return;
+  currentId = id;
+  try { localStorage.setItem("codemap:lastFile", id); } catch (e) {}
+  [rail, railMobile].forEach((container) => {
+    container.querySelectorAll("button.file").forEach((b) => {
+      const sel = b.dataset.id === id;
+      b.setAttribute("aria-current", String(sel));
+      if (sel) b.scrollIntoView({ block: "nearest", inline: "center" });
+    });
+  });
+  renderPane(byId.get(id));
+}
+
+function refresh() {
+  const query = searchInput.value.trim();
+  buildRail(query);
+  buildRailMobile(query);
+  const visible = FILES.filter((f) => matches(f, query));
+  const dayLabel = currentDay === null ? "all days" : `Day ${currentDay}`;
+  countPill.textContent = `${visible.length} of ${FILES.length} files · ${dayLabel}`;
+  if (currentId && !visible.some((f) => f.id === currentId)) {
+    if (visible.length) selectFile(visible[0].id);
+  } else if (currentId) {
+    // keep current selection highlighted after rail rebuild
+    [rail, railMobile].forEach((c) => {
+      const b = c.querySelector(`button.file[data-id="${currentId}"]`);
+      if (b) b.setAttribute("aria-current", "true");
+    });
+  }
+}
+
+searchInput.addEventListener("input", refresh);
+
+function escapeMd(html) {
+  return String(html || "").replace(/<[^>]+>/g, "").replace(/&mdash;/g, "--").replace(/&rarr;/g, "->").replace(/&minus;/g, "-");
+}
+function fileToMarkdown(f) {
+  let md = `### \`${f.path}\`${f.sym ? ` — ${f.sym}` : ""}\n${escapeMd(f.does)}\n`;
+  if (f.takes && f.takes !== "—") md += `- **Takes in:** ${escapeMd(f.takes)}\n`;
+  if (f.gives && f.gives !== "—") md += `- **Gives out:** ${escapeMd(f.gives)}\n`;
+  if (f.talksTo && f.talksTo.length) md += `- **Talks to:** ${f.talksTo.map((t) => t.label).join(", ")}\n`;
+  return md + "\n";
+}
+function fullMarkdown() {
+  let md = "# Vendor Intelligence Copilot — Code Map\n\n";
+  for (const group of groupOrder()) {
+    md += `## ${group}\n\n`;
+    FILES.filter((f) => f.group === group).forEach((f) => { md += fileToMarkdown(f); });
+  }
+  return md;
+}
+
+async function copyText(text, label) {
+  try {
+    await navigator.clipboard.writeText(text);
+  } catch (e) {
+    const ta = document.createElement("textarea");
+    ta.value = text;
+    ta.style.position = "fixed";
+    ta.style.opacity = "0";
+    document.body.appendChild(ta);
+    ta.select();
+    try { document.execCommand("copy"); } catch (e2) {}
+    document.body.removeChild(ta);
+  }
+  showToast(label || "Copied");
+}
+let toastTimer = null;
+function showToast(msg) {
+  const el = document.getElementById("toast");
+  el.textContent = msg;
+  el.classList.add("show");
+  clearTimeout(toastTimer);
+  toastTimer = setTimeout(() => el.classList.remove("show"), 1800);
+}
+document.getElementById("copy-all").addEventListener("click", () => {
+  copyText(fullMarkdown(), "Copied the full code map as Markdown");
+});
+
+buildDaybar();
+refresh();
+let initial = "";
+try {
+  const saved = localStorage.getItem("codemap:lastFile");
+  if (saved && byId.has(saved)) initial = saved;
+} catch (e) {}
+if (location.hash && byId.has(location.hash.slice(1))) initial = location.hash.slice(1);
+// If the remembered/default file falls outside the current day filter, fall back to the
+// first visible file instead -- never auto-select a file the current view is hiding.
+const initiallyVisible = FILES.filter((f) => matches(f, ""));
+if (!initiallyVisible.some((f) => f.id === initial) && initiallyVisible.length) {
+  initial = initiallyVisible[0].id;
+}
+selectFile(initial);
+</script>

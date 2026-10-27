@@ -15,7 +15,7 @@ in this repo it calls or is called by).
 
 ## Settings & secrets — the only places that read `.env` / AWS
 
-### `src/copilot/settings.py`
+### `src/copilot/settings.py` *(day: 1)*
 One typed place for every config value and secret in the project.
 Day 7 step 6 added the input gate's knobs: `daily_spend_cap_usd` (already present, now actually
 enforced), `rate_limit_per_minute` (default 30), `max_question_chars` (default 4000),
@@ -32,7 +32,7 @@ DSN switches `copilot.api.dependencies._build_checkpointer` to a `PostgresSaver`
 `.env` directly; anything that builds its own API client (e.g. `anthropic.Anthropic()`) must go
 through this, or it won't see the key.
 
-### `src/copilot/secrets.py`
+### `src/copilot/secrets.py` *(day: 2)*
 Loads production secrets from AWS SSM Parameter Store when the server starts in prod.
 **Takes in:** an SSM path prefix (e.g. `/vendor-copilot/prod`) and an AWS region.
 **Gives out:** one environment variable per parameter (so `/vendor-copilot/prod/ANTHROPIC_API_KEY`
@@ -43,7 +43,7 @@ becomes `ANTHROPIC_API_KEY`).
 
 ## Data layer — the only way any code touches the actual numbers
 
-### `src/copilot/data/store.py`
+### `src/copilot/data/store.py` *(day: 1)*
 The only way any agent reads data. A locked-down, read-only DuckDB connection over the Parquet
 snapshot — refuses file access, network access, config changes, and every write, even if a bad
 query somehow got past the SQL validator. The lockdown config (`enable_external_access`,
@@ -57,20 +57,20 @@ request, which made this a production blocker, not just a test flake.
 **Talks to:** `TextToSqlService`, `InsightService`, `scripts/verify_vendor_data.py` all read through
 this. Layer 0 of the SQL safety design (`docs/specs/text_to_sql_safety.md`).
 
-### `src/copilot/data/guard.py`
+### `src/copilot/data/guard.py` *(day: 1)*
 Makes "no raw licensed row-level data leaves the machine" a tested rule instead of a habit.
 **Takes in:** a table name and its columns/row count.
 **Gives out:** raises `LicenceViolation` if a table looks like row-level/SKU-level data.
 **Talks to:** `scripts/build_snapshot.py` calls this before writing any Parquet table.
 
-### `scripts/build_snapshot.py`
+### `scripts/build_snapshot.py` *(day: 1)*
 Turns the vendor project's Excel workbook into the aggregate-only Parquet tables the app is allowed
 to query. SKU-level sheets are only ever aggregated, never copied as-is.
 **Takes in:** path to `Vendor_Summary.xlsx` (local only, never committed).
 **Gives out:** `data/snapshot/<table>.parquet` + `MANIFEST.json`.
 **Talks to:** `guard.py` (enforces the aggregate-only rule), `store.py` (reads what this builds).
 
-### `scripts/verify_vendor_data.py`
+### `scripts/verify_vendor_data.py` *(day: 1)*
 Prints the exact grounding data `InsightService` hands the model for one vendor, with no LLM call —
 a way to fact-check a narrative by eye instead of trusting the model's own citations.
 **Talks to:** calls the same `gather_vendor_data()` lookup `InsightService` uses.
@@ -245,7 +245,7 @@ never touched.
 (`SECRET_PATTERNS`). Called from `copilot.llm.client.LLMClient.complete`/`.structured`'s
 `@traceable` decorators -- the only caller.
 
-### `src/copilot/guardrails/policy.py`
+### `src/copilot/guardrails/policy.py` *(day: 1)*
 Parses `policies/disclosure.yaml` into typed objects and answers "may this role see this?".
 **Takes in:** the YAML policy file.
 **Gives out:** a validated `DisclosurePolicy`.
@@ -253,7 +253,7 @@ Parses `policies/disclosure.yaml` into typed objects and answers "may this role 
 masking), `copilot.guardrails.guardian`/`canary` (Day 7: role-policy/vendor-audience checks and
 the canary-token prefix both read this same policy object).
 
-### `policies/disclosure.yaml` / `policies/sql_rules.yaml`
+### `policies/disclosure.yaml` / `policies/sql_rules.yaml` *(day: 1)*
 Data, not code: which roles may see which tables/columns (disclosure), and the structural/semantic
 rules the SQL validator enforces (sql_rules). Changing a rule is a diff to these files, not Python.
 
@@ -261,7 +261,7 @@ rules the SQL validator enforces (sql_rules). Changing a rule is a diff to these
 
 ## LLM layer — the one place every model call goes through
 
-### `src/copilot/llm/client.py` — `LLMClient`
+### `src/copilot/llm/client.py` — `LLMClient` *(day: 3)*
 The one place every agent/service calls an LLM through: retries/backoff, streaming for
 time-to-first-token, prompt caching, tracing (`@traceable`), per-call cost/latency/token logging.
 No `temperature`/`top_p`/`top_k` — this model generation's API doesn't accept them (confirmed
@@ -291,7 +291,7 @@ carrying `prompt_name`, `prompt_version`, `used_fallback_model`).
 selection call site, `run_effort_lab.py`, `run_tokenization_lab.py` all call through this instead
 of touching the Anthropic SDK directly; `copilot.guardrails.trace_masking` (Day 7).
 
-### `src/copilot/llm/prompts.py`
+### `src/copilot/llm/prompts.py` *(day: 3)*
 Versioned prompt loader — prompt text lives in reviewable YAML, not buried in Python strings. A
 *behaviour* change (tone, grounding rule, output shape) is a new version file (`v2.yaml`); a pure
 *capacity* fix (raising `max_tokens`) is edited in place on the existing version.
@@ -299,13 +299,13 @@ Versioned prompt loader — prompt text lives in reviewable YAML, not buried in 
 **Gives out:** a validated `Prompt` with `.render_system()` / `.render_user()`.
 **Talks to:** `InsightService`, `TextToSqlService` both load their prompts this way.
 
-### `src/copilot/llm/pricing.py`
+### `src/copilot/llm/pricing.py` *(day: 3)*
 Turns a call's token counts into a USD figure — one source of truth for prices.
 **Takes in:** a model ID and token counts (input/output/cache write/cache read).
 **Gives out:** `cost_usd(...) -> float`.
 **Talks to:** `LLMClient` (every real call), `run_tokenization_lab.py` (cost projections).
 
-### `src/copilot/llm/types.py`
+### `src/copilot/llm/types.py` *(day: 3)*
 The shared result shape every LLM call returns, so logging/LangSmith/tests never branch on which
 call path produced it. Holds `CallMetrics` (TTFT, latency, tokens, cost). Day 8, A2 §1.1/§1.5:
 `CallMetrics` also carries `prompt_name`/`prompt_version` (which versioned prompt file produced
@@ -316,7 +316,7 @@ to fail over — tells "fallback succeeded" apart from "primary succeeded on the
 
 ## SQL layer — turning a question into a safe query
 
-### `src/copilot/sql/service.py` — `TextToSqlService`
+### `src/copilot/sql/service.py` — `TextToSqlService` *(day: 3)*
 One business question → one validated DuckDB query → real rows. Shows the model only its role's
 tables (schema linking) and 3 similar verified examples, validates every candidate query through
 all 6 validator layers before running it, and on rejection feeds the exact violations back to the
@@ -325,18 +325,18 @@ Day 7 step 2: its system prompt now appends `canary_line("data_analyst")`.
 **Talks to:** `schema.py`, `examples.py`, `validator.py`, `store.py`, `LLMClient`,
 `copilot.guardrails.canary` (Day 7).
 
-### `src/copilot/sql/schema.py`
+### `src/copilot/sql/schema.py` *(day: 3)*
 Builds the "schema card" shown to the model — only the tables/columns a given role may even be told
 about, so the model never writes SQL for data it can't have, which would just waste a repair loop.
 **Talks to:** reads from the same source-of-truth as `policy.py` and the Parquet manifest.
 
-### `src/copilot/sql/examples.py`
+### `src/copilot/sql/examples.py` *(day: 3)*
 Retrieves 3 golden question/SQL pairs similar to the current question, as few-shot examples —
 lexical overlap, not embeddings (the golden set is small enough that a vector index would be
 overkill). Examples are role-filtered so a less-privileged role is never shown a more-privileged
 query shape.
 
-### `src/copilot/sql/validator.py`
+### `src/copilot/sql/validator.py` *(day: 3)*
 The 6-layer validator that catches two failure families before anything runs: structurally unsafe
 SQL (wrong table, disguised write, catalog probe), and structurally valid SQL that would still
 return a wrong *number* (a ratio column averaged across vendors, a sum after a fan-out join, two
@@ -357,28 +357,28 @@ test_privacy_leakage_suite.py` (Day 7 step 8's SQL red-team half).
 
 ## Evals layer — scoring the system against the golden set
 
-### `src/copilot/evals/golden.py`
+### `src/copilot/evals/golden.py` *(day: 3)*
 Defines what one golden question looks like and re-checks it against the snapshot.
 **Gives out:** typed `GoldenQuestion` objects; `verify()` re-executes every SQL and compares results.
 
-### `src/copilot/evals/evaluators.py`
+### `src/copilot/evals/evaluators.py` *(day: 3)*
 Two separate scores per answer: `execution_accuracy` (did it compute the right numbers, or
 correctly abstain) and `leakage_free` (independent re-validation of whatever SQL actually ran, so a
 future service-level bug still gets caught by the eval suite). Fixed 14 Oct: row comparison used to
 require an exact column-name match; now compares by *value*, in column order, per the spec.
 
-### `src/copilot/evals/langsmith_sync.py` + `scripts/push_golden_to_langsmith.py`
+### `src/copilot/evals/langsmith_sync.py` + `scripts/push_golden_to_langsmith.py` *(day: 3)*
 Keeps one LangSmith dataset (`vendor-copilot-golden-v2`) in sync with
 `evals/datasets/golden_v2.jsonl` — full replace, not incremental. The script is the thing you run on
 your own machine with your `LANGSMITH_API_KEY`; it makes no LLM calls.
 
-### `src/copilot/evals/effort_lab.py` + `scripts/run_effort_lab.py`
+### `src/copilot/evals/effort_lab.py` + `scripts/run_effort_lab.py` *(day: 3)*
 Sweeps `effort` (low→max) across the same golden questions and compares execution accuracy,
 leakage-free rate, cost and latency at each level — the replacement for a temperature sweep, since
 this model generation has no temperature. The script is what you run on your machine with your
 `ANTHROPIC_API_KEY`; real money, real calls.
 
-### `src/copilot/evals/tokenization_lab.py` + `scripts/run_tokenization_lab.py`
+### `src/copilot/evals/tokenization_lab.py` + `scripts/run_tokenization_lab.py` *(day: 3)*
 Compares three ways of counting tokens on this project's real prompts — Anthropic's own provider
 counter (exact, a real API call), `tiktoken`, and a Hugging Face tokenizer (both local
 approximations) — then projects what each would predict for cost per 1,000 requests. Real result
@@ -423,14 +423,14 @@ structured output, the repair/redraft loops, the Guardian's unconditional run, t
 evals' numeric tolerance, and prompt version pinning (A2 §1.5, already shipped) each do -- and
 don't do -- about that variance. Pure documentation; no code changed.
 
-### `src/copilot/evals/__init__.py`, `src/copilot/insights/__init__.py`, `src/copilot/llm/__init__.py`
+### `src/copilot/evals/__init__.py`, `src/copilot/insights/__init__.py`, `src/copilot/llm/__init__.py` *(day: 3)*
 Empty package markers — no logic, just make the folder importable.
 
 ---
 
 ## Insights
 
-### `src/copilot/insights/service.py` — `InsightService`
+### `src/copilot/insights/service.py` — `InsightService` *(day: 3)*
 A grounded narrative insight for one vendor at a time — the typed, testable refactor of the legacy
 analytics repo's `vendor_insights.py`. The model id lives in the prompt YAML, not hardcoded, and
 every number the model may use is handed to it explicitly; nothing is looked up by the model itself.
@@ -450,7 +450,7 @@ rather than a 500.
 
 ## API
 
-### `src/copilot/api/main.py`
+### `src/copilot/api/main.py` *(day: 2)*
 The FastAPI HTTP entry point. Day 2 walking skeleton: `/health` says the process is alive,
 `/version` says exactly which build is deployed. Day 8 step 3/4 add the two real endpoints:
 `POST /auth/redeem` (an invite code -> a usable API key, the one HTTP-reachable half of
@@ -578,14 +578,14 @@ return.
 
 ## RAG / Knowledge layer — the Knowledge agent's retrieval stack (Day 4)
 
-### `knowledge/*.md`, `knowledge/contracts/*.md`
+### `knowledge/*.md`, `knowledge/contracts/*.md` *(day: 4)*
 The RAG source corpus, not code: 4 methodology-family docs (data dictionary, metric definitions,
 decision log, methodology — `public`/`internal`) + 10 synthetic vendor supply-agreement summaries
 (`confidential`), each headed `SYNTHETIC` and stating no real contract exists. Every doc opens with
 YAML frontmatter (`doc_type`, `vendor`, `version`, `data_class`, `allowed_roles`).
 **Talks to:** `copilot.rag.corpus` is the only code that reads these.
 
-### `src/copilot/rag/corpus.py`
+### `src/copilot/rag/corpus.py` *(day: 4)*
 Parses every knowledge doc's frontmatter + Markdown body into a typed `KnowledgeDoc`.
 `check_corpus_against_policy()` recomputes each doc's expected `allowed_roles` from the live
 disclosure policy and fails loudly if a doc's hand-authored roles have drifted from it.
@@ -594,7 +594,7 @@ disclosure policy and fails loudly if a doc's hand-authored roles have drifted f
 **Talks to:** `copilot.guardrails.policy` for `DataClass`/`Role` and the drift check;
 `copilot.rag.chunking` reads its output.
 
-### `src/copilot/rag/chunking.py`
+### `src/copilot/rag/chunking.py` *(day: 4)*
 Splits each `KnowledgeDoc`'s body into `Chunk`s at every Markdown heading (the real semantic
 boundaries in this hand-curated corpus), re-splitting by paragraph (with overlap) only if one
 section runs over ~1000 chars — comfortably under the embedder's truncation point. Carries the
@@ -603,7 +603,7 @@ doc's permission metadata (`data_class`, `allowed_roles`) onto every chunk.
 **Gives out:** `list[Chunk]`, each with a stable `chunk_id` and a `content_hash` of its text.
 **Talks to:** `copilot.rag.store` reads its output; `copilot.rag.corpus` for the input type.
 
-### `src/copilot/rag/embeddings.py`
+### `src/copilot/rag/embeddings.py` *(day: 4)*
 `Embedder` protocol + `SentenceTransformerEmbedder` (local `all-MiniLM-L6-v2`, 384-dim, lazy-loaded
 so constructing it never triggers a download) + `FakeEmbedder` (deterministic, no network — used by
 every test in this repo). The real model's weights come from the Hugging Face Hub, which this build
@@ -612,7 +612,7 @@ sandbox's proxy blocks, so the real embedding run is `scripts/build_rag_index.py
 **Gives out:** one float vector per text.
 **Talks to:** `copilot.rag.store.ChunkStore.upsert`/future retrieval code call `embed()`.
 
-### `src/copilot/rag/store.py`
+### `src/copilot/rag/store.py` *(day: 1)*
 `ChunkStore` wraps one Chroma collection (`PersistentClient`, `data/chroma/` — gitignored, same
 never-commit-derived-data rule as the Parquet snapshot). `upsert()` is keyed by each chunk's
 `content_hash`, not its `chunk_id`, so a full corpus rebuild skips every chunk whose text hasn't
@@ -628,7 +628,7 @@ filter (for `query`).
 types for the metadata it stores and reads back; `copilot.rag.retrieval` and
 `copilot.rag.permissions` both call `query()`.
 
-### `src/copilot/rag/retrieval.py`
+### `src/copilot/rag/retrieval.py` *(day: 4)*
 `BM25Index` (lexical, in-memory, rebuilt from the chunk list each time — no incremental-update
 story at this corpus size) + `reciprocal_rank_fusion()` (plain RRF: `sum(1/(k+rank))` across
 rankings, default `k=60`) + `fuse_rankings()` (turns two ID rankings into the final
@@ -646,7 +646,7 @@ its rank in each underlying ranking (`None` if it didn't appear in that one).
 `copilot.rag.embeddings` to embed the query text; `copilot.rag.permissions` reuses
 `fuse_rankings()`/`BM25Index`/`RetrievedChunk`.
 
-### `src/copilot/rag/permissions.py`
+### `src/copilot/rag/permissions.py` *(day: 4)*
 `PermissionedRetriever` — role-aware counterpart to `HybridRetriever`: same RRF fusion (shares
 `retrieval.fuse_rankings`), but every chunk either ranking can return is first scoped to what
 the given role may see. Authority is the live `DisclosurePolicy.can_view(role, data_class)`,
@@ -668,7 +668,7 @@ corpus this retriever was built with, added for the Knowledge specialist
 (`copilot.agents.specialists.run_knowledge`), which needs a *cited* chunk's `data_class` after
 the fact; `CorrectiveRagResult` only reports chunk ids, not the chunks themselves.
 
-### `src/copilot/rag/corrective.py`
+### `src/copilot/rag/corrective.py` *(day: 4)*
 `CorrectiveRagService` — the Corrective RAG loop, compiled as a LangGraph `StateGraph`:
 retrieve → grade → (generate | rewrite → retrieve again | abstain). Grading and query-rewriting
 are their own versioned prompts (`prompts/crag_grade/`, `prompts/crag_rewrite/`); generation is
@@ -688,14 +688,14 @@ an explicit abstention + reason, plus cost/latency/call accounting (same shape a
 `RetrievedChunk`); `copilot.llm.client`/`copilot.llm.prompts` for the three LLM calls;
 `copilot.guardrails.canary` (Day 7).
 
-### `scripts/build_rag_index.py`
+### `scripts/build_rag_index.py` *(day: 4)*
 Loads the corpus, checks it against the live disclosure policy, chunks it, embeds with the real
 local model, and upserts into `data/chroma/` — prints how many chunks were actually (re-)embedded
 vs. already up to date.
 **Needs:** nothing but normal internet access (no API key — the model is local and free to run).
 **Talks to:** every `copilot.rag.*` module above, in pipeline order.
 
-### `scripts/run_rag_eval.py`
+### `scripts/run_rag_eval.py` *(day: 4)*
 Day 4 step 7's eval runner. Retrieval metrics (recall@k, MRR — `copilot.evals.rag_metrics`) are
 free and run against whatever's already in `data/chroma/`. `--quality` additionally runs the
 cut-down Ragas pair (`copilot.evals.rag_quality`: faithfulness + context_recall) via real
@@ -704,7 +704,7 @@ cut-down Ragas pair (`copilot.evals.rag_quality`: faithfulness + context_recall)
 **Talks to:** `copilot.evals.rag_golden`/`rag_metrics`/`rag_quality`, `copilot.rag.permissions`,
 `copilot.rag.corrective`.
 
-### `src/copilot/evals/rag_golden.py`, `rag_metrics.py`, `rag_quality.py`
+### `src/copilot/evals/rag_golden.py`, `rag_metrics.py`, `rag_quality.py` *(day: 4)*
 The RAG eval harness (Day 4 step 7). `rag_golden`: 20 labelled questions
 (`evals/datasets/rag_golden_v1.jsonl`) against the real knowledge corpus, each naming a
 `doc_type`/`vendor` + a verbatim `must_contain` phrase rather than a `chunk_id` directly, so the
@@ -720,7 +720,7 @@ quality judges); `copilot.evals.evaluators` for `EvalScore`.
 
 ## ML tools — the Forecasting & Risk and Inventory Planning agents' tools (Day 5)
 
-### `src/copilot/ml/metrics.py`
+### `src/copilot/ml/metrics.py` *(day: 5)*
 WAPE, MASE, bias -- the three forecast-accuracy metrics the sprint doc names (not MAPE, which
 the analytics repo's own `forecast_backtest.py` already found unreliable near-zero actuals).
 **Takes in:** parallel actual/forecast sequences (plus the training series, for MASE's scale).
@@ -728,7 +728,7 @@ the analytics repo's own `forecast_backtest.py` already found unreliable near-ze
 **Talks to:** nothing -- pure NumPy arithmetic, no fakes needed, same category as
 `copilot.evals.rag_metrics`.
 
-### `src/copilot/ml/forecast.py` — `forecast_demand()`
+### `src/copilot/ml/forecast.py` — `forecast_demand()` *(day: 5)*
 Demand forecast tool: ETS vs naive, honest out-of-sample accuracy from a rolling-origin
 backtest (never an in-sample fit -- ADR-000 item 2 is exactly that mistake, in the Excel tool
 this project replaces). Matches the analytics repo's `forecast_backtest.py` methodology
@@ -747,7 +747,7 @@ network needed): portfolio WAPE 11.5%, matching the analytics repo's own documen
 the portfolio series (AutoETS's auto-selected trend reduces to effectively no trend on this
 short, noisy series) -- a real finding, not a bug, logged in `docs/BUILD_LOG.md`.
 
-### `src/copilot/ml/inventory.py` — `compute_inventory_plan()`
+### `src/copilot/ml/inventory.py` — `compute_inventory_plan()` *(day: 5)*
 Safety stock, reorder point, EOQ -- standard OR formulas (Silver/Pyke/Peterson; Wilson 1913 for
 EOQ), from a forecast's output. `demand_stats_from_backtest()` is the bridge from a
 `ForecastResult` to these formulas' (mean, std-dev) inputs -- deliberately uses historical
@@ -797,7 +797,7 @@ each one's result type); `scripts/train_risk_classifier.py` calls `log_classifie
 
 ## Model Selection Agent -- Addendum A1 (Day 5 step 6)
 
-### `src/copilot/agents/model_selection.py` — `ModelSelectionAgent`
+### `src/copilot/agents/model_selection.py` — `ModelSelectionAgent` *(day: 5)*
 LangGraph propose -> critique -> revise -> abstain loop, same shape as
 `copilot.rag.corrective.CorrectiveRagService` applied to picking a model instead of grounding
 an answer -- the direct precedent Addendum A1 names. Picks from a fixed, closed
@@ -815,7 +815,7 @@ an explicit abstention + reason, plus cost/latency/call accounting.
 v1.yaml); `copilot.evals.model_selection_metrics`/`model_selection_quality` (the eval harness);
 `scripts/run_model_selection_eval.py`.
 
-### `src/copilot/evals/model_selection_golden.py`, `model_selection_metrics.py`, `model_selection_quality.py`
+### `src/copilot/evals/model_selection_golden.py`, `model_selection_metrics.py`, `model_selection_quality.py` *(day: 5)*
 The Day 5 step 6 eval harness, same free/judged split as the RAG harness. `model_selection_golden.py`:
 8 requirements (`evals/datasets/model_selection_golden_v1.jsonl`), 2 per task type, each naming
 an `expected_task_type` and a *set* of `acceptable_model_families` (not one exemplar -- the
@@ -831,7 +831,7 @@ that a free check can't tell apart from real grounding.
 
 ---
 
-## Multi-agent system -- Orchestrator + 5 specialists (Day 6, in progress)
+## Multi-agent system -- Orchestrator + 5 specialists (Day 6)
 
 ### `src/copilot/agents/contracts.py` *(day: 6, isNew: true)*
 `TaskSpec`/`AgentResult` -- the typed handoff contracts C3 requires so no specialist passes free
@@ -1088,11 +1088,172 @@ inputs, not an adversarial safety check -- scoring `grounded`/`citations_ok`/`su
 
 ---
 
+## Fine-tuning data, MCP server and QLoRA benchmark (Day 9)
+
+*(Added 27 Oct, Day 10: these Day 9 files shipped without Code Map entries, breaking the
+standing rule above; caught while preparing the end-of-sprint Code Map page and backfilled
+here.)*
+
+### `src/copilot/sql/pair_generation.py` -- `generate_candidates()`/`verify_and_filter()` *(day: 9, isNew: true)*
+Builds the fine-tuning training set: question -> SQL pairs from a small family of templates,
+filled with real vendor names and real columns, then kept only if they pass two counted filters:
+(1) the SQL actually executes against the connected snapshot, and (2) it passes the same safety
+validator production uses (`copilot.sql.validator.validate`). Vendor names are read from the
+database at generation time and filtered to the k=5 disclosure threshold, never hardcoded
+(ADR-002). Vendor filters are case-insensitive on the name exactly as the question shows it --
+the v1 dataset compared stored casing against title-case question text, a rule the model could
+not learn from its prompt, and that was fixed as v2.
+**Takes in:** a live DuckDB connection and the vendor-name list.
+**Gives out:** `Pair` objects and a `FilterReport` (candidates, execution failures, validator
+failures, kept), plus per-category and per-table breakdowns.
+**Talks to:** `copilot.sql.validator`, `copilot.data.store`; called by
+`scripts/generate_sql_pairs.py`.
+
+### `scripts/generate_sql_pairs.py` *(day: 9, isNew: true)*
+CLI for the pair generator. Real run (22 Oct): 1016 candidates, 0 execution failures, 0
+validator failures, sampled to 400 with a fixed seed.
+**Takes in:** `--target` (default 400), `--seed` (default 42), `--out`; needs the built snapshot.
+**Gives out:** `evals/datasets/sql_pairs_v2.jsonl` and its `.manifest.json` (count, by-category,
+by-table, sha256).
+**Talks to:** `copilot.sql.pair_generation`, `copilot.data.store`.
+
+### `evals/datasets/sql_pairs_v1.jsonl`, `sql_pairs_v2.jsonl` (+ `.manifest.json` each) *(day: 9, isNew: true)*
+The 400 execution-verified training/evaluation pairs. v1 is kept unchanged for history; v2 is
+what the notebook trains on (340 train / 60 held-out). Each manifest stores a sha256 so a changed
+dataset is detectable, the same pattern as the golden-set manifests.
+**Takes in:** written by `scripts/generate_sql_pairs.py`.
+**Gives out:** training and held-out data for `finetuning/`.
+**Talks to:** `finetuning/day9_qlora_colab.ipynb`, `finetuning/eval_compare.py`.
+
+### `src/copilot/mcp/server.py` -- `vendor_metrics`/`portfolio_summary`/`ask_vendor_question` *(day: 9, isNew: true)*
+A read-only Model Context Protocol server (stdio transport) that gives any MCP host -- Claude
+Desktop, the MCP Inspector, another agent -- three tools over the same guarded data path the
+`/ask` API uses: one vendor's headline metrics, portfolio totals, and a free-form question that
+runs through `TextToSqlService` and then the `Guardian`. Every tool is hard-wired to the lowest
+role (`viewer`): a role passed in as a tool argument would be an unauthenticated claim and a
+privilege-escalation route. Remote MCP with real authentication is a depth-track item.
+**Takes in:** MCP tool calls (a vendor name, or a plain-English question).
+**Gives out:** plain-text rows or a Guardian-reviewed answer; "not found" messages, never raw
+errors.
+**Talks to:** `copilot.data.store`, `copilot.sql.service.TextToSqlService`,
+`copilot.guardrails.guardian`; tested by `tests/test_mcp_server.py`.
+
+### `finetuning/day9_qlora_colab.ipynb` + `finetuning/requirements-colab.txt` *(day: 9, isNew: true)*
+The Colab notebook that fine-tunes Qwen2.5-1.5B-Instruct with QLoRA on `sql_pairs_v2`'s 340
+training pairs: 4-bit NF4 base weights, LoRA r=16 / alpha=32 / dropout=0.05, completion-only
+loss, 3 epochs, free T4 GPU. `MAX_LEN` is 1024: at 512 every example's SQL answer was truncated
+away, so the first adapter trained on nothing (loss 0.000000, every LoRA B matrix still zero).
+GPU packages live in `requirements-colab.txt`, deliberately not in `pyproject.toml`.
+**Takes in:** `evals/datasets/sql_pairs_v2.jsonl`.
+**Gives out:** a saved LoRA adapter and `held_out.jsonl` (the 60 pairs it never trained on).
+**Talks to:** `finetuning/eval_compare.py`.
+
+### `finetuning/eval_compare.py` *(day: 9, isNew: true)*
+Compares base zero-shot, base few-shot and the QLoRA adapter (and optionally the frontier API)
+on the 60 held-out pairs by re-executing each generated query against the real snapshot and
+comparing result rows, not SQL strings. Standalone (no `copilot` import) so it runs in Colab.
+`few_shot_pool()` excludes held-out rows from the example pool -- without it, each test question
+retrieved itself as its own top example. `_extract_sql()` takes only the SQL from a generation,
+dropping trailing prose that had been glued onto correct queries. Real result (26 Oct): QLoRA
+1.0 execution accuracy vs 0.017 zero-shot and 0.1 few-shot (ADR-007: adopt, conditionally).
+**Takes in:** `--held-out`, `--adapter-dir`, `--snapshot-dir`, optional `--include-frontier`.
+**Gives out:** a results table (execution accuracy, executable rate, mean latency per variant)
+on stdout and as JSON.
+**Talks to:** `snapshot.duckdb`; results recorded in `finetuning/results_template.md`.
+
+### `finetuning/README.md`, `finetuning/results_template.md` *(day: 9, isNew: true)*
+How to run the notebook and comparison script, why the GPU stack is kept out of the app, and
+the full results table with the four bugs found and fixed before any number was trusted.
+
+---
+
+## Deploy and infrastructure (Day 2, Day 8)
+
+### `docker/api.Dockerfile` *(day: 2)*
+Production image for the API. Two stages: `uv` installs the locked dependencies in a builder,
+and the runtime stage copies only the virtualenv and app code, runs as a non-root user, and
+bakes the git SHA into `/version`.
+**Takes in:** the repo plus `--build-arg GIT_SHA=...`.
+**Gives out:** the `copilot-api` image (port 8000).
+**Talks to:** built and smoke-tested by `.github/workflows/ci.yml`'s `image` job; run on EC2 by
+`infra/server/deploy.sh`.
+
+### `infra/server/user-data.sh`, `infra/server/deploy.sh` *(day: 2)*
+`user-data.sh` bootstraps the Ubuntu EC2 host once (Docker + Compose, nginx reverse proxy to
+127.0.0.1:8000, Certbot, AWS CLI). `deploy.sh` runs on the host via SSM Run Command, switches the
+API to a new image and rolls back to the previous one if `/health` fails.
+**Takes in:** `deploy.sh` takes the image URI and AWS region.
+**Talks to:** `.github/workflows/ci.yml`'s `deploy` job; ADR-003.
+
+### `infra/aws/github-oidc-trust.json`, `github-deploy-policy.json`, `ec2-instance-policy.json` *(day: 2)*
+IAM documents: the trust policy that lets GitHub Actions assume a deploy role through OIDC (no
+long-lived AWS keys in GitHub), the least-privilege deploy policy (push images to ECR, send SSM
+Run Commands and read their results), and the instance policy (read and KMS-decrypt the app's
+SSM parameters, nothing else).
+**Talks to:** ADR-004; `.github/workflows/ci.yml`.
+
+### `infra/local/compose.yaml` *(day: 8)*
+Local-only Postgres container for exercising the Postgres checkpointer branch. See the scripts
+table below.
+
+### `tasks.ps1` *(day: 1)*
+Windows PowerShell task runner: `setup`, `lint`, `typecheck`, `test`, `snapshot`, `check`.
+
+---
+
+## Living docs and portfolio pages (Day 1, Day 10)
+
+### `docs/PROJECT_PROGRESS.md`, `BUILD_LOG.md`, `COMMANDS.md`, `TROUBLESHOOTING.md`, `RAID.md`, `TRADEOFF_LOG.md`, `HANDOFF.md`, `CODE_MAP.md` *(day: 1)*
+The project's memory across chats: status per day, the dated build log (including every bug found
+before a number was trusted), every command used, problems and fixes, the risk register, the
+trade-off log, the hand-off note for the next chat, and this file. Not code; kept current in the
+same commit as the change they describe.
+
+### `evals/datasets/golden_v1.manifest.json`, `golden_v2.manifest.json` *(day: 1)*
+File name, sha256, question count and per-category/per-split counts for each golden set, so an
+edited golden set can't silently replace the one the results were measured on.
+
+### `README.md` *(day: 10, isNew: true)*
+The project front page: problem, architecture diagram, agent roster, results table (real numbers
+only), cost and latency, ADR index, limitations, roadmap.
+
+### `docs/DEMO_SCRIPT.md` *(day: 10, isNew: true)*
+A timed 3-minute demo-video script (a real question, agents working, a Guardian block, a human
+approval, the scoped QLoRA claim) with a recording checklist.
+
+### `docs/CASE_STUDY.md` + `docs/case-study/index.html` *(day: 10, isNew: true)*
+The case study for recruiters. The markdown is the source text; the HTML is the published page
+(interactive agent graph, results ledger, bugs found in my own measurements), hosted as a shared
+page until the domain exists, then moved there unchanged.
+
+### `scripts/build_code_map_page.py` + `docs/code-map/template.html` -> `docs/code-map/index.html` *(day: 10, isNew: true)*
+Builds the browsable Code Map page from this file. The page used to carry a hand-typed copy of
+these entries, which had drifted five days behind; now the markdown is the only source and the
+page is regenerated from it. Parses each `###` heading (path, symbol, day/isNew marker), its
+description, and its Takes in / Gives out / Talks to lines; turns backticked file and
+`copilot.*` module references in "Talks to" into links between entries.
+**Takes in:** `docs/CODE_MAP.md` and the page shell `docs/code-map/template.html`.
+**Gives out:** `docs/code-map/index.html` (published as the shared Code Map page).
+**Talks to:** nothing at runtime; run `uv run python scripts/build_code_map_page.py` after
+editing this file.
+
+### `docs/tracker/index.html` *(day: 10, isNew: true)*
+Source of the shared Progress Tracker page: the original long-range plan (phases, calendar,
+costs) plus, from Day 10, a Sprint tab with every day's real outcome, the current RAID items
+and the next steps. Edited by hand and republished to the same link.
+
+### `docs/SPRINT_REPORT.md` *(day: 10, isNew: true)*
+The final Daily Sprint Report: all ten days, what shipped and what didn't, metrics, costs, cuts,
+open items, and the depth-track schedule.
+
+---
+
 ## Not yet started (empty package markers only)
-`src/copilot/dl/`, `src/copilot/mcp/`, `src/copilot/nlp/`, `src/copilot/extract/`,
-`src/copilot/observability/`, `src/copilot/ui/` — folders exist with an `__init__.py` so
-imports work later; no real code yet. (`src/copilot/rag/`, `src/copilot/ml/`, and
-`src/copilot/agents/` have moved to the sections above.)
+`src/copilot/dl/`, `src/copilot/nlp/`, `src/copilot/extract/`, `src/copilot/observability/`,
+`src/copilot/ui/` — folders exist with an `__init__.py` so imports work later; no real code yet.
+(`src/copilot/rag/`, `src/copilot/ml/`, `src/copilot/agents/` and, from Day 9,
+`src/copilot/mcp/` have moved to the sections above. The UI that does exist lives in
+`src/copilot/api/static/`.)
 
 ---
 
@@ -1110,6 +1271,8 @@ imports work later; no real code yet. (`src/copilot/rag/`, `src/copilot/ml/`, an
 | `scripts/train_risk_classifier.py` | your real `vw_PortfolioHealth` export (CSV/XLSX) | real RF/XGBoost leaky-vs-safe accuracy/F1 + SHAP drivers, appends to `run_log.csv` |
 | `scripts/run_model_selection_eval.py` | `ANTHROPIC_API_KEY` (every run, not just `--quality`) | real Model Selection Agent runs over the 8-question golden set; `--quality` adds the LLM-judged reasoning check |
 | `scripts/run_orchestrator_golden.py` | `ANTHROPIC_API_KEY` + the real snapshot + `data/chroma/` | Day 6 step 7: runs the 10 multi-hop golden questions end to end through the real Orchestrator (real specialists, real Verifier loop); prints plan coverage, verified status, cost/latency per question, and leaves a SQLite checkpoint per run at `data/orchestrator_checkpoints.sqlite` |
+| `scripts/generate_sql_pairs.py` | the snapshot | Day 9: writes the 400 execution-verified question -> SQL pairs (`sql_pairs_v2.jsonl` + manifest) |
+| `finetuning/day9_qlora_colab.ipynb` then `finetuning/eval_compare.py` | Google Colab, free T4 GPU, `snapshot.duckdb` uploaded | Day 9: QLoRA fine-tune, then base vs few-shot vs QLoRA on the 60 held-out pairs |
 | `docker compose -f infra/local/compose.yaml up -d` | Docker | Day 8 step 7: a local-only Postgres container for exercising `copilot.api.dependencies._build_checkpointer`'s Postgres branch for real; set `CHECKPOINT_DATABASE_URL` in `.env` to the printed connection string, nothing else changes |
 
 ## Tests (`tests/*.py`)

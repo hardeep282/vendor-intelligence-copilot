@@ -2280,3 +2280,43 @@ since the landing page itself doesn't exist yet -- Day 2 scope, still pending).
 Still open for the build half: the Code Map HTML artifact's one-time end-of-sprint update
 (version 8, current through Day 5), the Progress Tracker page, tagging `v0.1.1`, and the final
 Daily Sprint Report. Career half not started.
+
+## 27 Oct 2026 -- Day 10 build half, closed out
+
+**Re-verified before building on it.** `uv sync --frozen` still can't reach the PyTorch CPU
+index from this session, but the existing environment ran everything. First run: 484 passed,
+27 skipped -- every skip "snapshot not built". Rebuilt the snapshot from the public analytics
+repo's `Excel Analysis/Vendor_Summary.xlsx` (`scripts/build_snapshot.py`), but the skips stayed:
+the tests check for `data/snapshot/snapshot.duckdb`, which `build_snapshot.py` doesn't create
+(only `copilot.data.store.connect()`/`build_database()` does). After `build_database()`:
+**511 passed, 0 failed, 0 skipped**; ruff and mypy strict clean. Recorded in TROUBLESHOOTING.md.
+
+**Secrets scan before going public.** gitleaks 8.24.3 over the full history (83 commits): no
+leaks. Also checked: no `.xlsx`/`.csv`/`.parquet`/`.duckdb`/`.env` ever committed, no phone
+number anywhere in history; the only personal detail is the commit-author email.
+
+**Accuracy fixes in the public-facing copy:**
+- README said "10+ years commercial/B2B background". Replaced with what's true (BTech, B2B sales,
+  financial-services and retail experience in India and the UK).
+- README and `CASE_STUDY.md` said the QLoRA adapter had "no latency penalty". It is faster than
+  zero-shot base (4.42 s vs 6.76 s) but slower than few-shot base (3.83 s). ADR-007 itself
+  already says this correctly ("close to base_few_shot's 3.828s"); the copy now matches it.
+- README linked twice to a `docs/decisions` folder that doesn't exist; now names Addendum A1/A2.
+
+**Code Map.** `docs/CODE_MAP.md` had no entries for any Day 9 file and 28 tracked files in total
+were missing (Day 9, `docker/`, `infra/`, `tasks.ps1`, the living docs, the Day 10 docs). All
+backfilled; every entry now carries a day marker (40 added, taken from the old page's per-file
+days). The shared Code Map page had been a hand-typed JS array, five days stale; replaced with
+`scripts/build_code_map_page.py`, which parses the markdown and writes
+`docs/code-map/index.html` from `docs/code-map/template.html` (the published page's own shell).
+Published as Version 9 of the same link: 85 entries, Days 1-10.
+
+**Published:** case-study page (`docs/case-study/index.html`, interactive agent graph, results
+ledger with scope tags, four measurement bugs); Progress Tracker update (`docs/tracker/index.html`,
+new Sprint tab, current RAID, next steps). Version 0.1.0 -> 0.1.1 in `pyproject.toml` and
+`uv.lock` (`uv lock --check` passes; `/version` test reads package metadata, still green).
+`docs/SPRINT_REPORT.md` is the final Daily Sprint Report.
+
+**Open, yours:** push tag `v0.1.1`; decide R1/R7 and make the repo public; share the case-study
+page; record the demo; run the pending real-key scripts; deploy. ADR-008 questions are in the
+sprint report.

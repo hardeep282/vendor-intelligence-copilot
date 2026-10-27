@@ -1,0 +1,2311 @@
+<meta name="claude:viewport-fit-sides" content="cover">
+<title>Vendor Copilot Code Map</title>
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600&family=IBM+Plex+Sans:wght@400;500;600&display=swap">
+<style>
+/* Layout concept: a file explorer -- a flat, filterable list of every file in the left rail
+   (grouped by layer, but each FILE is the selectable unit, not the layer), and a single-file
+   detail pane on the right, the way a code-intelligence panel shows "find references" for
+   whatever's selected. Built to be re-generated from docs/CODE_MAP.md every day the repo grows. */
+:root {
+  --bg: #0b0e13;
+  --panel: #11151c;
+  --panel-raised: #161b24;
+  --border: #232a36;
+  --fg: #d9dee6;
+  --fg-dim: #8691a3;
+  --fg-faint: #5b6577;
+  --accent: #5ee6b0;
+  --accent-dim: #1c2b25;
+  --accent-border: #2f5a49;
+  --warn: #e6b65e;
+  --warn-dim: #332a17;
+  --code-bg: #0e1218;
+  color-scheme: dark;
+}
+@media (prefers-color-scheme: light) {
+  :root:not([data-theme="dark"]) {
+    --bg: #f6f4ee;
+    --panel: #fdfcf9;
+    --panel-raised: #ffffff;
+    --border: #e4e0d4;
+    --fg: #23211c;
+    --fg-dim: #6b6a60;
+    --fg-faint: #9a9890;
+    --accent: #2f7a53;
+    --accent-dim: #eae4d2;
+    --accent-border: #d9cfae;
+    --warn: #8a5a12;
+    --warn-dim: #f2e4c6;
+    --code-bg: #f0ede3;
+    color-scheme: light;
+  }
+}
+:root[data-theme="light"] {
+  --bg: #f6f4ee;
+  --panel: #fdfcf9;
+  --panel-raised: #ffffff;
+  --border: #e4e0d4;
+  --fg: #23211c;
+  --fg-dim: #6b6a60;
+  --fg-faint: #9a9890;
+  --accent: #2f7a53;
+  --accent-dim: #eae4d2;
+  --accent-border: #d9cfae;
+  --warn: #8a5a12;
+  --warn-dim: #f2e4c6;
+  --code-bg: #f0ede3;
+  color-scheme: light;
+}
+
+* { box-sizing: border-box; }
+html, body { background: var(--bg); color: var(--fg); margin: 0; }
+body {
+  font-family: "IBM Plex Sans", system-ui, sans-serif;
+  font-size: 14.5px;
+  line-height: 1.55;
+  -webkit-font-smoothing: antialiased;
+}
+code, .mono, .path { font-family: "IBM Plex Mono", "SFMono-Regular", Consolas, monospace; }
+a { color: var(--accent); }
+
+button {
+  font-family: inherit;
+  cursor: pointer;
+  border-radius: 6px;
+  border: 1px solid var(--border);
+  background: var(--panel-raised);
+  color: var(--fg-dim);
+}
+button:hover { color: var(--fg); border-color: var(--fg-faint); }
+button:focus-visible, input:focus-visible, [tabindex]:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
+.shell {
+  display: flex;
+  flex-direction: column;
+  min-height: 100vh;
+  padding-left: max(0px, env(safe-area-inset-left, 0px));
+  padding-right: max(0px, env(safe-area-inset-right, 0px));
+}
+
+/* ---------- header ---------- */
+.topbar {
+  display: flex;
+  align-items: baseline;
+  flex-wrap: wrap;
+  gap: 4px 14px;
+  padding: 16px max(16px, env(safe-area-inset-right, 0px)) 14px max(16px, env(safe-area-inset-left, 0px));
+  padding-top: calc(16px + env(safe-area-inset-top, 0px));
+  border-bottom: 1px solid var(--border);
+  background: var(--panel);
+}
+.topbar .brand {
+  font-family: "IBM Plex Mono", monospace;
+  font-weight: 600;
+  font-size: 15px;
+  letter-spacing: 0.01em;
+}
+.topbar .tagline { color: var(--fg-dim); font-size: 13px; }
+.topbar .spacer { flex: 1 1 auto; }
+.count-pill {
+  font-family: "IBM Plex Mono", monospace;
+  font-size: 12px;
+  color: var(--fg-dim);
+  background: var(--panel-raised);
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  padding: 3px 11px;
+}
+.topbar .copy-all {
+  font-size: 12px;
+  padding: 5px 11px;
+}
+
+.searchbar {
+  padding: 12px max(16px, env(safe-area-inset-right, 0px)) 12px max(16px, env(safe-area-inset-left, 0px));
+  border-bottom: 1px solid var(--border);
+  background: var(--panel);
+}
+.searchbar input {
+  width: 100%;
+  font-family: "IBM Plex Mono", monospace;
+  font-size: 13.5px;
+  background: var(--code-bg);
+  border: 1px solid var(--border);
+  color: var(--fg);
+  border-radius: 7px;
+  padding: 9px 12px;
+}
+.searchbar input::placeholder { color: var(--fg-faint); }
+
+.daybar {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  padding: 0 max(16px, env(safe-area-inset-right, 0px)) 12px max(16px, env(safe-area-inset-left, 0px));
+  border-bottom: 1px solid var(--border);
+  background: var(--panel);
+}
+.day-pill {
+  font-family: "IBM Plex Mono", monospace;
+  font-size: 12px;
+  color: var(--fg-dim);
+  background: var(--panel-raised);
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  padding: 4px 11px;
+  cursor: pointer;
+}
+.day-pill[aria-pressed="true"] {
+  color: var(--accent);
+  background: var(--accent-dim);
+  border-color: var(--accent-border);
+}
+
+.body-row { display: flex; flex: 1; min-height: 0; }
+
+/* ---------- rail (flat file list, grouped) ---------- */
+.rail {
+  width: 272px;
+  flex: none;
+  border-right: 1px solid var(--border);
+  background: var(--panel);
+  padding: 8px 8px 24px max(8px, env(safe-area-inset-left, 0px));
+  overflow-y: auto;
+}
+.rail-group {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  padding: 9px 8px 5px;
+  background: none;
+  border: none;
+  color: var(--fg-faint);
+  font-size: 11px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+.rail-group .arrow { font-size: 9px; transition: transform 0.12s; }
+.rail-group[aria-expanded="false"] .arrow { transform: rotate(-90deg); }
+.rail-group .gcount { margin-left: auto; font-family: "IBM Plex Mono", monospace; }
+.rail-files { display: block; }
+.rail-files[hidden] { display: none; }
+
+.rail button.file {
+  display: block;
+  width: 100%;
+  text-align: left;
+  padding: 7px 10px 7px 16px;
+  margin: 1px 0;
+  border: 1px solid transparent;
+  background: transparent;
+  color: var(--fg-dim);
+  font-size: 13px;
+  border-radius: 6px;
+  font-family: "IBM Plex Mono", monospace;
+}
+.rail button.file .sub {
+  display: block;
+  font-family: "IBM Plex Sans", sans-serif;
+  font-size: 10.5px;
+  color: var(--fg-faint);
+  margin-top: 2px;
+  text-transform: none;
+  letter-spacing: 0;
+}
+.rail button.file:hover { background: var(--panel-raised); color: var(--fg); }
+.rail button.file[aria-current="true"] {
+  background: var(--accent-dim);
+  color: var(--fg);
+  border-color: var(--accent-border);
+}
+.rail button.file[aria-current="true"] .sub { color: var(--accent); }
+.rail button.file .new-dot {
+  display: inline-block;
+  width: 5px;
+  height: 5px;
+  border-radius: 50%;
+  background: var(--accent);
+  margin-left: 5px;
+}
+.rail-empty { padding: 14px 12px; color: var(--fg-faint); font-size: 13px; }
+
+/* mobile: collapse rail into a select-like scroller */
+.rail-mobile {
+  display: none;
+  gap: 6px;
+  overflow-x: auto;
+  padding: 10px max(16px, env(safe-area-inset-left, 0px)) 10px max(16px, env(safe-area-inset-left, 0px));
+  border-bottom: 1px solid var(--border);
+  background: var(--panel);
+  -webkit-overflow-scrolling: touch;
+}
+.rail-mobile button {
+  flex: none;
+  white-space: nowrap;
+  padding: 7px 12px;
+  font-size: 12.5px;
+  font-family: "IBM Plex Mono", monospace;
+  color: var(--fg-dim);
+}
+.rail-mobile button[aria-current="true"] {
+  background: var(--accent-dim);
+  color: var(--fg);
+  border-color: var(--accent-border);
+}
+
+/* ---------- detail pane ---------- */
+main { flex: 1; min-width: 0; overflow-y: auto; display: flex; flex-direction: column; }
+.pane-scroll { flex: 1; padding: 26px max(20px, env(safe-area-inset-right, 0px)) 20px max(20px, env(safe-area-inset-left, 0px)); }
+.pane { max-width: 680px; margin: 0 auto; }
+
+.pane .crumb {
+  font-family: "IBM Plex Mono", monospace;
+  font-size: 13px;
+  color: var(--accent);
+  margin-bottom: 10px;
+  word-break: break-word;
+}
+.pane .headline {
+  font-size: 21px;
+  font-weight: 600;
+  line-height: 1.35;
+  margin: 0 0 14px;
+  text-wrap: balance;
+}
+.badges-row { display: flex; flex-wrap: wrap; gap: 7px; margin-bottom: 20px; }
+.pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  font-family: "IBM Plex Mono", monospace;
+  font-size: 10.5px;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  padding: 4px 10px;
+  border-radius: 999px;
+  border: 1px solid var(--accent-border);
+  color: var(--accent);
+  background: var(--accent-dim);
+}
+.pill.warn { border-color: var(--warn); color: var(--warn); background: var(--warn-dim); }
+.pill.new { border-color: var(--accent-border); color: var(--accent); background: var(--accent-dim); }
+
+.field { margin-bottom: 20px; }
+.field .label {
+  font-size: 11px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--fg-faint);
+  margin-bottom: 6px;
+}
+.field .value { color: var(--fg); }
+.field .value table { border-collapse: collapse; width: 100%; font-size: 13px; margin-top: 6px; }
+.field .value th, .field .value td { border: 1px solid var(--border); padding: 6px 8px; text-align: left; vertical-align: top; }
+.field .value th { color: var(--fg-dim); font-weight: 500; }
+.field .value .tbl { overflow-x: auto; }
+.field .value p { margin: 0 0 10px; }
+.field .value code { background: var(--code-bg); padding: 1px 5px; border-radius: 4px; font-size: 0.92em; color: var(--fg); }
+
+.chip-row { display: flex; flex-wrap: wrap; gap: 8px; }
+.chip {
+  font-family: "IBM Plex Mono", monospace;
+  font-size: 12.5px;
+  padding: 5px 11px;
+  border-radius: 7px;
+  border: 1px solid var(--border);
+  background: var(--panel-raised);
+  color: var(--fg-dim);
+}
+.chip.link:hover { color: var(--fg); border-color: var(--accent-border); }
+.chip.plain { cursor: default; }
+.chip.plain:hover { color: var(--fg-dim); border-color: var(--border); }
+
+.pane-foot {
+  border-top: 1px solid var(--border);
+  padding: 14px max(20px, env(safe-area-inset-left, 0px));
+  font-size: 12px;
+  color: var(--fg-faint);
+  text-align: center;
+  background: var(--panel);
+}
+.pane-foot code { color: var(--fg-dim); }
+
+.toast {
+  position: fixed;
+  bottom: max(18px, env(safe-area-inset-bottom, 0px));
+  left: 50%;
+  transform: translateX(-50%) translateY(8px);
+  background: var(--panel-raised);
+  border: 1px solid var(--accent-border);
+  color: var(--fg);
+  padding: 8px 14px;
+  border-radius: 7px;
+  font-size: 13px;
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 0.15s, transform 0.15s;
+  z-index: 20;
+}
+.toast.show { opacity: 1; transform: translateX(-50%) translateY(0); pointer-events: auto; }
+
+@media (max-width: 760px) {
+  .rail { display: none; }
+  .rail-mobile { display: flex; }
+  .pane .headline { font-size: 19px; }
+}
+</style>
+
+<div class="shell">
+  <div class="topbar">
+    <div class="brand">VENDOR-INTELLIGENCE-COPILOT <span style="color:var(--fg-faint)">// CODE MAP</span></div>
+    <div class="tagline">what each file does, and why</div>
+    <div class="spacer"></div>
+    <span class="count-pill" id="count-pill">-- files</span>
+    <button type="button" class="copy-all" id="copy-all">Copy full map ⧉</button>
+  </div>
+
+  <div class="searchbar">
+    <input id="search" type="text" placeholder="filter by file name or what it does…" autocomplete="off" />
+  </div>
+  <div class="daybar" id="daybar" role="tablist" aria-label="Filter by day"></div>
+
+  <div class="rail-mobile" id="rail-mobile" role="listbox" aria-label="File"></div>
+
+  <div class="body-row">
+    <nav class="rail" id="rail" aria-label="Files"></nav>
+    <main>
+      <div class="pane-scroll"><div class="pane" id="pane"></div></div>
+      <div class="pane-foot">
+        Generated from <code>docs/CODE_MAP.md</code> by <code>scripts/build_code_map_page.py</code>
+        (85 entries, built 2026-10-27). The markdown is the source of truth; whenever a file is added or changes
+        job, its entry there changes in the same commit and this page is regenerated.
+      </div>
+    </main>
+  </div>
+</div>
+
+<div class="toast" id="toast">Copied</div>
+
+<script>
+/* ---------------------------------------------------------------------------------------
+   DATA — one entry per file, mirroring docs/CODE_MAP.md. `group` controls the rail section;
+   groups render in the order their first file appears below. `talksTo` entries with an `id`
+   are clickable cross-references (jump to that file); entries with only a `label` are plain
+   (e.g. a data file, or something outside this list). Update this array in the same commit
+   that changes CODE_MAP.md -- add a new file here, or edit one whose job changed.
+--------------------------------------------------------------------------------------- */
+const FILES = [
+ {
+  "id": "src-copilot-settings-py",
+  "group": "Settings & secrets",
+  "day": 1,
+  "path": "src/copilot/settings.py",
+  "headline": "One typed place for every config value and secret in the project.",
+  "does": "Day 7 step 6 added the input gate's knobs: <code>daily_spend_cap_usd<\/code> (already present, now actually enforced), <code>rate_limit_per_minute<\/code> (default 30), <code>max_question_chars<\/code> (default 4000), <code>kill_switch_enabled<\/code> (default <code>False<\/code> — the one flag an operator flips first in an incident). Day 8, A2 §1.1 added <code>fallback_model<\/code> (default <code>None<\/code> — no fallback, so a primary-model outage still surfaces as an error exactly as before this existed; an operational choice, left unset in <code>.env.example<\/code> on purpose since ADR-005 already names the primary). Day 8 step 7 added <code>checkpoint_database_url<\/code> (<code>SecretStr | None<\/code>, default <code>None<\/code> — local SQLite; a real Postgres DSN switches <code>copilot.api.dependencies._build_checkpointer<\/code> to a <code>PostgresSaver<\/code> instead).",
+  "talksTo": [
+   {
+    "id": "src-copilot-llm-client-py",
+    "label": "LLMClient"
+   },
+   {
+    "label": "scripts/*.py"
+   },
+   {
+    "id": "src-copilot-data-store-py",
+    "label": "copilot.data.store"
+   },
+   {
+    "id": "src-copilot-guardrails-input-gate-py",
+    "label": "copilot.guardrails.input_gate"
+   }
+  ],
+  "takes": "environment variables, plus a local <code>.env<\/code> file (never committed).",
+  "gives": "a cached <code>Settings<\/code> object via <code>get_settings()<\/code>."
+ },
+ {
+  "id": "src-copilot-secrets-py",
+  "group": "Settings & secrets",
+  "day": 2,
+  "path": "src/copilot/secrets.py",
+  "headline": "Loads production secrets from AWS SSM Parameter Store when the server starts in prod.",
+  "does": "Loads production secrets from AWS SSM Parameter Store when the server starts in prod.",
+  "talksTo": [
+   {
+    "id": "src-copilot-settings-py",
+    "label": "settings.py"
+   }
+  ],
+  "takes": "an SSM path prefix (e.g. <code>/vendor-copilot/prod<\/code>) and an AWS region.",
+  "gives": "one environment variable per parameter (so <code>/vendor-copilot/prod/ANTHROPIC_API_KEY<\/code> becomes <code>ANTHROPIC_API_KEY<\/code>)."
+ },
+ {
+  "id": "src-copilot-data-store-py",
+  "group": "Data layer",
+  "day": 1,
+  "path": "src/copilot/data/store.py",
+  "headline": "The only way any agent reads data.",
+  "does": "A locked-down, read-only DuckDB connection over the Parquet snapshot — refuses file access, network access, config changes, and every write, even if a bad query somehow got past the SQL validator. The lockdown config (<code>enable_external_access<\/code>, <code>lock_configuration<\/code>) is passed via <code>config=<\/code> at <code>connect()<\/code>-time rather than applied with <code>SET<\/code> afterward (Day 8 fix — see <code>BUILD_LOG.md<\/code>, 22 Oct): DuckDB shares one database instance across every connection opened to the same path within a process, so a <code>SET<\/code> after the 2nd-3rd <code>connect()<\/code> call hit an already-locked instance and raised. <code>/ask<\/code> calls <code>connect()<\/code> once per request, which made this a production blocker, not just a test flake.",
+  "talksTo": [
+   {
+    "id": "src-copilot-sql-service-py",
+    "label": "TextToSqlService"
+   },
+   {
+    "id": "src-copilot-insights-service-py",
+    "label": "InsightService"
+   },
+   {
+    "id": "scripts-verify-vendor-data-py",
+    "label": "scripts/verify_vendor_data.py"
+   },
+   {
+    "label": "docs/specs/text_to_sql_safety.md"
+   }
+  ],
+  "takes": "the snapshot directory (Parquet tables).",
+  "gives": "a read-only DuckDB connection, safe to open repeatedly in one long-lived process."
+ },
+ {
+  "id": "src-copilot-data-guard-py",
+  "group": "Data layer",
+  "day": 1,
+  "path": "src/copilot/data/guard.py",
+  "headline": "Makes \"no raw licensed row-level data leaves the machine\" a tested rule instead of a habit.",
+  "does": "Makes \"no raw licensed row-level data leaves the machine\" a tested rule instead of a habit.",
+  "talksTo": [
+   {
+    "id": "scripts-build-snapshot-py",
+    "label": "scripts/build_snapshot.py"
+   }
+  ],
+  "takes": "a table name and its columns/row count.",
+  "gives": "raises <code>LicenceViolation<\/code> if a table looks like row-level/SKU-level data."
+ },
+ {
+  "id": "scripts-build-snapshot-py",
+  "group": "Data layer",
+  "day": 1,
+  "path": "scripts/build_snapshot.py",
+  "headline": "Turns the vendor project's Excel workbook into the aggregate-only Parquet tables the app is allowed to query.",
+  "does": "SKU-level sheets are only ever aggregated, never copied as-is.",
+  "talksTo": [
+   {
+    "id": "src-copilot-data-guard-py",
+    "label": "guard.py"
+   },
+   {
+    "id": "src-copilot-data-store-py",
+    "label": "store.py"
+   }
+  ],
+  "takes": "path to <code>Vendor_Summary.xlsx<\/code> (local only, never committed).",
+  "gives": "<code>data/snapshot/&lt;table&gt;.parquet<\/code> + <code>MANIFEST.json<\/code>."
+ },
+ {
+  "id": "scripts-verify-vendor-data-py",
+  "group": "Data layer",
+  "day": 1,
+  "path": "scripts/verify_vendor_data.py",
+  "headline": "Prints the exact grounding data <code>InsightService<\/code> hands the model for one vendor, with no LLM call — a way to fact-check a narrative by eye instead of trusting the model's own citations.",
+  "does": "Prints the exact grounding data <code>InsightService<\/code> hands the model for one vendor, with no LLM call — a way to fact-check a narrative by eye instead of trusting the model's own citations.",
+  "talksTo": [
+   {
+    "id": "src-copilot-insights-service-py",
+    "label": "InsightService"
+   }
+  ]
+ },
+ {
+  "id": "src-copilot-guardrails-guardian-py",
+  "group": "Guardrails",
+  "day": 7,
+  "path": "src/copilot/guardrails/guardian.py",
+  "headline": "Master prompt C4's single mandatory final pass.",
+  "does": "<code>Guardian.review(result)<\/code> runs 8 checks, cheapest-first, against anything shaped like an <code>OrchestratorResult<\/code> (a <code>_Reviewable<\/code> Protocol -- <code>role<\/code>/<code>answer<\/code>/<code>results<\/code>/<code>verified<\/code> -- not an import of that class, to avoid a circular import with <code>orchestrator.py<\/code>): <code>_check_canary<\/code> (the agent-specific <code>CANARY-&lt;AGENT&gt;<\/code> markers every system prompt now carries, via <code>canary.py<\/code>, leaking into output = BLOCK), <code>_check_restricted_ names<\/code> (any <code>policies/disclosure.yaml<\/code> <code>restricted_names<\/code> table/view named in the answer = BLOCK), <code>_check_raw_row_shape<\/code> (<code>RAW_ROW_PATTERN<\/code>: 10+ consecutive pipe/tab-delimited 3+-field lines = BLOCK -- a real row-level export, not an illustrative summary table), <code>_check_role_ policy<\/code> (any <code>AgentResult.data_classes<\/code> the requesting role's <code>DisclosurePolicy.can_view<\/code> says no to = BLOCK), <code>_check_vendor_audience<\/code> (an Action draft present + any <em>other<\/em> specialist's data classes beyond <code>vendor_facing_audience.allowed_classes<\/code> = BLOCK), <code>_check_secrets<\/code> (<code>_SECRET_ PATTERNS<\/code>: Anthropic/AWS/bearer-token shapes = BLOCK), <code>_check_pii<\/code> (<code>pii.find_pii<\/code> hits = REDACT, one finding per entity), <code>_check_grounding<\/code> (<code>not result.verified<\/code> = ESCALATE, not BLOCK -- unconfirmed-safe isn't known-unsafe). The worst-severity finding (<code>block<\/code> &gt; <code>escalate<\/code> &gt; <code>redact<\/code> &gt; <code>allow<\/code>) decides <code>outcome<\/code>; every finding's <code>code<\/code> lands in <code>reason_codes<\/code> regardless of which one won, so the audit log shows everything that fired. <code>safe_answer<\/code> is the real text on ALLOW, a copy with each PII span replaced by <code>[REDACTED:&lt;TYPE&gt;]<\/code> on REDACT, or one of two fixed generic messages (naming the reason codes, nothing else) on BLOCK/ESCALATE.",
+  "talksTo": [
+   {
+    "id": "src-copilot-agents-contracts-py",
+    "label": "copilot.agents.contracts"
+   },
+   {
+    "id": "src-copilot-guardrails-pii-py",
+    "label": "copilot.guardrails.pii"
+   },
+   {
+    "id": "src-copilot-guardrails-pii-py",
+    "label": "find_pii"
+   },
+   {
+    "id": "src-copilot-guardrails-policy-py",
+    "label": "copilot.guardrails.policy"
+   },
+   {
+    "id": "src-copilot-agents-orchestrator-py",
+    "label": "copilot.agents.orchestrator._guardian_node"
+   },
+   {
+    "label": "tests/test_orchestrator.py::test_every_path_to_end_passes_through_guardian"
+   }
+  ],
+  "sym": "Guardian",
+  "takes": "a <code>_Reviewable<\/code> (role, answer, specialist results, verified flag) + an optional <code>DisclosurePolicy<\/code> (defaults to <code>load_policy()<\/code>).",
+  "gives": "<code>GuardianVerdict<\/code> (<code>outcome<\/code>, <code>reason_codes<\/code>, <code>findings<\/code>, <code>safe_answer<\/code>, <code>policy_version<\/code>); <code>Finding<\/code>; <code>GuardianOutcome<\/code>; <code>RAW_ROW_PATTERN<\/code>.",
+  "isNew": true
+ },
+ {
+  "id": "src-copilot-guardrails-pii-py",
+  "group": "Guardrails",
+  "day": 7,
+  "path": "src/copilot/guardrails/pii.py",
+  "headline": "PII detection for <code>Guardian._check_pii<\/code>/<code>_apply_redactions<\/code>.",
+  "does": "Presidio (<code>AnalyzerEngine<\/code> + the <code>en_core_web_lg<\/code> spaCy model) when it's installed and the model loads; a dependency-free regex fallback (<code>EMAIL_ADDRESS<\/code>/<code>PHONE_NUMBER<\/code>/<code>CREDIT_CARD<\/code>) otherwise, so the check never silently no-ops just because a model wasn't available in some environment. <code>_get_analyzer()<\/code> builds and caches the <code>AnalyzerEngine<\/code> at module level (construction, not <code>.analyze()<\/code>, is the slow part -- an uncached version made the test suite hang); a failed build is cached too, so a missing model doesn't re-attempt on every call. <code>find_pii<\/code> tries Presidio first via <code>_get_analyzer()<\/code>, falls back to regex only when Presidio itself returns <code>None<\/code> (not installed, model missing, or an analysis-time failure) -- never both, so a caller can tell from <code>PiiEntity.source<\/code> which layer actually ran. Tests (<code>tests/test_guardrails_pii.py<\/code>) assert against <code>_regex_entities<\/code> directly, since Presidio's availability varies by environment; <code>Guardian<\/code>'s own tests exercise <code>find_pii<\/code> itself, whichever backend fires.",
+  "talksTo": [
+   {
+    "id": "src-copilot-guardrails-guardian-py",
+    "label": "copilot.guardrails.guardian"
+   }
+  ],
+  "sym": "find_pii()",
+  "takes": "a string (an answer about to be shown to a user).",
+  "gives": "<code>list[PiiEntity]<\/code> (<code>entity_type<\/code>, <code>text<\/code>, <code>source: &quot;presidio&quot; | &quot;regex_fallback&quot;<\/code>).",
+  "isNew": true
+ },
+ {
+  "id": "src-copilot-guardrails-canary-py",
+  "group": "Guardrails",
+  "day": 7,
+  "path": "src/copilot/guardrails/canary.py",
+  "headline": "Fixed per-agent markers planted in every system prompt this project builds, so any appearance of one in a <em>final answer<\/em> is unambiguous proof of a system-prompt/instruction leak, not a guess.",
+  "does": "<code>canary_token(agent)<\/code> -&gt; <code>f&quot;{policy.canary.prefix}{agent.upper()}&quot;<\/code> (prefix from <code>policies/ disclosure.yaml<\/code>'s <code>canary.prefix<\/code>, currently <code>&quot;CANARY-&quot;<\/code>); <code>canary_line(agent)<\/code> wraps that into one appendable instruction line. Appended to every system prompt that reaches an LLM in this project: <code>TextToSqlService.answer()<\/code> (<code>&quot;data_analyst&quot;<\/code>), <code>run_action()<\/code> (<code>&quot;action&quot;<\/code>), <code>CorrectiveRagService._grade<\/code>/<code>_rewrite<\/code>/<code>_generate<\/code> (<code>&quot;knowledge_grade&quot;<\/code>/<code>&quot;knowledge_rewrite&quot;<\/code>/ <code>&quot;knowledge_generate&quot;<\/code>), and <code>Orchestrator._plan<\/code>/<code>_draft<\/code>/<code>_verify<\/code> (<code>&quot;orchestrator_plan&quot;<\/code>/<code>&quot;orchestrator_draft&quot;<\/code>/<code>&quot;orchestrator_verify&quot;<\/code>) -- one token per call site, not per agent, since a leak at the draft step versus the verify step says something different about where it came from.",
+  "talksTo": [
+   {
+    "id": "src-copilot-guardrails-policy-py",
+    "label": "copilot.guardrails.policy"
+   },
+   {
+    "id": "src-copilot-guardrails-guardian-py",
+    "label": "copilot.guardrails.guardian._check_canary"
+   }
+  ],
+  "sym": "canary_token()/canary_line()",
+  "takes": "an agent/call-site name (any string -- not restricted to <code>AgentName<\/code>, since <code>orchestrator_plan<\/code>/<code>orchestrator_draft<\/code>/<code>orchestrator_verify<\/code>/<code>knowledge_grade<\/code>/etc. aren't specialist names).",
+  "gives": "<code>canary_token(agent) -&gt; str<\/code>, <code>canary_line(agent) -&gt; str<\/code>.",
+  "isNew": true
+ },
+ {
+  "id": "src-copilot-guardrails-audit-log-py",
+  "group": "Guardrails",
+  "day": 7,
+  "path": "src/copilot/guardrails/audit_log.py",
+  "headline": "A durable, append-only JSONL record of every Guardian decision and every approver decision -- independent of LangSmith on purpose (traces can be …",
+  "does": "A durable, append-only JSONL record of every Guardian decision and every approver decision -- independent of LangSmith on purpose (traces can be sampled/redacted/rotated, step 7; this file is the compliance-grade record that has to survive that). <code>log_decision(verdict, question=, role=)<\/code> writes one <code>&quot;event&quot;: &quot;guardian_decision&quot;<\/code> row per <code>GuardianVerdict<\/code>; <code>log_approval(question=, role=, decision=, final_answer=)<\/code> writes one <code>&quot;event&quot;: &quot;approval_decision&quot;<\/code> row per approve/edit/ reject call (no <code>GuardianVerdict<\/code> to log there -- an edit gets its own separate <code>log_decision<\/code> row from the re-review). Both never raise into the caller: a write wrapped in <code>try/except OSError<\/code> returns <code>True<\/code>/<code>False<\/code> instead, because an audit-log write problem must not itself block an already-decided answer from reaching the user. <code>read_decisions(path)<\/code> returns <code>[]<\/code> for a log that doesn't exist yet. Local-only, never committed (<code>data/audit/*.jsonl<\/code> added to <code>.gitignore<\/code> alongside this file -- no existing wildcard covered <code>.jsonl<\/code>). Day 8: <code>log_decision<\/code> takes an optional <code>review_id=<\/code> (a uuid4 string the orchestrator generates only for an ESCALATE outcome), written into the row so a future reviewer can join a <code>pending_review<\/code> status back to its exact audit-log entry -- <code>None<\/code>/absent for every other outcome.",
+  "talksTo": [
+   {
+    "id": "src-copilot-guardrails-guardian-py",
+    "label": "copilot.guardrails.guardian"
+   },
+   {
+    "id": "src-copilot-settings-py",
+    "label": "copilot.settings"
+   },
+   {
+    "id": "src-copilot-agents-orchestrator-py",
+    "label": "copilot.agents.orchestrator._guardian_node"
+   }
+  ],
+  "sym": "log_decision()/log_approval()",
+  "takes": "a <code>GuardianVerdict<\/code> + question/role + optional <code>review_id<\/code> (<code>log_decision<\/code>), or question/role/decision/final_answer (<code>log_approval<\/code>).",
+  "gives": "<code>True<\/code>/<code>False<\/code> per write; <code>list[dict]<\/code> from <code>read_decisions<\/code>.",
+  "isNew": true
+ },
+ {
+  "id": "src-copilot-guardrails-input-gate-py",
+  "group": "Guardrails",
+  "day": 7,
+  "path": "src/copilot/guardrails/input_gate.py",
+  "headline": "Master prompt D2/C4's input half of defence in depth (the Guardian above is the output half) -- checks that run on the raw question <em>before<\/em> the …",
+  "does": "Master prompt D2/C4's input half of defence in depth (the Guardian above is the output half) -- checks that run on the raw question <em>before<\/em> the Orchestrator's <code>plan<\/code> node, so a bad request never spends an LLM call. <code>InputGate.review(question, role)<\/code> runs 6 checks, cheapest first: <code>_check_kill_switch<\/code> (one flag, <code>Settings.kill_switch_enabled<\/code>), <code>_check_length<\/code> (<code>len()<\/code> against <code>Settings.max_question_chars<\/code>, default 4000), <code>_check_injection<\/code> (<code>_INJECTION_PATTERNS<\/code>: blunt, common phrasings -- \"ignore previous instructions\", \"reveal your system prompt\", \"you are now\", etc. -- the sprint doc's one Day 7 cut-first item is the <em>classifier<\/em>; least-privilege tools downstream, not these regexes alone, are the real backstop against a cleverly-worded injection that slips past them), <code>_check_scope<\/code> (<code>_OFF_TOPIC_PATTERNS<\/code>: a small set of clearly-not-vendor- procurement request shapes -- \"write me a poem\", \"tell me a joke\" -- false negatives here are the Orchestrator's/Guardian's problem; false positives on a real question would be worse), <code>_check_rate_limit<\/code> (<code>RateLimiter<\/code>, an in-memory per-role sliding window, <code>Settings. rate_limit_per_minute<\/code>, default 30/min -- process-local by design, resets on restart), <code>_check_spend_cap<\/code> (<code>SpendTracker<\/code>, a role's cumulative spend <em>today<\/em> read from a small JSON file, <code>Settings.daily_spend_cap_usd<\/code>, default $5 -- has to survive a restart within the same day, unlike the rate limiter, so this one does touch disk). Every finding is <code>outcome=&quot;block&quot;<\/code> (no redact/escalate on the input side -- see the module docstring for why); any finding at all means the verdict blocks, with every firing code in <code>reason_codes<\/code>. <code>InputGate.record_spend(role, cost_usd)<\/code> is the other half of the spend cap: called by the Orchestrator <em>after<\/em> a run finishes with its real <code>total_cost_usd<\/code> (the gate itself, running before the request's own cost exists, can only ever check <em>past<\/em> spend). <code>RateLimiter<\/code>/<code>SpendTracker<\/code> are injectable (same construction pattern as <code>Guardian<\/code>), so tests can isolate or fast-forward either one without touching real settings or <code>data/spend/<\/code> -- <code>tests/conftest.py<\/code>'s autouse <code>_isolated_spend_log<\/code> fixture does exactly that for every Orchestrator test that doesn't build its own <code>InputGate<\/code> explicitly.",
+  "talksTo": [
+   {
+    "id": "src-copilot-guardrails-policy-py",
+    "label": "copilot.guardrails.policy"
+   },
+   {
+    "id": "src-copilot-settings-py",
+    "label": "copilot.settings"
+   },
+   {
+    "id": "src-copilot-agents-orchestrator-py",
+    "label": "copilot.agents.orchestrator.Orchestrator.answer"
+   }
+  ],
+  "sym": "InputGate",
+  "takes": "a question string + a <code>Role<\/code>; optional <code>RateLimiter<\/code>/<code>SpendTracker<\/code>/limit overrides at construction (defaults come from <code>copilot.settings.get_settings()<\/code>).",
+  "gives": "<code>GateVerdict<\/code> (<code>outcome<\/code>, <code>reason_codes<\/code>, <code>findings<\/code>, <code>message<\/code>); <code>Finding<\/code>; <code>GateOutcome<\/code>; <code>RateLimiter<\/code>; <code>SpendTracker<\/code>; <code>DEFAULT_SPEND_LOG_PATH<\/code>.",
+  "isNew": true
+ },
+ {
+  "id": "src-copilot-guardrails-secret-patterns-py",
+  "group": "Guardrails",
+  "day": 7,
+  "path": "src/copilot/guardrails/secret_patterns.py",
+  "headline": "A leaf module (no project imports) holding just <code>SECRET_PATTERNS<\/code> -- split out of <code>guardian.py<\/code> so <code>trace_masking.py<\/code> (below) can reuse the exact …",
+  "does": "A leaf module (no project imports) holding just <code>SECRET_PATTERNS<\/code> -- split out of <code>guardian.py<\/code> so <code>trace_masking.py<\/code> (below) can reuse the exact same regexes without creating an import cycle (<code>guardian.py<\/code> imports <code>copilot.agents.contracts<\/code> for <code>AgentResult<\/code>'s type hint, which imports <code>copilot.llm.client<\/code> for <code>Effort<\/code> -- and <code>llm/client.py<\/code> is exactly the module that needs to import the masking function, so <code>trace_masking -&gt; guardian -&gt; contracts -&gt; llm.client<\/code> would have closed the loop; confirmed by actually hitting the <code>ImportError<\/code> before this was split out).",
+  "talksTo": [
+   {
+    "id": "src-copilot-guardrails-guardian-py",
+    "label": "copilot.guardrails.guardian"
+   },
+   {
+    "id": "src-copilot-guardrails-trace-masking-py",
+    "label": "copilot.guardrails.trace_masking"
+   }
+  ],
+  "gives": "<code>SECRET_PATTERNS<\/code> (anthropic_api_key/aws_access_key_id/aws_secret_access_key/ generic_bearer_token regexes).",
+  "isNew": true
+ },
+ {
+  "id": "src-copilot-guardrails-trace-masking-py",
+  "group": "Guardrails",
+  "day": 7,
+  "path": "src/copilot/guardrails/trace_masking.py",
+  "headline": "Day 7 step 7 (sprint doc: \"anonymizer rules, hidden restricted payloads\").",
+  "does": "Masks what actually gets <em>recorded<\/em> in a LangSmith trace -- independent of the Guardian, which only ever sees the Orchestrator's one final answer; an intermediate specialist prompt can reference a Restricted table by name on its way to a correctly-redacted final answer, and that intermediate payload needs its own masking before anything reaches LangSmith's servers. <code>mask_run_payload(payload)<\/code>: if any <code>policies/disclosure.yaml<\/code> <code>restricted_names<\/code> table/view appears anywhere in the payload (recursively, through nested dicts/lists), the <em>entire<\/em> payload is replaced with one marker (<code>RESTRICTED_PAYLOAD_MARKER<\/code>) -- \"hidden restricted payloads\" means the whole thing, not selective redaction, since a payload that already names a Restricted source is already out of bounds for what this project's licence/disclosure rules say should sit in a third-party trace store. Otherwise, every string value (recursively) gets PII (<code>copilot.guardrails.pii.find_pii<\/code>) and secret (<code>SECRET_PATTERNS<\/code>) matches replaced with <code>[REDACTED:&lt;TYPE&gt;]<\/code> -- same redaction shape <code>Guardian._apply_redactions<\/code> uses on the output side, applied here to inputs <em>and<\/em> outputs. <strong>Why wired as <code>@traceable(process_inputs=mask_run_payload, process_outputs=mask_run_payload)<\/code> on <code>LLMClient.complete<\/code>/<code>.structured<\/code> themselves, not a <code>langsmith.Client(anonymizer=...)<\/code> threaded through every call site:<\/strong> two things ruled that out, both confirmed with throwaway scripts before choosing this: constructing a <code>Client()<\/code> eagerly calls <code>GET /info<\/code> over the network (bad to do at import/decoration time just to attach an anonymizer); and setting a masked client as langsmith's own default via its <code>contextvars<\/code>-based context doesn't survive crossing into <code>_run_specialist<\/code>'s <code>ThreadPoolExecutor<\/code> worker thread (a <code>ContextVar.set()<\/code> in the main thread is invisible there -- confirmed empirically). A plain function reference baked into the decorator at the one choke point every LLM call already goes through sidesteps both problems with no change needed at any of this project's other call sites. Only what's <em>recorded<\/em> for the trace is masked -- the real return value <code>complete<\/code>/<code>structured<\/code> hand back to their caller is never touched.",
+  "talksTo": [
+   {
+    "id": "src-copilot-guardrails-pii-py",
+    "label": "copilot.guardrails.pii"
+   },
+   {
+    "id": "src-copilot-guardrails-pii-py",
+    "label": "find_pii"
+   },
+   {
+    "id": "src-copilot-guardrails-policy-py",
+    "label": "copilot.guardrails.policy"
+   },
+   {
+    "id": "src-copilot-guardrails-secret-patterns-py",
+    "label": "copilot.guardrails.secret_patterns"
+   },
+   {
+    "id": "src-copilot-llm-client-py",
+    "label": "copilot.llm.client.LLMClient.complete"
+   }
+  ],
+  "sym": "mask_run_payload()",
+  "takes": "the <code>inputs<\/code>/<code>outputs<\/code> dict <code>@traceable<\/code> builds for one LLM call.",
+  "gives": "<code>mask_run_payload(payload) -&gt; dict<\/code>; <code>RESTRICTED_PAYLOAD_MARKER<\/code>.",
+  "isNew": true
+ },
+ {
+  "id": "src-copilot-guardrails-policy-py",
+  "group": "Guardrails",
+  "day": 1,
+  "path": "src/copilot/guardrails/policy.py",
+  "headline": "Parses <code>policies/disclosure.yaml<\/code> into typed objects and answers \"may this role see this?\".",
+  "does": "Parses <code>policies/disclosure.yaml<\/code> into typed objects and answers \"may this role see this?\".",
+  "talksTo": [
+   {
+    "id": "src-copilot-sql-service-py",
+    "label": "TextToSqlService"
+   },
+   {
+    "id": "src-copilot-insights-service-py",
+    "label": "InsightService"
+   },
+   {
+    "id": "src-copilot-guardrails-guardian-py",
+    "label": "copilot.guardrails.guardian"
+   }
+  ],
+  "takes": "the YAML policy file.",
+  "gives": "a validated <code>DisclosurePolicy<\/code>."
+ },
+ {
+  "id": "policies-disclosure-yaml",
+  "group": "Guardrails",
+  "day": 1,
+  "path": "policies/disclosure.yaml / policies/sql_rules.yaml",
+  "headline": "Data, not code: which roles may see which tables/columns (disclosure), and the structural/semantic rules the SQL validator enforces (sql_rules).",
+  "does": "Changing a rule is a diff to these files, not Python.",
+  "talksTo": []
+ },
+ {
+  "id": "src-copilot-llm-client-py",
+  "group": "LLM layer",
+  "day": 3,
+  "path": "src/copilot/llm/client.py",
+  "headline": "The one place every agent/service calls an LLM through: retries/backoff, streaming for time-to-first-token, prompt caching, tracing (<code>@traceable<\/code>), per-call cost/latency/token logging.",
+  "does": "No <code>temperature<\/code>/<code>top_p<\/code>/<code>top_k<\/code> — this model generation's API doesn't accept them (confirmed against the SDK, see ADR-005); the nearest lever is <code>effort<\/code>. Day 7 step 7: <code>complete<\/code>/ <code>structured<\/code>'s <code>@traceable<\/code> decorators now also carry <code>process_inputs=mask_run_payload, process_outputs=mask_run_payload<\/code> (<code>copilot.guardrails.trace_masking<\/code>) — every LLM call's recorded trace is masked (PII/secrets redacted, a Restricted-table mention hides the whole payload) before anything reaches LangSmith, with no change needed at any call site elsewhere in the codebase. See that module's own entry for why a plain function here, not a <code>Client(anonymizer=...)<\/code>, was the right call. Day 8, Addendum A2 §1.1 \"reliability layer\": a new <code>_with_fallback()<\/code> wraps every <code>complete()<\/code>/ <code>structured()<\/code> call — if the primary model's own <code>_retrying()<\/code> budget (4 attempts) is fully exhausted on a retryable error, and a different <code>fallback_model<\/code> is configured (constructor arg, default reads <code>Settings.fallback_model<\/code>; <code>None<\/code> means no fallback, today's default), one more attempt runs against the fallback with its own fresh retry budget (and, for <code>structured()<\/code>, its own fresh repair loop — a fallback model's output shape/wording shouldn't inherit repair turns built against the primary). A2 §1.5 \"version pinning\": both methods now take optional <code>prompt_name<\/code>/<code>prompt_version<\/code> kwargs (the caller's loaded <code>Prompt.name<\/code>/<code>.version<\/code>) and thread them straight onto the returned <code>CallMetrics<\/code>, so every trace and eval row carries exactly which versioned prompt file produced it — no separate wiring, since <code>CallMetrics<\/code> is already what <code>process_outputs=mask_run_payload<\/code> serializes into the trace.",
+  "talksTo": [
+   {
+    "id": "src-copilot-insights-service-py",
+    "label": "InsightService"
+   },
+   {
+    "id": "src-copilot-sql-service-py",
+    "label": "TextToSqlService"
+   },
+   {
+    "id": "src-copilot-evals-effort-lab-py",
+    "label": "run_effort_lab.py"
+   },
+   {
+    "id": "src-copilot-evals-tokenization-lab-py",
+    "label": "run_tokenization_lab.py"
+   },
+   {
+    "id": "src-copilot-guardrails-trace-masking-py",
+    "label": "copilot.guardrails.trace_masking"
+   }
+  ],
+  "sym": "LLMClient",
+  "takes": "model id, system prompt, messages, optionally a Pydantic output model (<code>structured()<\/code>), optionally <code>prompt_name<\/code>/<code>prompt_version<\/code>.",
+  "gives": "<code>LLMResult<\/code> or a validated Pydantic object, paired with <code>CallMetrics<\/code> (now also carrying <code>prompt_name<\/code>, <code>prompt_version<\/code>, <code>used_fallback_model<\/code>)."
+ },
+ {
+  "id": "src-copilot-llm-prompts-py",
+  "group": "LLM layer",
+  "day": 3,
+  "path": "src/copilot/llm/prompts.py",
+  "headline": "Versioned prompt loader — prompt text lives in reviewable YAML, not buried in Python strings.",
+  "does": "A <em>behaviour<\/em> change (tone, grounding rule, output shape) is a new version file (<code>v2.yaml<\/code>); a pure <em>capacity<\/em> fix (raising <code>max_tokens<\/code>) is edited in place on the existing version.",
+  "talksTo": [
+   {
+    "id": "src-copilot-insights-service-py",
+    "label": "InsightService"
+   },
+   {
+    "id": "src-copilot-sql-service-py",
+    "label": "TextToSqlService"
+   }
+  ],
+  "takes": "a prompt name + version; <code>prompts/&lt;name&gt;/v&lt;N&gt;.yaml<\/code>.",
+  "gives": "a validated <code>Prompt<\/code> with <code>.render_system()<\/code> / <code>.render_user()<\/code>."
+ },
+ {
+  "id": "src-copilot-llm-pricing-py",
+  "group": "LLM layer",
+  "day": 3,
+  "path": "src/copilot/llm/pricing.py",
+  "headline": "Turns a call's token counts into a USD figure — one source of truth for prices.",
+  "does": "Turns a call's token counts into a USD figure — one source of truth for prices.",
+  "talksTo": [
+   {
+    "id": "src-copilot-llm-client-py",
+    "label": "LLMClient"
+   },
+   {
+    "id": "src-copilot-evals-tokenization-lab-py",
+    "label": "run_tokenization_lab.py"
+   }
+  ],
+  "takes": "a model ID and token counts (input/output/cache write/cache read).",
+  "gives": "<code>cost_usd(...) -&gt; float<\/code>."
+ },
+ {
+  "id": "src-copilot-llm-types-py",
+  "group": "LLM layer",
+  "day": 3,
+  "path": "src/copilot/llm/types.py",
+  "headline": "The shared result shape every LLM call returns, so logging/LangSmith/tests never branch on which call path produced it.",
+  "does": "Holds <code>CallMetrics<\/code> (TTFT, latency, tokens, cost). Day 8, A2 §1.1/§1.5: <code>CallMetrics<\/code> also carries <code>prompt_name<\/code>/<code>prompt_version<\/code> (which versioned prompt file produced this call, if any) and <code>used_fallback_model<\/code> (whether <code>LLMClient._with_fallback()<\/code> actually had to fail over — tells \"fallback succeeded\" apart from \"primary succeeded on the first try\").",
+  "talksTo": []
+ },
+ {
+  "id": "src-copilot-sql-service-py",
+  "group": "SQL layer",
+  "day": 3,
+  "path": "src/copilot/sql/service.py",
+  "headline": "One business question → one validated DuckDB query → real rows.",
+  "does": "Shows the model only its role's tables (schema linking) and 3 similar verified examples, validates every candidate query through all 6 validator layers before running it, and on rejection feeds the exact violations back to the model as the next turn (self-correction, max 2 retries) rather than giving up or running bad SQL. Day 7 step 2: its system prompt now appends <code>canary_line(&quot;data_analyst&quot;)<\/code>.",
+  "talksTo": [
+   {
+    "id": "src-copilot-sql-schema-py",
+    "label": "schema.py"
+   },
+   {
+    "id": "src-copilot-sql-examples-py",
+    "label": "examples.py"
+   },
+   {
+    "id": "src-copilot-sql-validator-py",
+    "label": "validator.py"
+   },
+   {
+    "id": "src-copilot-data-store-py",
+    "label": "store.py"
+   },
+   {
+    "id": "src-copilot-llm-client-py",
+    "label": "LLMClient"
+   },
+   {
+    "id": "src-copilot-guardrails-canary-py",
+    "label": "copilot.guardrails.canary"
+   }
+  ],
+  "sym": "TextToSqlService"
+ },
+ {
+  "id": "src-copilot-sql-schema-py",
+  "group": "SQL layer",
+  "day": 3,
+  "path": "src/copilot/sql/schema.py",
+  "headline": "Builds the \"schema card\" shown to the model — only the tables/columns a given role may even be told about, so the model never writes SQL for data it can't have, which would just waste a repair loop.",
+  "does": "Builds the \"schema card\" shown to the model — only the tables/columns a given role may even be told about, so the model never writes SQL for data it can't have, which would just waste a repair loop.",
+  "talksTo": [
+   {
+    "id": "src-copilot-guardrails-policy-py",
+    "label": "policy.py"
+   }
+  ]
+ },
+ {
+  "id": "src-copilot-sql-examples-py",
+  "group": "SQL layer",
+  "day": 3,
+  "path": "src/copilot/sql/examples.py",
+  "headline": "Retrieves 3 golden question/SQL pairs similar to the current question, as few-shot examples — lexical overlap, not embeddings (the golden set is small enough that a vector index would be overkill).",
+  "does": "Examples are role-filtered so a less-privileged role is never shown a more-privileged query shape.",
+  "talksTo": []
+ },
+ {
+  "id": "src-copilot-sql-validator-py",
+  "group": "SQL layer",
+  "day": 3,
+  "path": "src/copilot/sql/validator.py",
+  "headline": "The 6-layer validator that catches two failure families before anything runs: structurally unsafe SQL (wrong table, disguised write, catalog probe), …",
+  "does": "The 6-layer validator that catches two failure families before anything runs: structurally unsafe SQL (wrong table, disguised write, catalog probe), and structurally valid SQL that would still return a wrong <em>number<\/em> (a ratio column averaged across vendors, a sum after a fan-out join, two overlapping counts added). Full trap table: <code>docs/specs/text_to_sql_safety.md<\/code>. <strong>Day 7 step 8, red-team case 8 (<code>sql_cost_limit<\/code>):<\/strong> <code>_check_cost_limit<\/code> blocks a multi-table <code>FROM<\/code>/<code>JOIN<\/code> with no <code>ON<\/code>/<code>USING<\/code> condition <em>unless<\/em> <code>WHERE<\/code> references columns from at least two of the joined tables by their table-qualified name -- catches an unbounded cross join (a DoS risk: the LIMIT cap bounds the output, not the join computation that produces it) without false-blocking <code>gq-025<\/code>'s real golden query, a self-join with no join key that's entirely bounded through <code>WHERE<\/code> instead (<code>d.SalesMonth = 12 AND n.SalesMonth = 11<\/code>). Known, documented limitation: only a table-qualified <code>WHERE<\/code> column counts as bounding -- an unqualified column filtering one side of a comma-join is still flagged, a deliberate false-block-over-false-allow tradeoff.",
+  "talksTo": [
+   {
+    "id": "policies-disclosure-yaml",
+    "label": "sql_rules.yaml"
+   },
+   {
+    "id": "src-copilot-sql-service-py",
+    "label": "TextToSqlService"
+   },
+   {
+    "id": "src-copilot-evals-evaluators-py",
+    "label": "evaluators.py"
+   },
+   {
+    "label": "tests/test_privacy_leakage_suite.py"
+   }
+  ]
+ },
+ {
+  "id": "src-copilot-evals-golden-py",
+  "group": "Evals layer",
+  "day": 3,
+  "path": "src/copilot/evals/golden.py",
+  "headline": "Defines what one golden question looks like and re-checks it against the snapshot.",
+  "does": "Defines what one golden question looks like and re-checks it against the snapshot.",
+  "talksTo": [],
+  "gives": "typed <code>GoldenQuestion<\/code> objects; <code>verify()<\/code> re-executes every SQL and compares results."
+ },
+ {
+  "id": "src-copilot-evals-evaluators-py",
+  "group": "Evals layer",
+  "day": 3,
+  "path": "src/copilot/evals/evaluators.py",
+  "headline": "Two separate scores per answer: <code>execution_accuracy<\/code> (did it compute the right numbers, or correctly abstain) and <code>leakage_free<\/code> (independent …",
+  "does": "Two separate scores per answer: <code>execution_accuracy<\/code> (did it compute the right numbers, or correctly abstain) and <code>leakage_free<\/code> (independent re-validation of whatever SQL actually ran, so a future service-level bug still gets caught by the eval suite). Fixed 14 Oct: row comparison used to require an exact column-name match; now compares by <em>value<\/em>, in column order, per the spec.",
+  "talksTo": []
+ },
+ {
+  "id": "src-copilot-evals-langsmith-sync-py",
+  "group": "Evals layer",
+  "day": 3,
+  "path": "src/copilot/evals/langsmith_sync.py + scripts/push_golden_to_langsmith.py",
+  "headline": "Keeps one LangSmith dataset (<code>vendor-copilot-golden-v2<\/code>) in sync with <code>evals/datasets/golden_v2.jsonl<\/code> — full replace, not incremental.",
+  "does": "The script is the thing you run on your own machine with your <code>LANGSMITH_API_KEY<\/code>; it makes no LLM calls.",
+  "talksTo": []
+ },
+ {
+  "id": "src-copilot-evals-effort-lab-py",
+  "group": "Evals layer",
+  "day": 3,
+  "path": "src/copilot/evals/effort_lab.py + scripts/run_effort_lab.py",
+  "headline": "Sweeps <code>effort<\/code> (low→max) across the same golden questions and compares execution accuracy, leakage-free rate, cost and latency at each level — the …",
+  "does": "Sweeps <code>effort<\/code> (low→max) across the same golden questions and compares execution accuracy, leakage-free rate, cost and latency at each level — the replacement for a temperature sweep, since this model generation has no temperature. The script is what you run on your machine with your <code>ANTHROPIC_API_KEY<\/code>; real money, real calls.",
+  "talksTo": []
+ },
+ {
+  "id": "src-copilot-evals-tokenization-lab-py",
+  "group": "Evals layer",
+  "day": 3,
+  "path": "src/copilot/evals/tokenization_lab.py + scripts/run_tokenization_lab.py",
+  "headline": "Compares three ways of counting tokens on this project's real prompts — Anthropic's own provider counter (exact, a real API call), <code>tiktoken<\/code>, and a …",
+  "does": "Compares three ways of counting tokens on this project's real prompts — Anthropic's own provider counter (exact, a real API call), <code>tiktoken<\/code>, and a Hugging Face tokenizer (both local approximations) — then projects what each would predict for cost per 1,000 requests. Real result (14 Oct): both local tokenizers undercount badly (tiktoken -41.5%, HF -32.6%), which would make budgeting on either one understate the real bill.",
+  "talksTo": []
+ },
+ {
+  "id": "evals-thresholds-yaml",
+  "group": "Evals layer",
+  "day": 8,
+  "path": "evals/thresholds.yaml + scripts/run_eval_gate.py",
+  "headline": "Day 8, Addendum A2 §1.3: the CI eval gate (<code>.github/workflows/ci.yml<\/code>'s new <code>eval-gate<\/code> job, PRs targeting main only).",
+  "does": "\"Deterministic-first\": the hard floor is the full <code>uv run pytest<\/code> suite (zero real LLM calls anywhere in it) failing on any failure <em>not<\/em> in the script's own <code>_KNOWN_MISSING_DATA_FAILURES<\/code> set -- this repo's licence rule means a fixed, documented set of tests always fails in any environment without the local, never-committed snapshot, this project's own GitHub Actions run included, and that's expected, not a regression. On top of that, an <code>llm_judged<\/code> layer (thresholds in <code>evals/thresholds.yaml<\/code>: text-to-SQL execution accuracy/leakage-free rate, RAG faithfulness/context recall, Model Selection task-type-correct/ reasoning-grounded, Orchestrator plan-coverage/verified-rate) runs only when a real <code>ANTHROPIC_API_KEY<\/code> <em>and<\/em> the real snapshot/Chroma index are both present -- never true in this repo's own CI, by the same licence rule, so this layer is correctly SKIPPED there with a clear message rather than failing the gate over infrastructure that was never supposed to exist in that environment; it applies identically on your own machine, or a CI environment you deliberately configure with your own secrets and your own non-sensitive snapshot. <code>_CostTrackingLLMClient<\/code> wraps a real <code>LLMClient<\/code>, accumulating <code>cost_usd<\/code> from every <code>complete()<\/code>/<code>structured()<\/code> call (duck-typed drop-in -- no evaluator's signature changes) to enforce <code>max_llm_budget_usd<\/code> as a hard per-run ceiling, checked before each call against the running total; hitting it fails the gate outright rather than silently truncating coverage.",
+  "talksTo": [
+   {
+    "id": "src-copilot-evals-evaluators-py",
+    "label": "copilot.evals.evaluators"
+   },
+   {
+    "id": "src-copilot-agents-wiring-py",
+    "label": "copilot.agents.wiring"
+   },
+   {
+    "id": "src-copilot-llm-client-py",
+    "label": "copilot.llm.client"
+   },
+   {
+    "id": "src-copilot-llm-client-py",
+    "label": "LLMClient"
+   },
+   {
+    "label": ".github/workflows/ci.yml"
+   }
+  ],
+  "takes": "<code>evals/thresholds.yaml<\/code>'s thresholds; (for the <code>llm_judged<\/code> layer) the real snapshot, Chroma index, and <code>ANTHROPIC_API_KEY<\/code>.",
+  "gives": "exit code 0 (gate passed, or <code>llm_judged<\/code> correctly skipped) or non-zero (an unexpected test failure, a threshold miss, or budget exhaustion), plus a printed report.",
+  "isNew": true
+ },
+ {
+  "id": "docs-determinism-md",
+  "group": "Evals layer",
+  "day": 8,
+  "path": "docs/determinism.md",
+  "headline": "Day 8, Addendum A2 §1.7: the determinism note.",
+  "does": "Draws the same deterministic/non-deterministic line the eval gate above is built on -- Guardian, input gate, SQL validator, and the <code>execution_accuracy<\/code>/<code>leakage_free<\/code> evaluators never touch an LLM and always reproduce; planning, drafting, verifying, and the LLM-judged evals do call one and are openly non-deterministic by construction (no <code>seed<\/code>/<code>temperature<\/code> on this model generation to pin). Explains what forced structured output, the repair/redraft loops, the Guardian's unconditional run, the golden-set evals' numeric tolerance, and prompt version pinning (A2 §1.5, already shipped) each do -- and don't do -- about that variance. Pure documentation; no code changed.",
+  "talksTo": [],
+  "isNew": true
+ },
+ {
+  "id": "src-copilot-evals-init-py",
+  "group": "Evals layer",
+  "day": 3,
+  "path": "src/copilot/evals/__init__.py, src/copilot/insights/__init__.py, src/copilot/llm/__init__.py",
+  "headline": "Empty package markers — no logic, just make the folder importable.",
+  "does": "Empty package markers — no logic, just make the folder importable.",
+  "talksTo": []
+ },
+ {
+  "id": "src-copilot-insights-service-py",
+  "group": "Insights",
+  "day": 3,
+  "path": "src/copilot/insights/service.py",
+  "headline": "A grounded narrative insight for one vendor at a time — the typed, testable refactor of the legacy analytics repo's <code>vendor_insights.py<\/code>.",
+  "does": "The model id lives in the prompt YAML, not hardcoded, and every number the model may use is handed to it explicitly; nothing is looked up by the model itself. Day 8, A2 §1.1 \"graceful degradation\": <code>vendor_insight()<\/code> is the first call site to actually use this pattern — if the narration step fails outright (an outage covering every configured model, or a repeatedly-malformed response, after <code>LLMClient<\/code>'s own retries and fallback are exhausted), it returns a <code>VendorInsight(narration_available=False, narrative=&lt;the deterministic data block as JSON&gt;, ...)<\/code> and a zeroed <code>CallMetrics(stop_reason=&quot;degraded&quot;)<\/code> instead of raising — the caller still gets the real, correct numbers for a question the data layer could answer on its own, rather than a 500.",
+  "talksTo": [
+   {
+    "id": "src-copilot-llm-client-py",
+    "label": "LLMClient"
+   },
+   {
+    "id": "prompts-action-draft-v1-yaml",
+    "label": "prompts/vendor_insight/v1.yaml"
+   },
+   {
+    "id": "src-copilot-data-guard-py",
+    "label": "guard.py"
+   }
+  ],
+  "sym": "InsightService",
+  "takes": "a vendor name + the caller's role.",
+  "gives": "<code>VendorInsight<\/code> (forced structured output, now with <code>narration_available: bool<\/code>) + <code>CallMetrics<\/code>."
+ },
+ {
+  "id": "src-copilot-api-main-py",
+  "group": "API",
+  "day": 2,
+  "path": "src/copilot/api/main.py",
+  "headline": "The FastAPI HTTP entry point.",
+  "does": "Day 2 walking skeleton: <code>/health<\/code> says the process is alive, <code>/version<\/code> says exactly which build is deployed. Day 8 step 3/4 add the two real endpoints: <code>POST /auth/redeem<\/code> (an invite code -&gt; a usable API key, the one HTTP-reachable half of <code>copilot.api.auth<\/code> -- see that module for why there is no HTTP way to <em>mint<\/em> an invite or a key, only to redeem one) and <code>POST /ask<\/code> (the Orchestrator, behind auth + rate limiting, streamed over SSE). <code>_sse_lines()<\/code> turns each <code>copilot.agents.orchestrator.StreamEvent<\/code> from <code>Orchestrator.stream_answer()<\/code> into one <code>event: &lt;type&gt;\\ndata: &lt;json&gt;\\n\\n<\/code> block -- hand-rolled rather than pulling in <code>sse-starlette<\/code>, since this project's whole stream is \"one JSON object per typed event,\" nothing a small helper and Starlette's own <code>StreamingResponse<\/code> don't already cover. It's also where the caller's per-identity daily budget (A2 §1.6) actually accrues: the run's real <code>total_cost_usd<\/code> isn't known until the trailing <code>result<\/code> event, so it's recorded there, not before. <strong>Day 8 step 7: <code>POST /ask/approve<\/code> and the UI.<\/strong> <code>/ask/approve<\/code> is the one HTTP way to resume a run <code>/ask<\/code> paused at the approval gate -- a thin wrapper over <code>Orchestrator.resume_approval<\/code>, gated by its own <code>require_role(&quot;approver&quot;, &quot;admin&quot;)<\/code> dependency (<code>require_approver_role<\/code>, a <em>separate<\/em> factory call from <code>/ask<\/code>'s <code>require_any_role<\/code> -- these two routes intentionally allow different role sets, so they must resolve to different dependency callables even though the factory itself is shared). <code>GET /<\/code> serves <code>static/index.html<\/code>; <code>/static/*<\/code> is a mounted <code>StaticFiles<\/code> directory for its JS/CSS -- a single self-contained page with no build step, no framework, talking to this same server's <code>/auth/redeem<\/code>, <code>/ask<\/code> (SSE, parsed by hand with <code>fetch<\/code>'s <code>ReadableStream<\/code> since <code>EventSource<\/code> can't set an <code>Authorization<\/code> header) and <code>/ask/approve<\/code>. Both mounted under paths that never collide with the API routes above, so route order doesn't matter.",
+  "talksTo": [
+   {
+    "id": "src-copilot-api-auth-py",
+    "label": "copilot.api.auth"
+   },
+   {
+    "id": "src-copilot-agents-orchestrator-py",
+    "label": "copilot.agents.orchestrator"
+   },
+   {
+    "id": "src-copilot-agents-orchestrator-py",
+    "label": "Orchestrator"
+   },
+   {
+    "id": "src-copilot-secrets-py",
+    "label": "copilot.secrets"
+   }
+  ],
+  "takes": "HTTP requests; <code>RedeemInviteRequest<\/code>/<code>AskRequest<\/code>/<code>ApprovalRequest<\/code> bodies; an <code>Authorization: Bearer &lt;api-key&gt;<\/code> header on <code>/ask<\/code> and <code>/ask/approve<\/code>.",
+  "gives": "JSON for <code>/health<\/code>/<code>/version<\/code>/<code>/auth/redeem<\/code>/<code>/ask/approve<\/code>; a <code>text/event-stream<\/code> body for <code>/ask<\/code>; the static UI for <code>/<\/code> and <code>/static/*<\/code>."
+ },
+ {
+  "id": "src-copilot-api-dependencies-py",
+  "group": "API",
+  "day": 8,
+  "path": "src/copilot/api/dependencies.py",
+  "headline": "Everything <code>/ask<\/code>/<code>/auth/redeem<\/code> inject via <code>Depends()<\/code>: <code>get_auth_store<\/code>/<code>get_user_rate_ limiter<\/code>/<code>get_ip_rate_limiter<\/code>/<code>get_user_budget_tracker<\/code> …",
+  "does": "<p>Everything <code>/ask<\/code>/<code>/auth/redeem<\/code> inject via <code>Depends()<\/code>: <code>get_auth_store<\/code>/<code>get_user_rate_ limiter<\/code>/<code>get_ip_rate_limiter<\/code>/<code>get_user_budget_tracker<\/code> (cheap, <code>@lru_cache<\/code>'d singletons) and <code>get_orchestrator<\/code> (the one expensive, real-key-requiring singleton -- built lazily on first <code>/ask<\/code> call, exactly <code>scripts/run_orchestrator_golden.py<\/code>'s own real-service wiring reused, so <code>/health<\/code>/<code>/version<\/code> never fail to start a process missing an <code>ANTHROPIC_API_KEY<\/code> or the real snapshot/Chroma index). <code>require_role(*allowed)<\/code> is a dependency <em>factory<\/em> (a route states its own allowed roles) that authenticates the <code>Authorization<\/code> header against <code>AuthStore<\/code> and returns a <code>Principal<\/code>; <code>require_any_role<\/code> is the one shared instance <code>/ask<\/code> and <code>enforce_rate_limits<\/code> both depend on, so FastAPI's per-request dependency caching (keyed by callable identity) runs authentication exactly once per request, not twice. <code>enforce_rate_limits(request, principal, ...)<\/code> is the per-identity/per-IP/per-identity-daily- budget guard (A2 §1.6), run after auth resolves a <code>Principal<\/code> and before anything -- the Orchestrator, even the input gate -- ever sees the request; raises <code>HTTPException(429)<\/code> on the first of the three checks that fails.<\/p><p><strong>Day 8 step 7: <code>_build_checkpointer()<\/code>.<\/strong> The one place that decides which checkpoint store a real server run gets: local SQLite (unchanged default) when <code>settings.checkpoint_database_url<\/code> is unset or empty (same empty-string-secret guard <code>scripts/run_eval_gate.py<\/code> already needed for <code>ANTHROPIC_API_KEY<\/code> -- an unset env var and one set to <code>&quot;&quot;<\/code> are not the same thing to pydantic-settings), a <code>PostgresSaver<\/code> over a <code>psycopg_pool.ConnectionPool<\/code> otherwise. A pool, not a single <code>Connection<\/code>, because <code>get_orchestrator()<\/code>'s result -- and everything it holds, including this checkpointer -- is one process-lifetime singleton shared across every concurrent <code>/ask<\/code> request; a single psycopg <code>Connection<\/code> isn't safe for that, a pool is what it's for. <code>.setup()<\/code> runs LangGraph's own idempotent migration on every start-up. <code>Orchestrator<\/code> itself stays storage-agnostic (see its own docstring) -- this function is the only code that imports <code>psycopg<\/code>/<code>langgraph.checkpoint.postgres<\/code> at all.<\/p>",
+  "talksTo": [
+   {
+    "id": "src-copilot-api-auth-py",
+    "label": "copilot.api.auth"
+   },
+   {
+    "id": "src-copilot-api-rate-limit-py",
+    "label": "copilot.api.rate_limit"
+   },
+   {
+    "id": "src-copilot-agents-wiring-py",
+    "label": "copilot.agents.wiring"
+   },
+   {
+    "id": "src-copilot-agents-wiring-py",
+    "label": "build_executors"
+   },
+   {
+    "label": "scripts/run_orchestrator_golden.py"
+   }
+  ],
+  "takes": "a <code>Request<\/code> (for the client IP) and, via other dependencies, the <code>Authorization<\/code> header; <code>settings.checkpoint_database_url<\/code> (for <code>_build_checkpointer<\/code>).",
+  "gives": "a <code>Principal<\/code>, or raises <code>HTTPException<\/code> (401/403/429); a <code>BaseCheckpointSaver<\/code> from <code>_build_checkpointer<\/code>.",
+  "isNew": true
+ },
+ {
+  "id": "src-copilot-api-auth-py",
+  "group": "API",
+  "day": 8,
+  "path": "src/copilot/api/auth.py",
+  "headline": "Invite-code + API-key authentication (Day 8 step 4).",
+  "does": "Both are <code>secrets.token_urlsafe(24)<\/code>, hashed with SHA-256 before ever touching disk -- the raw value is returned to the caller exactly once (at issue/redeem time) and never again; there is no \"show my key\" endpoint, by design. File-backed (<code>data/auth/auth_store.json<\/code>, never committed), loaded fresh per call -- same shape <code>copilot.guardrails.input_gate.SpendTracker<\/code> already established for \"needs to survive a restart, isn't worth a database yet.\" An invite redeems exactly once (its hash is marked <code>used<\/code> in the same write that issues the key). There is no HTTP endpoint that <em>issues<\/em> an invite or an API key directly -- only <code>AuthStore.issue_invite<\/code>/<code>.issue_api_key<\/code>, called from <code>scripts/ issue_invite_code.py<\/code> on the operator's own machine, and <code>POST /auth/redeem<\/code>, which only ever <em>exchanges<\/em> an already-issued invite.",
+  "talksTo": [
+   {
+    "id": "src-copilot-guardrails-policy-py",
+    "label": "copilot.guardrails.policy"
+   },
+   {
+    "label": "scripts/issue_invite_code.py"
+   },
+   {
+    "id": "src-copilot-api-dependencies-py",
+    "label": "copilot.api.dependencies"
+   }
+  ],
+  "sym": "AuthStore",
+  "takes": "a <code>Role<\/code> + label (issuing); a raw invite code or API key (redeeming/ authenticating).",
+  "gives": "the raw invite code / API key (once, at issue time); a <code>Principal(key_id, role, label)<\/code> from <code>authenticate()<\/code> -- <code>key_id<\/code> (never the raw key) is the stable identity <code>copilot. api.rate_limit<\/code>'s per-user limiter/budget key on.",
+  "isNew": true
+ },
+ {
+  "id": "src-copilot-api-rate-limit-py",
+  "group": "API",
+  "day": 8,
+  "path": "src/copilot/api/rate_limit.py",
+  "headline": "Day 8, A2 §1.6: per-identity (API key) and per-client-IP request limits, plus a per-identity daily cost budget -- on top of (not instead of) Day 7's …",
+  "does": "Day 8, A2 §1.6: per-identity (API key) and per-client-IP request limits, plus a per-identity daily cost budget -- on top of (not instead of) Day 7's <code>InputGate<\/code>, which only limits per- <em>role<\/em> (one noisy API key would otherwise share a <code>viewer<\/code>-wide bucket with every other viewer). <code>RequestRateLimiter<\/code> is the exact same sliding-window mechanism <code>copilot.guardrails.input_gate. RateLimiter<\/code> already uses, reused rather than reimplemented, just keyed by an arbitrary identity string instead of a <code>Role<\/code>. <code>DailyBudgetTracker<\/code> is a thin wrapper around <code>SpendTracker<\/code> itself (that class's <code>role: str<\/code> parameter is really just a dict key, so a <code>key_id<\/code> fits it exactly), pointed at its own file (<code>data/spend/daily_user_spend.json<\/code>) so per-user and per-role totals never share rows.",
+  "talksTo": [
+   {
+    "id": "src-copilot-guardrails-input-gate-py",
+    "label": "copilot.guardrails.input_gate"
+   },
+   {
+    "id": "src-copilot-api-dependencies-py",
+    "label": "copilot.api.dependencies"
+   }
+  ],
+  "takes": "an identity string (a <code>Principal.key_id<\/code>, or a client IP) per check; a cost in USD to record.",
+  "gives": "<code>bool<\/code> (allowed or not); today's cumulative spend for an identity.",
+  "isNew": true
+ },
+ {
+  "id": "src-copilot-api-static-index-html",
+  "group": "API",
+  "day": 8,
+  "path": "src/copilot/api/static/{index.html,style.css,app.js}",
+  "headline": "Day 8 step 7: the minimal UI -- chat box, a live agent-status strip (one chip per <code>StreamEvent (type=&quot;node&quot;)<\/code>, in the real execution order the graph …",
+  "does": "Day 8 step 7: the minimal UI -- chat box, a live agent-status strip (one chip per <code>StreamEvent (type=&quot;node&quot;)<\/code>, in the real execution order the graph reported), result badges (verified/ not-verified, Guardian escalated/blocked, pending-review with its <code>review_id<\/code>, pending-approval), a citations section (one card per <code>AgentResult<\/code> in <code>OrchestratorResult.results<\/code>: agent, status, confidence, findings, <code>evidence<\/code>), and an approval panel (Approve / Approve-with-edit / Reject, shown only when <code>pending_approval<\/code> is true) that posts to <code>/ask/approve<\/code>. No framework, no build step -- vanilla JS, <code>fetch<\/code> for everything, including SSE (parsed by hand: <code>EventSource<\/code> can't carry an <code>Authorization<\/code> header, so <code>/ask<\/code>'s stream is read via <code>response.body.getReader()<\/code> and split on blank lines). The API key lives in <code>localStorage<\/code>, this browser only; the thread ID is a fresh <code>crypto.randomUUID()<\/code> per page load/\"New thread\" click, kept only in a page-level JS variable, so the same thread survives an approval round-trip within one conversation. Bundled into the wheel automatically (<code>[tool.hatch.build.targets.wheel]<\/code> already packages the whole <code>src/copilot<\/code> tree; confirmed by inspecting a real built wheel's file list).",
+  "talksTo": [
+   {
+    "label": "/auth/redeem"
+   },
+   {
+    "label": "/ask"
+   },
+   {
+    "label": "/ask/approve"
+   }
+  ],
+  "takes": "nothing server-side -- served as static files by <code>main.py<\/code>'s <code>/<\/code>/<code>/static/*<\/code> routes; the browser's own form input.",
+  "gives": "nothing server-side; renders whatever <code>/auth/redeem<\/code>/<code>/ask<\/code>/<code>/ask/approve<\/code> return.",
+  "isNew": true
+ },
+ {
+  "id": "knowledge-md",
+  "group": "RAG / Knowledge layer",
+  "day": 4,
+  "path": "knowledge/*.md, knowledge/contracts/*.md",
+  "headline": "The RAG source corpus, not code: 4 methodology-family docs (data dictionary, metric definitions, decision log, methodology — <code>public<\/code>/<code>internal<\/code>) + …",
+  "does": "The RAG source corpus, not code: 4 methodology-family docs (data dictionary, metric definitions, decision log, methodology — <code>public<\/code>/<code>internal<\/code>) + 10 synthetic vendor supply-agreement summaries (<code>confidential<\/code>), each headed <code>SYNTHETIC<\/code> and stating no real contract exists. Every doc opens with YAML frontmatter (<code>doc_type<\/code>, <code>vendor<\/code>, <code>version<\/code>, <code>data_class<\/code>, <code>allowed_roles<\/code>).",
+  "talksTo": [
+   {
+    "id": "src-copilot-rag-corpus-py",
+    "label": "copilot.rag.corpus"
+   }
+  ]
+ },
+ {
+  "id": "src-copilot-rag-corpus-py",
+  "group": "RAG / Knowledge layer",
+  "day": 4,
+  "path": "src/copilot/rag/corpus.py",
+  "headline": "Parses every knowledge doc's frontmatter + Markdown body into a typed <code>KnowledgeDoc<\/code>.",
+  "does": "<code>check_corpus_against_policy()<\/code> recomputes each doc's expected <code>allowed_roles<\/code> from the live disclosure policy and fails loudly if a doc's hand-authored roles have drifted from it.",
+  "talksTo": [
+   {
+    "id": "src-copilot-guardrails-policy-py",
+    "label": "copilot.guardrails.policy"
+   },
+   {
+    "id": "src-copilot-rag-chunking-py",
+    "label": "copilot.rag.chunking"
+   }
+  ],
+  "takes": "the <code>knowledge/<\/code> directory.",
+  "gives": "<code>list[KnowledgeDoc]<\/code>."
+ },
+ {
+  "id": "src-copilot-rag-chunking-py",
+  "group": "RAG / Knowledge layer",
+  "day": 4,
+  "path": "src/copilot/rag/chunking.py",
+  "headline": "Splits each <code>KnowledgeDoc<\/code>'s body into <code>Chunk<\/code>s at every Markdown heading (the real semantic boundaries in this hand-curated corpus), re-splitting by …",
+  "does": "Splits each <code>KnowledgeDoc<\/code>'s body into <code>Chunk<\/code>s at every Markdown heading (the real semantic boundaries in this hand-curated corpus), re-splitting by paragraph (with overlap) only if one section runs over ~1000 chars — comfortably under the embedder's truncation point. Carries the doc's permission metadata (<code>data_class<\/code>, <code>allowed_roles<\/code>) onto every chunk.",
+  "talksTo": [
+   {
+    "id": "src-copilot-rag-store-py",
+    "label": "copilot.rag.store"
+   },
+   {
+    "id": "src-copilot-rag-corpus-py",
+    "label": "copilot.rag.corpus"
+   }
+  ],
+  "takes": "<code>list[KnowledgeDoc]<\/code>.",
+  "gives": "<code>list[Chunk]<\/code>, each with a stable <code>chunk_id<\/code> and a <code>content_hash<\/code> of its text."
+ },
+ {
+  "id": "src-copilot-rag-embeddings-py",
+  "group": "RAG / Knowledge layer",
+  "day": 4,
+  "path": "src/copilot/rag/embeddings.py",
+  "headline": "<code>Embedder<\/code> protocol + <code>SentenceTransformerEmbedder<\/code> (local <code>all-MiniLM-L6-v2<\/code>, 384-dim, lazy-loaded so constructing it never triggers a download) + …",
+  "does": "<code>Embedder<\/code> protocol + <code>SentenceTransformerEmbedder<\/code> (local <code>all-MiniLM-L6-v2<\/code>, 384-dim, lazy-loaded so constructing it never triggers a download) + <code>FakeEmbedder<\/code> (deterministic, no network — used by every test in this repo). The real model's weights come from the Hugging Face Hub, which this build sandbox's proxy blocks, so the real embedding run is <code>scripts/build_rag_index.py<\/code> on your machine.",
+  "talksTo": [
+   {
+    "id": "src-copilot-rag-store-py",
+    "label": "copilot.rag.store.ChunkStore.upsert"
+   }
+  ],
+  "takes": "chunk text (or a query string).",
+  "gives": "one float vector per text."
+ },
+ {
+  "id": "src-copilot-rag-store-py",
+  "group": "RAG / Knowledge layer",
+  "day": 1,
+  "path": "src/copilot/rag/store.py",
+  "headline": "<code>ChunkStore<\/code> wraps one Chroma collection (<code>PersistentClient<\/code>, <code>data/chroma/<\/code> — gitignored, same never-commit-derived-data rule as the Parquet snapshot).",
+  "does": "<code>upsert()<\/code> is keyed by each chunk's <code>content_hash<\/code>, not its <code>chunk_id<\/code>, so a full corpus rebuild skips every chunk whose text hasn't actually changed. <code>query()<\/code> is plain vector search, now with an optional <code>where<\/code> metadata filter (Day 4 step 5: <code>copilot.rag.permissions.PermissionedRetriever<\/code> passes <code>{&quot;data_class&quot;: {&quot;$in&quot;: [...]}}<\/code> so ineligible chunks are excluded inside the ANN search itself, not dropped from an already-fixed-size result afterwards — <code>None<\/code>, the default, is what <code>copilot.rag.retrieval.HybridRetriever<\/code> (step 4) still uses, unrestricted).",
+  "talksTo": [
+   {
+    "id": "src-copilot-rag-embeddings-py",
+    "label": "copilot.rag.embeddings"
+   },
+   {
+    "id": "src-copilot-guardrails-policy-py",
+    "label": "copilot.guardrails.policy"
+   },
+   {
+    "id": "src-copilot-rag-retrieval-py",
+    "label": "copilot.rag.retrieval"
+   },
+   {
+    "id": "src-copilot-rag-permissions-py",
+    "label": "copilot.rag.permissions"
+   }
+  ],
+  "takes": "<code>list[Chunk]<\/code> + an <code>Embedder<\/code> (for <code>upsert<\/code>); a query vector + optional <code>where<\/code> filter (for <code>query<\/code>).",
+  "gives": "an <code>UpsertReport<\/code> (embedded vs. already-current counts); nearest-chunk tuples."
+ },
+ {
+  "id": "src-copilot-rag-retrieval-py",
+  "group": "RAG / Knowledge layer",
+  "day": 4,
+  "path": "src/copilot/rag/retrieval.py",
+  "headline": "<code>BM25Index<\/code> (lexical, in-memory, rebuilt from the chunk list each time — no incremental-update story at this corpus size) + …",
+  "does": "<code>BM25Index<\/code> (lexical, in-memory, rebuilt from the chunk list each time — no incremental-update story at this corpus size) + <code>reciprocal_rank_fusion()<\/code> (plain RRF: <code>sum(1/(k+rank))<\/code> across rankings, default <code>k=60<\/code>) + <code>fuse_rankings()<\/code> (turns two ID rankings into the final <code>RetrievedChunk<\/code> list — shared with <code>copilot.rag.permissions.PermissionedRetriever<\/code>, step 5, so both classes assemble results identically) + <code>HybridRetriever<\/code>, which runs both a BM25 search and a <code>ChunkStore.query()<\/code> vector search over the same chunk list and fuses their rankings via <code>fuse_rankings()<\/code>. Reranker is this step's cut item (see <code>docs/PROJECT_PROGRESS.md<\/code>) — <code>RetrievedChunk<\/code> already carries the full chunk text, so one can be added later as a third stage without changing this module's contract. No permission filtering here — step 5 wraps this.",
+  "talksTo": [
+   {
+    "id": "src-copilot-rag-chunking-py",
+    "label": "copilot.rag.chunking"
+   },
+   {
+    "id": "src-copilot-rag-store-py",
+    "label": "copilot.rag.store"
+   },
+   {
+    "id": "src-copilot-rag-embeddings-py",
+    "label": "copilot.rag.embeddings"
+   },
+   {
+    "id": "src-copilot-rag-permissions-py",
+    "label": "copilot.rag.permissions"
+   }
+  ],
+  "takes": "<code>list[Chunk]<\/code> (to index for BM25 and to resolve IDs back to chunks), a <code>ChunkStore<\/code>, an <code>Embedder<\/code>, and a query string at retrieve time.",
+  "gives": "<code>list[RetrievedChunk]<\/code> — each with the matched <code>Chunk<\/code>, its fused RRF score, and its rank in each underlying ranking (<code>None<\/code> if it didn't appear in that one)."
+ },
+ {
+  "id": "src-copilot-rag-permissions-py",
+  "group": "RAG / Knowledge layer",
+  "day": 4,
+  "path": "src/copilot/rag/permissions.py",
+  "headline": "<code>PermissionedRetriever<\/code> — role-aware counterpart to <code>HybridRetriever<\/code>: same RRF fusion (shares <code>retrieval.fuse_rankings<\/code>), but every chunk either …",
+  "does": "<code>PermissionedRetriever<\/code> — role-aware counterpart to <code>HybridRetriever<\/code>: same RRF fusion (shares <code>retrieval.fuse_rankings<\/code>), but every chunk either ranking can return is first scoped to what the given role may see. Authority is the live <code>DisclosurePolicy.can_view(role, data_class)<\/code>, re-derived every call — never the chunk's own <code>allowed_roles<\/code> field, even though <code>copilot.rag.corpus.check_corpus_against_policy<\/code> already checks the two agree at ingest time. The filter runs <em>inside<\/em> the vector query (a Chroma <code>where={&quot;data_class&quot;: {&quot;$in&quot;: [...]}}<\/code> pushed into <code>ChunkStore.query()<\/code>), not as a post-hoc drop after a fixed-size result set — the latter would silently return fewer than <code>n_results<\/code> whenever permissions trim the field. BM25 has no per-call filter to push into, so the same principle is enforced one layer up: the role-scoped BM25 index is built from only the visible chunks in the first place.",
+  "talksTo": [
+   {
+    "id": "src-copilot-rag-retrieval-py",
+    "label": "copilot.rag.retrieval"
+   },
+   {
+    "id": "src-copilot-rag-store-py",
+    "label": "copilot.rag.store"
+   },
+   {
+    "id": "src-copilot-guardrails-policy-py",
+    "label": "copilot.guardrails.policy"
+   },
+   {
+    "id": "src-copilot-agents-specialists-py",
+    "label": "copilot.agents.specialists.run_knowledge"
+   }
+  ],
+  "takes": "<code>list[Chunk]<\/code>, a <code>ChunkStore<\/code>, an <code>Embedder<\/code>, a <code>DisclosurePolicy<\/code>; a query string + <code>Role<\/code> at retrieve time.",
+  "gives": "<code>list[RetrievedChunk]<\/code>, same shape as <code>HybridRetriever<\/code>'s."
+ },
+ {
+  "id": "src-copilot-rag-corrective-py",
+  "group": "RAG / Knowledge layer",
+  "day": 4,
+  "path": "src/copilot/rag/corrective.py",
+  "headline": "<code>CorrectiveRagService<\/code> — the Corrective RAG loop, compiled as a LangGraph <code>StateGraph<\/code>: retrieve → grade → (generate | rewrite → retrieve again | abstain).",
+  "does": "Grading and query-rewriting are their own versioned prompts (<code>prompts/crag_grade/<\/code>, <code>prompts/crag_rewrite/<\/code>); generation is <code>prompts/crag_generate/<\/code>. Wraps a <code>PermissionedRetriever<\/code> (step 5) behind a <code>Retriever<\/code> Protocol, so this loop is permission-aware by construction. Simplified from the CRAG paper on purpose: no external web-search fallback (this system answers from one internal corpus by design — ADR-002) — \"not enough relevant chunks\" rewrites the query and retries the <em>same<\/em> corpus instead, bounded by <code>MAX_CORRECTIONS<\/code> (mirrors <code>copilot.sql.service.MAX_SELF_CORRECTIONS<\/code>), then abstains honestly rather than generate from weak grounding. Never trusts a grade or citation for a chunk id that wasn't actually shown to the model. Day 7 step 2: <code>_grade<\/code>/<code>_rewrite<\/code>/<code>_generate<\/code> each append their own <code>canary_line(&quot;knowledge_grade&quot;/&quot;knowledge_rewrite&quot;/&quot;knowledge_generate&quot;)<\/code>.",
+  "talksTo": [
+   {
+    "id": "src-copilot-rag-permissions-py",
+    "label": "copilot.rag.permissions"
+   },
+   {
+    "id": "src-copilot-rag-retrieval-py",
+    "label": "copilot.rag.retrieval"
+   },
+   {
+    "id": "src-copilot-llm-client-py",
+    "label": "copilot.llm.client"
+   },
+   {
+    "id": "src-copilot-llm-prompts-py",
+    "label": "copilot.llm.prompts"
+   },
+   {
+    "id": "src-copilot-guardrails-canary-py",
+    "label": "copilot.guardrails.canary"
+   }
+  ],
+  "takes": "a question, a <code>Role<\/code> (per call, not per instance).",
+  "gives": "a <code>CorrectiveRagResult<\/code> — a grounded answer + the chunk ids it actually cited, or an explicit abstention + reason, plus cost/latency/call accounting (same shape as <code>TextToSqlResult<\/code>)."
+ },
+ {
+  "id": "scripts-build-rag-index-py",
+  "group": "RAG / Knowledge layer",
+  "day": 4,
+  "path": "scripts/build_rag_index.py",
+  "headline": "Loads the corpus, checks it against the live disclosure policy, chunks it, embeds with the real local model, and upserts into <code>data/chroma/<\/code> — prints …",
+  "does": "Loads the corpus, checks it against the live disclosure policy, chunks it, embeds with the real local model, and upserts into <code>data/chroma/<\/code> — prints how many chunks were actually (re-)embedded vs. already up to date. <strong>Needs:<\/strong> nothing but normal internet access (no API key — the model is local and free to run).",
+  "talksTo": [
+   {
+    "label": "copilot.rag.*"
+   }
+  ]
+ },
+ {
+  "id": "scripts-run-rag-eval-py",
+  "group": "RAG / Knowledge layer",
+  "day": 4,
+  "path": "scripts/run_rag_eval.py",
+  "headline": "Day 4 step 7's eval runner.",
+  "does": "Retrieval metrics (recall@k, MRR — <code>copilot.evals.rag_metrics<\/code>) are free and run against whatever's already in <code>data/chroma/<\/code>. <code>--quality<\/code> additionally runs the cut-down Ragas pair (<code>copilot.evals.rag_quality<\/code>: faithfulness + context_recall) via real <code>CorrectiveRagService<\/code>/LLM calls — costs money, off by default. <strong>Needs:<\/strong> the real Chroma index (<code>build_rag_index.py<\/code> first); <code>--quality<\/code> needs <code>ANTHROPIC_API_KEY<\/code>.",
+  "talksTo": [
+   {
+    "id": "src-copilot-evals-rag-golden-py",
+    "label": "copilot.evals.rag_golden"
+   },
+   {
+    "id": "src-copilot-rag-permissions-py",
+    "label": "copilot.rag.permissions"
+   },
+   {
+    "id": "src-copilot-rag-corrective-py",
+    "label": "copilot.rag.corrective"
+   }
+  ]
+ },
+ {
+  "id": "src-copilot-evals-rag-golden-py",
+  "group": "RAG / Knowledge layer",
+  "day": 4,
+  "path": "src/copilot/evals/rag_golden.py, rag_metrics.py, rag_quality.py",
+  "headline": "The RAG eval harness (Day 4 step 7).",
+  "does": "<code>rag_golden<\/code>: 20 labelled questions (<code>evals/datasets/rag_golden_v1.jsonl<\/code>) against the real knowledge corpus, each naming a <code>doc_type<\/code>/<code>vendor<\/code> + a verbatim <code>must_contain<\/code> phrase rather than a <code>chunk_id<\/code> directly, so the dataset survives a re-chunk; <code>relevant_chunk_ids()<\/code> resolves it at eval time. <code>rag_metrics<\/code>: pure-arithmetic <code>recall_at_k()<\/code>/<code>reciprocal_rank()<\/code> + means — no LLM, runs for real anywhere. <code>rag_quality<\/code>: <code>faithfulness()<\/code>/<code>context_recall()<\/code>, the sprint's Ragas suite cut down to two (its own cut-first note) — small LLM-judge calls reusing <code>copilot.evals.evaluators.EvalScore<\/code> rather than the <code>ragas<\/code> package, consistent with this repo's existing hand-written evaluators.",
+  "talksTo": [
+   {
+    "id": "src-copilot-rag-chunking-py",
+    "label": "copilot.rag.chunking"
+   },
+   {
+    "id": "src-copilot-llm-client-py",
+    "label": "copilot.llm.client"
+   },
+   {
+    "id": "src-copilot-evals-evaluators-py",
+    "label": "copilot.evals.evaluators"
+   }
+  ]
+ },
+ {
+  "id": "src-copilot-ml-metrics-py",
+  "group": "ML tools",
+  "day": 5,
+  "path": "src/copilot/ml/metrics.py",
+  "headline": "WAPE, MASE, bias -- the three forecast-accuracy metrics the sprint doc names (not MAPE, which the analytics repo's own <code>forecast_backtest.py<\/code> already found unreliable near-zero actuals).",
+  "does": "WAPE, MASE, bias -- the three forecast-accuracy metrics the sprint doc names (not MAPE, which the analytics repo's own <code>forecast_backtest.py<\/code> already found unreliable near-zero actuals).",
+  "talksTo": [
+   {
+    "label": "copilot.evals.rag_metrics"
+   }
+  ],
+  "takes": "parallel actual/forecast sequences (plus the training series, for MASE's scale).",
+  "gives": "one float per metric."
+ },
+ {
+  "id": "src-copilot-ml-forecast-py",
+  "group": "ML tools",
+  "day": 5,
+  "path": "src/copilot/ml/forecast.py",
+  "headline": "Demand forecast tool: ETS vs naive, honest out-of-sample accuracy from a rolling-origin backtest (never an in-sample fit -- ADR-000 item 2 is exactly …",
+  "does": "Demand forecast tool: ETS vs naive, honest out-of-sample accuracy from a rolling-origin backtest (never an in-sample fit -- ADR-000 item 2 is exactly that mistake, in the Excel tool this project replaces). Matches the analytics repo's <code>forecast_backtest.py<\/code> methodology (one-month-ahead, expanding window) so the numbers are comparable.",
+  "talksTo": [
+   {
+    "id": "src-copilot-data-store-py",
+    "label": "copilot.data.store"
+   },
+   {
+    "id": "src-copilot-ml-metrics-py",
+    "label": "copilot.ml.metrics"
+   },
+   {
+    "id": "src-copilot-ml-inventory-py",
+    "label": "copilot.ml.inventory"
+   },
+   {
+    "id": "docs-project-progress-md",
+    "label": "docs/BUILD_LOG.md"
+   }
+  ],
+  "sym": "forecast_demand()",
+  "takes": "a <code>ForecastRequest<\/code> (portfolio or one vendor, horizon in months).",
+  "gives": "a <code>ForecastResult<\/code> -- point forecasts, which model won the backtest, and the WAPE/MASE/bias for both models, plus <code>seasonality_note<\/code> explaining why true seasonal-naive isn't estimable with only 12 months of history (R3 in <code>docs/RAID.md<\/code>)."
+ },
+ {
+  "id": "src-copilot-ml-inventory-py",
+  "group": "ML tools",
+  "day": 5,
+  "path": "src/copilot/ml/inventory.py",
+  "headline": "Safety stock, reorder point, EOQ -- standard OR formulas (Silver/Pyke/Peterson; Wilson 1913 for EOQ), from a forecast's output.",
+  "does": "<code>demand_stats_from_backtest()<\/code> is the bridge from a <code>ForecastResult<\/code> to these formulas' (mean, std-dev) inputs -- deliberately uses historical month-over-month variability, not variance across the forecast points themselves, because a flat (naive) forecast has zero variance by construction and would otherwise silently hand back a zero safety stock.",
+  "talksTo": [
+   {
+    "id": "src-copilot-ml-forecast-py",
+    "label": "copilot.ml.forecast"
+   }
+  ],
+  "sym": "compute_inventory_plan()",
+  "takes": "an <code>InventoryRequest<\/code> (mean/std demand per period, lead time, service level, ordering and holding costs) or a <code>ForecastResult<\/code> via <code>demand_stats_from_backtest()<\/code>.",
+  "gives": "an <code>InventoryPlan<\/code> (z-score, safety stock, reorder point, EOQ)."
+ },
+ {
+  "id": "src-copilot-ml-risk-classifier-py",
+  "group": "ML tools",
+  "day": 5,
+  "path": "src/copilot/ml/risk_classifier.py",
+  "headline": "SKU risk classifier for ADR-000 item 1: predicts <code>is_at_risk<\/code> (HealthStatus <code>Loss Making<\/code>/ <code>At Risk<\/code>) from operational features, leaking-feature-excluded by construction.",
+  "does": "<code>LEAKING_FEATURES<\/code> excludes <code>ProfitMargin<\/code>/<code>MarkupPct<\/code>/<code>NetMarginAfterExcisePct<\/code> (the real view's margin family that produces the label) <strong>and<\/strong> <code>SalesToPurchaseRatio<\/code> -- confirmed algebraically equal to <code>StockTurnover * (1 + MarkupPct)<\/code>, so it re-derives <code>ProfitMargin<\/code> even though it isn't itself a raw margin column; found by running the leaky/safe comparison and seeing it dominate the safe model's SHAP drivers when left in. <code>make_synthetic_skus()<\/code> builds a fixture from one shared latent \"SKU health\" factor <code>z<\/code>, with <code>ProfitMargin<\/code> thresholded directly (plus 3% label noise) so the leakage story is real, not just labelled -- real per-SKU data stays out of this repo (licence guard; <code>docs/RAID.md<\/code> R1).",
+  "talksTo": [
+   {
+    "label": "scripts/train_risk_classifier.py"
+   }
+  ],
+  "sym": "classify_sku_risk (Random Forest + XGBoost)",
+  "takes": "a SKU-row DataFrame with <code>vw_PortfolioHealth<\/code> column names + <code>HealthStatus<\/code>.",
+  "gives": "<code>ClassifierResult<\/code> -- accuracy, F1, calibration curve, and (Random Forest only) SHAP-ranked top drivers; <code>compare_models()<\/code> runs all 4 combinations (RF/XGBoost x leaky/safe) on one split.",
+  "isNew": true
+ },
+ {
+  "id": "src-copilot-ml-run-log-py",
+  "group": "ML tools",
+  "day": 5,
+  "path": "src/copilot/ml/run_log.py",
+  "headline": "CSV run-log for all three ML tools -- MLflow was cut-first per the sprint doc; this is the plain-CSV replacement.",
+  "does": "One <code>log_*_run()<\/code> builder per tool flattens its result into a flat <code>RunLogEntry<\/code> row (<code>params<\/code>/<code>metrics<\/code> JSON-encoded into single cells) and appends it, writing the header on first use.",
+  "talksTo": [
+   {
+    "id": "src-copilot-ml-forecast-py",
+    "label": "copilot.ml.forecast"
+   },
+   {
+    "id": "src-copilot-ml-inventory-py",
+    "label": "copilot.ml.inventory"
+   },
+   {
+    "id": "src-copilot-ml-risk-classifier-py",
+    "label": "copilot.ml.risk_classifier"
+   },
+   {
+    "label": "scripts/train_risk_classifier.py"
+   }
+  ],
+  "takes": "a <code>ForecastResult<\/code> / <code>InventoryPlan<\/code> / <code>ClassifierResult<\/code> + a CSV path.",
+  "gives": "nothing returned to the caller beyond the <code>RunLogEntry<\/code> written; the file itself is the record.",
+  "isNew": true
+ },
+ {
+  "id": "src-copilot-agents-model-selection-py",
+  "group": "Model Selection Agent",
+  "day": 5,
+  "path": "src/copilot/agents/model_selection.py",
+  "headline": "LangGraph propose -&gt; critique -&gt; revise -&gt; abstain loop, same shape as <code>copilot.rag.corrective.CorrectiveRagService<\/code> applied to picking a model …",
+  "does": "LangGraph propose -&gt; critique -&gt; revise -&gt; abstain loop, same shape as <code>copilot.rag.corrective.CorrectiveRagService<\/code> applied to picking a model instead of grounding an answer -- the direct precedent Addendum A1 names. Picks from a fixed, closed <code>MODEL_CATALOG<\/code> (never invents a model family): <code>random_forest<\/code>/<code>xgboost<\/code> and <code>ets<\/code>/<code>naive<\/code> are backed by real tools already built here (<code>copilot.ml.risk_classifier<\/code>, <code>copilot.ml.forecast<\/code>); <code>kmeans<\/code>/<code>logistic_regression<\/code>/<code>linear_regression<\/code> are catalog entries only, not yet implemented as tools. The \"revise\" step is pure bookkeeping (no LLM call) -- unlike <code>CorrectiveRagService<\/code>'s \"rewrite\" step, which needs an LLM to creatively reformulate a search query, revision here only has to forward the critique's already-structured <code>concerns<\/code>/<code>suggested_model_family<\/code> into the next proposal.",
+  "talksTo": [
+   {
+    "id": "src-copilot-llm-client-py",
+    "label": "copilot.llm.client"
+   },
+   {
+    "id": "src-copilot-llm-prompts-py",
+    "label": "copilot.llm.prompts"
+   },
+   {
+    "label": "copilot.evals.model_selection_metrics"
+   },
+   {
+    "label": "scripts/run_model_selection_eval.py"
+   }
+  ],
+  "sym": "ModelSelectionAgent",
+  "takes": "a plain-text data-science requirement.",
+  "gives": "a <code>ModelSelectionResult<\/code> -- accepted <code>task_type<\/code>/<code>model_family<\/code>/<code>reasoning<\/code>, or an explicit abstention + reason, plus cost/latency/call accounting."
+ },
+ {
+  "id": "src-copilot-evals-model-selection-golden-py",
+  "group": "Model Selection Agent",
+  "day": 5,
+  "path": "src/copilot/evals/model_selection_golden.py, model_selection_metrics.py, model_selection_quality.py",
+  "headline": "The Day 5 step 6 eval harness, same free/judged split as the RAG harness.",
+  "does": "<code>model_selection_golden.py<\/code>: 8 requirements (<code>evals/datasets/model_selection_golden_v1.jsonl<\/code>), 2 per task type, each naming an <code>expected_task_type<\/code> and a <em>set<\/em> of <code>acceptable_model_families<\/code> (not one exemplar -- the catalog genuinely offers more than one reasonable pick for classification/forecasting). <code>model_selection_metrics.py<\/code>: <code>task_type_correct<\/code>/<code>model_family_acceptable<\/code> -- free, pure catalog-membership checks, no LLM needed. <code>model_selection_quality.py<\/code>: <code>reasoning_grounded<\/code> -- the one LLM-judge call (Addendum A1's \"evaluated with LLM evals\"), scoring whether the agent's final reasoning is actually grounded in what the requirement said versus generic ML boilerplate that a free check can't tell apart from real grounding.",
+  "talksTo": [
+   {
+    "id": "src-copilot-agents-model-selection-py",
+    "label": "copilot.agents.model_selection"
+   },
+   {
+    "id": "src-copilot-evals-evaluators-py",
+    "label": "copilot.evals.evaluators"
+   },
+   {
+    "id": "src-copilot-llm-client-py",
+    "label": "copilot.llm.client"
+   },
+   {
+    "id": "src-copilot-llm-prompts-py",
+    "label": "copilot.llm.prompts"
+   },
+   {
+    "label": "scripts/run_model_selection_eval.py"
+   }
+  ]
+ },
+ {
+  "id": "src-copilot-agents-contracts-py",
+  "group": "Multi-agent system",
+  "day": 6,
+  "path": "src/copilot/agents/contracts.py",
+  "headline": "<code>TaskSpec<\/code>/<code>AgentResult<\/code> -- the typed handoff contracts C3 requires so no specialist passes free text to another.",
+  "does": "<code>TaskSpec<\/code> is what the Orchestrator hands one specialist: <code>objective<\/code> + <code>constraints<\/code> (a dict, not prose, so a node reads a known key instead of re-parsing), a <code>role<\/code>, and an <code>AgentBudget<\/code> (steps/LLM calls/cost/latency ceiling, defaults 1/3/$0.05/30s, plus <code>effort<\/code>). <code>AgentResult<\/code> is what comes back: condensed <code>findings<\/code> (C3's &lt;=1500-token target), <code>evidence<\/code>, a <code>status<\/code> of ok/partial/failed, <code>gaps<\/code> when partial, and -- the field the Guardian (Day 7) will read -- <code>data_classes<\/code>, filled by the specialist itself from <code>DisclosurePolicy<\/code>, never inferred downstream. <code>AgentResult.exceeds()<\/code> is the check <code>copilot.agents.orchestrator. _run_specialist<\/code> (Day 6 step 5) actually runs after a specialist returns, to decide <code>ok<\/code> vs <code>partial<\/code>. <code>AgentBudget.effort<\/code> (Day 6 step 5) is an <code>Effort | None<\/code> -- this generation's sampling lever, since <code>copilot.llm.client<\/code>'s module docstring already established that this Anthropic SDK/model generation has no <code>temperature<\/code> parameter at all; <code>None<\/code> lets a specialist fall back to its own prompt's <code>effort<\/code> default.",
+  "talksTo": [
+   {
+    "id": "src-copilot-guardrails-policy-py",
+    "label": "copilot.guardrails.policy"
+   },
+   {
+    "id": "src-copilot-llm-client-py",
+    "label": "copilot.llm.client"
+   }
+  ],
+  "takes": "nothing at import time -- pure Pydantic contracts.",
+  "gives": "<code>TaskSpec<\/code>, <code>AgentResult<\/code>, <code>AgentBudget<\/code>, <code>AgentName<\/code> (the closed 5-name Literal: data_analyst/forecasting_risk/inventory_planning/knowledge/action), <code>AgentStatus<\/code>.",
+  "isNew": true
+ },
+ {
+  "id": "src-copilot-agents-specialists-py",
+  "group": "Multi-agent system",
+  "day": 6,
+  "path": "src/copilot/agents/specialists.py",
+  "headline": "The five specialist nodes (C3 roster), each a plain <code>TaskSpec -&gt; AgentResult<\/code> function wrapping an already-tested service -- no new logic, just the C3 contract on top.",
+  "does": "- <code>run_data_analyst(spec, sql_service, policy=None, effort=None)<\/code> -- wraps <code>TextToSqlService.answer()<\/code>; <code>data_classes<\/code> comes from a new helper, <code>_sql_data_classes(sql, policy)<\/code>, which parses the generated SQL with sqlglot and looks up every referenced table's class via <code>DisclosurePolicy.class_of()<\/code> -- not self-reported by the SQL service, same \"the policy is the one source of truth\" posture <code>copilot.rag.permissions<\/code> takes. - <code>run_forecasting_risk(spec, con=None, risk_df=None, compute_shap=False)<\/code> -- always runs a real <code>forecast_demand()<\/code> against this repo's own snapshot (<code>spec.constraints[&quot;level&quot;]<\/code> = portfolio/vendor); the SKU risk-classifier half only runs when <code>spec.constraints[&quot;run_risk_classifier&quot;] == &quot;true&quot;<\/code>, and against <code>make_synthetic_skus()<\/code> unless the caller supplies a real <code>risk_df<\/code> -- this repo's licence-safe snapshot has no SKU-level features, same limitation Day 5's classifier had. <code>forecast_result_for_inventory()<\/code> is a small sibling that returns the raw <code>ForecastResult<\/code> the Orchestrator (step 3) will chain into Inventory Planning. - <code>run_inventory_planning(spec, forecast)<\/code> -- wraps <code>compute_inventory_plan()<\/code>, fed by <code>demand_stats_from_backtest(forecast)<\/code> exactly as Day 5's real run did; cost/service-level constraints read from <code>spec.constraints<\/code> with Day 5's own real-run defaults. - <code>run_knowledge(spec, rag_service, retriever)<\/code> -- wraps <code>CorrectiveRagService.answer()<\/code>; <code>data_classes<\/code> comes from looking up each <code>cited_chunk_ids<\/code> entry via the new <code>PermissionedRetriever.chunk_by_id()<\/code> (see that file's entry above). - <code>run_action(spec, llm, effort=None)<\/code> -- the one specialist with its own prompt (<code>prompts/action_draft/v1.yaml<\/code>), drafting a <code>renegotiation_email<\/code> or <code>reorder_recommendation<\/code> via <code>LLMClient.structured()<\/code> into <code>ActionDraft<\/code> (<code>subject<\/code>/<code>body<\/code>). Always returns <code>status=&quot;partial&quot;<\/code> with a gap stating the draft hasn't passed the Guardian/an approver yet (Day 7) -- this function never sends anything. Day 7 step 2: <code>run_action<\/code>'s system prompt now appends <code>canary_line(&quot;action&quot;)<\/code> -- any leak of that marker into a final answer is what <code>Guardian._check_canary<\/code> catches.",
+  "talksTo": [
+   {
+    "id": "src-copilot-sql-service-py",
+    "label": "copilot.sql.service"
+   },
+   {
+    "id": "src-copilot-ml-forecast-py",
+    "label": "copilot.ml.forecast"
+   },
+   {
+    "id": "src-copilot-rag-corrective-py",
+    "label": "copilot.rag.corrective"
+   },
+   {
+    "id": "src-copilot-llm-client-py",
+    "label": "copilot.llm.client"
+   },
+   {
+    "id": "src-copilot-guardrails-policy-py",
+    "label": "copilot.guardrails.policy"
+   },
+   {
+    "id": "src-copilot-guardrails-canary-py",
+    "label": "copilot.guardrails.canary"
+   }
+  ],
+  "takes": "a <code>TaskSpec<\/code> plus each specialist's already-constructed dependency (<code>TextToSqlService<\/code>, a DuckDB connection, a <code>ForecastResult<\/code>, a <code>CorrectiveRagService<\/code> + <code>PermissionedRetriever<\/code>, an <code>LLMClient<\/code>).",
+  "gives": "<code>AgentResult<\/code> for each; <code>ActionDraft<\/code>, <code>DraftType<\/code> are also exported.",
+  "isNew": true
+ },
+ {
+  "id": "prompts-action-draft-v1-yaml",
+  "group": "Multi-agent system",
+  "day": 6,
+  "path": "prompts/action_draft/v1.yaml",
+  "headline": "The Action specialist's one prompt.",
+  "does": "System prompt states the vendor-facing audience rule (public facts + that vendor's own terms only, for a <code>renegotiation_email<\/code>; internal figures allowed for a <code>reorder_recommendation<\/code>) as an instruction to the model -- real enforcement is the Guardian (Day 7), not this prompt; <code>run_action()<\/code>'s <code>gaps<\/code> says so explicitly.",
+  "talksTo": [],
+  "isNew": true
+ },
+ {
+  "id": "src-copilot-agents-orchestrator-py",
+  "group": "Multi-agent system",
+  "day": 6,
+  "path": "src/copilot/agents/orchestrator.py",
+  "headline": "Typed plan -&gt; <code>Send<\/code> fan-out -&gt; join -&gt; draft -&gt; verify -&gt; (finalize | revise_draft -&gt; draft...), compiled as a LangGraph graph (C3/C7).",
+  "does": "<code>_plan<\/code> (one LLM call, <code>OrchestratorPlan<\/code>/<code>PlannedTask<\/code>) turns the user's question into a list of specialist tasks; <code>_fan_out<\/code> is a <em>routing function<\/em>, not a node -- it returns one <code>Send<\/code> per planned task so independent tasks run as separate parallel <code>run_specialist<\/code> invocations (LangGraph's mechanism for exactly this), or a single <code>Send(&quot;draft&quot;, ...)<\/code> when the plan is empty, since <code>run_specialist<\/code> never running would otherwise leave the static <code>run_specialist -&gt; draft<\/code> edge untraversed. <code>results<\/code> is <code>Annotated[list[ AgentResult], operator.add]<\/code> -- LangGraph's reducer pattern for collecting parallel branch outputs back into one state key (the \"join\"). <code>_draft<\/code> (one LLM call, <code>DraftAnswer<\/code>) writes the answer the user will see if it passes verification, citing which task each figure came from, and names any disagreement it notices between specialists in <code>conflicts_noted<\/code> -- <strong>logged only, never resolved or re-queried<\/strong>, the sprint doc's Day 6 cut-first item. On a redraft it also reads <code>verify_feedback<\/code> out of state and folds it into the prompt as <code>feedback_block<\/code>. <strong>Day 6 step 4, the Verifier (C3/C7):<\/strong> <code>_verify<\/code> (one more LLM call, <code>VerifierVerdict<\/code> via the <code>orchestrator_verify<\/code> prompt) scores the draft against the specialist findings it was supposed to be grounded in -- <code>grounded<\/code> (every number traces to a finding), <code>citations_ok<\/code>, <code>sufficient<\/code>, and any <code>contradictions<\/code> between findings the draft papered over; <code>VerifierVerdict.passed<\/code> is the AND of the first three and \"no contradictions\". <code>_route_after_verify<\/code> is a pure routing function (no LLM call, no state mutation -- mirrors <code>ModelSelectionAgent._route_after_critique<\/code>): passes -&gt; <code>finalize<\/code>; fails and <code>verify_attempt &lt; MAX_VERIFICATION_LOOPS<\/code> (2) -&gt; <code>revise_draft<\/code>; otherwise <code>finalize<\/code> anyway, flagged <code>verified=False<\/code> rather than looping forever. <code>_revise_draft<\/code> is pure bookkeeping (no LLM call -- mirrors <code>ModelSelectionAgent._revise<\/code>): turns the verdict's <code>feedback<\/code>/<code>contradictions<\/code> into <code>verify_feedback<\/code> text and increments <code>verify_attempt<\/code>, then loops back to <code>draft<\/code>. <code>_finalize<\/code> assembles the <code>OrchestratorResult<\/code>, summing each specialist's own cost/latency/llm_calls in exactly once regardless of how many draft/verify loops ran (that summation moved out of <code>_draft<\/code>, which can now run more than once, into this one-time-only node). A specialist executor that raises, or a planned agent with no executor registered, becomes a <code>status=&quot;failed&quot;<\/code> <code>AgentResult<\/code> with the reason in <code>gaps<\/code> rather than crashing the whole plan. <strong>Day 6 step 5: per-agent budgets, enforced.<\/strong> <code>_run_specialist<\/code> runs the executor through a single-worker <code>ThreadPoolExecutor<\/code>, bounded by <code>task.budget.max_latency_s<\/code>; a specialist that doesn't return in time becomes <code>status=&quot;failed&quot;<\/code> with a \"timed out after Ns\" gap instead of an unbounded wait (the Orchestrator stops waiting -- it can't force arbitrary sync code to actually stop, same honest limit every <code>concurrent.futures<\/code>-timeout approach has). After an <code>ok<\/code> result returns, <code>AgentResult.exceeds(task.budget)<\/code> is checked for real now (step 1 defined it, nothing called it); an overage downgrades the result to <code>status=&quot;partial&quot;<\/code> with the specific cost/ latency/llm_calls overage named in <code>gaps<\/code>, so a specialist that quietly blew its budget is never reported as if nothing happened. <strong>Day 6 step 6: a local SQLite checkpointer, and per-agent LangSmith run names/tags.<\/strong> <code>Orchestrator(..., checkpoint_path=...)<\/code> compiles the graph with a <code>langgraph.checkpoint.sqlite. SqliteSaver<\/code> over that file (a plain <code>sqlite3.Connection<\/code>, <code>check_same_thread=False<\/code> since <code>_run_specialist<\/code> calls into a thread pool); <code>answer(..., thread_id=...)<\/code> is the checkpoint key -- a caller can resume or inspect one run's state later (<code>select * from checkpoints where thread_id = ...<\/code>), which is also what LangGraph Studio would otherwise visualize -- <strong>Studio itself is this step's cut-first item<\/strong> (an external tool to point at this process, not code to build). With no <code>checkpoint_path<\/code>, nothing changes (<code>checkpointer=None<\/code>, same as before step 6). <code>_ls_extra(node, role, **tags)<\/code> builds a <code>langsmith.run_helpers.LangSmithExtra<\/code> (<code>name=&quot; orchestrator.&lt;node&gt;&quot;<\/code>, <code>tags=[&quot;orchestrator&quot;, node, f&quot;role:{role}&quot;, ...]<\/code>), passed as <code>langsmith_extra=<\/code> to each of <code>_plan<\/code>/<code>_draft<\/code>/<code>_verify<\/code>'s own <code>LLMClient.structured()<\/code> call -- <code>traceable<\/code>'s own call-time override, no change needed to <code>LLMClient<\/code> itself -- so a LangSmith trace can tell which orchestrator node (and which redraft attempt) a given LLM call belongs to, instead of every call showing up as the same generic <code>LLMClient.structured<\/code> run. <code>copilot.agents.specialists.run_action<\/code> tags its own call the same way (<code>name=&quot;specialist.action&quot;<\/code>, tagged with <code>draft_type<\/code>); the other four specialists delegate to Day 3-5 services (<code>TextToSqlService<\/code>, <code>CorrectiveRagService<\/code>) whose internal LLM calls aren't yet agent-tagged -- threading tags through those pre-existing services is out of this step's scope, noted here rather than silently left undone. <strong>Day 7 step 4: the Guardian, non-bypassable.<\/strong> <code>finalize<\/code> no longer edges to <code>END<\/code> directly -- it edges to a new <code>guardian<\/code> node (<code>_guardian_node<\/code>, wrapping <code>copilot.guardrails.guardian. Guardian<\/code>), which reviews the finished <code>OrchestratorResult<\/code>, writes an audit-log row (<code>log_decision<\/code>), and replaces <code>answer<\/code> with the verdict's <code>safe_answer<\/code> (the raw draft never reaches a caller; the full verdict is kept on <code>OrchestratorResult.guardian_verdict<\/code>). Every path from <code>plan<\/code> to <code>END<\/code> now passes through <code>guardian<\/code> -- <code>tests/test_orchestrator.py:: test_every_path_to_end_passes_through_guardian<\/code> asserts this against the <em>compiled<\/em> graph's own <code>get_graph()<\/code> edges, not <code>_build_graph<\/code>'s source. <strong>Day 7 step 5: the approval gate (C5).<\/strong> An Action draft the Guardian allowed/redacted (never one it already BLOCKed/ESCALATEd) stops one hop short of <code>END<\/code>: <code>_route_after_guardian<\/code> (pure routing, no LLM call) sends it to <code>_approval_gate<\/code> instead, which calls LangGraph's <code>interrupt()<\/code> with the draft + verdict as payload, pausing the run until <code>resume_approval(thread_id, decision, approver_role=, edited_answer=)<\/code> sends back <code>Command(resume=...)<\/code>. <code>resume_approval<\/code> checks <code>approver_role in {&quot;approver&quot;, &quot;admin&quot;}<\/code> in plain Python <em>before<\/em> touching the graph, so an unauthorized caller can't resume a paused thread even knowing its <code>thread_id<\/code>. Three outcomes: <code>&quot;approve&quot;<\/code> keeps the Guardian's <code>safe_answer<\/code> as-is; <code>&quot;reject&quot;<\/code> replaces <code>answer<\/code> with a fixed rejection message; <code>&quot;edit&quot;<\/code> re-runs the approver's new text through <code>self._guardian.review()<\/code> before accepting it (an edit is unreviewed text -- it could reintroduce exactly what the original draft didn't have) and uses <em>that<\/em> verdict's <code>safe_answer<\/code>, not the raw edit. Every branch logs an <code>&quot;approval_decision&quot;<\/code> row via <code>log_approval<\/code>. <strong>Needs a real checkpointer to mean anything<\/strong> (<code>interrupt()<\/code>/<code>Command(resume=...)<\/code> require one -- confirmed against a real <code>SqliteSaver<\/code> with a throwaway smoke script before wiring this in; resuming without one raises <code>RuntimeError<\/code> from LangGraph itself): an <code>Orchestrator<\/code> built with no <code>checkpoint_path<\/code> skips the gate entirely (<code>_route_after_guardian<\/code> routes straight to <code>END<\/code>) rather than pausing on a run nothing can ever resume. <code>OrchestratorResult.pending_approval<\/code> is set only by <code>answer()<\/code>'s own wrapper when <code>final_state<\/code> carries a <code>__interrupt__<\/code> key -- it's never written into graph state itself, so a resumed/decided result always reports <code>pending_approval=False<\/code>. <strong>Day 8, ADR-006 question 2: visible ESCALATE status.<\/strong> <code>_guardian_node<\/code> (and <code>_approval_gate<\/code>'s edit-re-review branch) now generates a <code>review_id<\/code> (uuid4) whenever a verdict's <code>outcome == &quot;escalate&quot;<\/code>, passes it to <code>log_decision(..., review_id=)<\/code> so the audit-log row and the caller's object share one join key, and sets <code>OrchestratorResult.pending_review<\/code> to a <code>PendingReview (review_id, reason_codes)<\/code> -- <code>None<\/code> for every other outcome. <code>answer<\/code> is still the Guardian's <code>_ESCALATE_MESSAGE<\/code> text either way; <code>pending_review<\/code> is the structured status a caller (<code>/ask<\/code>, the UI) branches on instead of parsing that text, replacing Day 7's actual behaviour (an ESCALATE was fully reviewable only by grepping <code>guardian_log.jsonl<\/code> by hand) with the \"visible pending review\" ADR-006 decided on, without changing the Guardian's own checks or severity ordering (both confirmed as-shipped by that ADR). <strong>Day 8 step 3: <code>stream_answer()<\/code>, for the API's <code>/ask<\/code> SSE endpoint.<\/strong> <code>answer()<\/code> is now a two-line wrapper that drains a new generator, <code>stream_answer()<\/code>, for its last event -- the input-gate check, the graph run (now via <code>self._graph.stream(..., stream_mode=&quot;updates&quot;)<\/code> instead of <code>.invoke()<\/code>), the <code>__interrupt__<\/code>-detection, and <code>InputGate.record_spend<\/code> all moved there unchanged, so there's exactly one copy of that logic rather than two that could drift. <code>stream_answer()<\/code> yields a <code>StreamEvent(type=&quot;node&quot;, node=&lt;name&gt;)<\/code> for each graph node LangGraph reports as it actually runs (confirmed against a throwaway probe script: <code>stream_mode=&quot;updates&quot;<\/code> yields one <code>{node_name: partial_state}<\/code> dict per node, in execution order, and an <code> &quot;__interrupt__&quot;<\/code> key in place of a node name when <code>_approval_gate<\/code> pauses the run), then exactly one trailing <code>StreamEvent(type=&quot;result&quot;, result=&lt;OrchestratorResult&gt;)<\/code> -- the same object <code>answer()<\/code> has always returned, <code>pending_approval<\/code>/<code>pending_review<\/code> included. <code>answer()<\/code> itself is unchanged from a caller's perspective (same signature, same return type, same tests pass unmodified); <code>/ask<\/code> is the first caller of <code>stream_answer()<\/code> directly, to forward each node event as a server-sent \"agent is now doing X\" update instead of one blocking call for the whole multi-specialist run. <strong>Day 8 step 7: <code>checkpointer<\/code>, for Postgres in production.<\/strong> A new, optional constructor parameter alongside <code>checkpoint_path<\/code>: pass any pre-built <code>BaseCheckpointSaver<\/code> (a <code>PostgresSaver<\/code>, in <code>copilot.api.dependencies.get_orchestrator<\/code>'s case) and it's used as-is, taking priority over <code>checkpoint_path<\/code> if both are given. This module still never imports <code>psycopg<\/code> or anything Postgres-specific -- it stays storage-agnostic, calling only the <code>BaseCheckpointSaver<\/code> interface, exactly as it already did for <code>SqliteSaver<\/code>; building <em>which<\/em> concrete checkpointer, and from what connection string, is the caller's job. <code>checkpoint_path<\/code> itself is unchanged and still the simplest path for local dev and every existing test.",
+  "talksTo": [
+   {
+    "id": "src-copilot-agents-contracts-py",
+    "label": "copilot.agents.contracts"
+   },
+   {
+    "id": "src-copilot-llm-client-py",
+    "label": "copilot.llm.client"
+   },
+   {
+    "id": "src-copilot-guardrails-policy-py",
+    "label": "copilot.guardrails.policy"
+   },
+   {
+    "id": "src-copilot-guardrails-guardian-py",
+    "label": "copilot.guardrails.guardian"
+   },
+   {
+    "id": "src-copilot-guardrails-guardian-py",
+    "label": "Guardian"
+   },
+   {
+    "id": "src-copilot-guardrails-canary-py",
+    "label": "copilot.guardrails.canary"
+   },
+   {
+    "id": "src-copilot-guardrails-audit-log-py",
+    "label": "copilot.guardrails.audit_log"
+   },
+   {
+    "id": "src-copilot-guardrails-audit-log-py",
+    "label": "log_decision"
+   },
+   {
+    "id": "src-copilot-guardrails-input-gate-py",
+    "label": "copilot.guardrails.input_gate"
+   },
+   {
+    "id": "src-copilot-guardrails-input-gate-py",
+    "label": "InputGate"
+   }
+  ],
+  "sym": "Orchestrator",
+  "takes": "an <code>LLMClient<\/code>, <code>executors: dict[AgentName, SpecialistExecutor]<\/code> -- the Day 6 step 2 <code>run_*<\/code> functions, wired in by the caller (never constructed here: each needs a different real dependency the Orchestrator has no business reproducing) -- plus a question, <code>Role<\/code>, and optional <code>thread_id<\/code> at call time; optional <code>checkpoint_path<\/code>/<code>checkpointer<\/code>/ <code>guardian<\/code> at construction time. <code>resume_approval<\/code> additionally takes <code>thread_id<\/code>, a decision (<code>&quot;approve&quot;|&quot;edit&quot;|&quot;reject&quot;<\/code>), the approver's <code>Role<\/code>, and an optional <code>edited_answer<\/code>.",
+  "gives": "<code>OrchestratorResult<\/code> (plan, every <code>AgentResult<\/code>, the drafted answer, <code>conflicts_noted<\/code>, <code>verified<\/code>/<code>verify_attempts<\/code>, summed cost/latency/llm_calls across plan + every specialist + every draft/verify attempt, <code>guardian_verdict<\/code>, <code>pending_approval<\/code>, <code>approval_decision<\/code>) from <code>answer()<\/code>; <code>stream_answer()<\/code> gives the same, wrapped one-per-node in <code>StreamEvent<\/code>s plus a trailing <code>StreamEvent(type=&quot;result&quot;, ...)<\/code> carrying it.",
+  "isNew": true
+ },
+ {
+  "id": "src-copilot-agents-wiring-py",
+  "group": "Multi-agent system",
+  "day": 6,
+  "path": "src/copilot/agents/wiring.py",
+  "headline": "The one piece of glue nothing else needed: turns the five already-tested <code>run_*<\/code> functions (step 2) into the <code>dict[AgentName, SpecialistExecutor]<\/code> …",
+  "does": "The one piece of glue nothing else needed: turns the five already-tested <code>run_*<\/code> functions (step 2) into the <code>dict[AgentName, SpecialistExecutor]<\/code> shape <code>Orchestrator<\/code> takes, against real services (<code>LLMClient<\/code>, <code>TextToSqlService<\/code>, a DuckDB connection, <code>CorrectiveRagService<\/code> + its <code>PermissionedRetriever<\/code>) built the same way <code>scripts/run_effort_lab.py<\/code>/<code>run_rag_eval.py<\/code> already build them -- this module doesn't reconstruct that wiring, it just closes over it. <code>_inventory_executor(spec, con)<\/code> is the only non-trivial entry: <code>run_inventory_planning<\/code> needs a <code>ForecastResult<\/code>, not a bare <code>TaskSpec<\/code> (step 2's own signature), so this calls <code>forecast_result_for_inventory<\/code> itself first, keeping the executor map's own shape uniform.",
+  "talksTo": [
+   {
+    "id": "src-copilot-agents-contracts-py",
+    "label": "copilot.agents.contracts"
+   },
+   {
+    "id": "src-copilot-guardrails-policy-py",
+    "label": "copilot.guardrails.policy"
+   },
+   {
+    "id": "src-copilot-llm-client-py",
+    "label": "copilot.llm.client"
+   },
+   {
+    "id": "src-copilot-rag-corrective-py",
+    "label": "copilot.rag.corrective"
+   },
+   {
+    "id": "src-copilot-sql-service-py",
+    "label": "copilot.sql.service"
+   },
+   {
+    "label": "scripts/run_orchestrator_golden.py"
+   }
+  ],
+  "sym": "build_executors()",
+  "takes": "the already-constructed real services (see above), <code>con<\/code>/<code>policy<\/code> optional (<code>None<\/code> falls back to each function's own default, same as calling it directly would).",
+  "gives": "<code>dict[AgentName, SpecialistExecutor]<\/code>.",
+  "isNew": true
+ },
+ {
+  "id": "src-copilot-evals-orchestrator-golden-py",
+  "group": "Multi-agent system",
+  "day": 6,
+  "path": "src/copilot/evals/orchestrator_golden.py, evals/datasets/orchestrator_golden_v1.jsonl",
+  "headline": "Day 6 step 7's 10 multi-hop golden questions -- distinct from <code>copilot.evals.golden<\/code>'s \"multi_hop\" category (gq-031..034), which is multi-step <em>SQL<\/em> answered by one specialist.",
+  "does": "These are multi-<em>agent<\/em>-hop: each <code>OrchestratorGoldenQuestion<\/code> names <code>expected_agents<\/code> (&gt;=2, Pydantic-validated -- a single-agent question belongs in <code>golden<\/code>/<code>rag_golden<\/code> instead), checked structurally (did the plan actually involve every specialist this question needs), not by diffing against a fixed reference answer (no <code>expected_rows<\/code>/<code>reference_answer<\/code> field here -- see the module docstring for why grading multi-agent answer <em>content<\/em> is this step's stretch goal, not its floor). Every question that expects <code>inventory_planning<\/code> also expects <code>forecasting_risk<\/code>, per <code>orchestrator_plan<\/code>'s own planning rule -- <code>tests/ test_orchestrator_golden.py<\/code> asserts this stays true of the dataset itself.",
+  "talksTo": [
+   {
+    "id": "src-copilot-agents-contracts-py",
+    "label": "copilot.agents.contracts"
+   },
+   {
+    "id": "src-copilot-guardrails-policy-py",
+    "label": "copilot.guardrails.policy"
+   }
+  ],
+  "gives": "<code>OrchestratorGoldenQuestion<\/code>, <code>load_orchestrator_golden()<\/code>.",
+  "isNew": true
+ },
+ {
+  "id": "prompts-orchestrator-plan-v1-yaml",
+  "group": "Multi-agent system",
+  "day": 6,
+  "path": "prompts/orchestrator_plan/v1.yaml, prompts/orchestrator_draft/v1.yaml, prompts/orchestrator_verify/v1.yaml",
+  "headline": "<code>orchestrator_plan<\/code>: lists the five specialists with one-line purposes (<code>_roster_block()<\/code> in <code>orchestrator.py<\/code>), and states the one hard dependency …",
+  "does": "<code>orchestrator_plan<\/code>: lists the five specialists with one-line purposes (<code>_roster_block()<\/code> in <code>orchestrator.py<\/code>), and states the one hard dependency the model must respect -- <code>inventory_planning<\/code> always implies planning <code>forecasting_risk<\/code> too, since the former needs the latter's output. <code>orchestrator_draft<\/code>: given the question and every specialist's condensed findings, writes the final answer, with the same \"ground every number in what you were given\" rule <code>vendor_insight<\/code>/<code>text_to_sql<\/code> already use, plus the instruction to name (not resolve) any conflict it notices between specialists; its <code>user_template<\/code> carries a <code>feedback_block<\/code> that is the previous verifier feedback on a redraft, or a plain \"no prior feedback\" line on the first pass (same posture as <code>model_selection_propose<\/code>'s own <code>feedback_block<\/code>). <code>orchestrator_verify<\/code>: a second structured call -- same model family as the draft is fine here (unlike the Guardian's cross-model-family posture, Day 7), since this catches drafting mistakes against known-good inputs, not an adversarial safety check -- scoring <code>grounded<\/code>/<code>citations_ok<\/code>/<code>sufficient<\/code>/ <code>contradictions<\/code>/<code>feedback<\/code> strictly against the specialist findings and the draft's own <code>cited_tasks<\/code>.",
+  "talksTo": [],
+  "isNew": true
+ },
+ {
+  "id": "src-copilot-sql-pair-generation-py",
+  "group": "Fine-tuning data, MCP server and QLoRA benchmark",
+  "day": 9,
+  "path": "src/copilot/sql/pair_generation.py",
+  "headline": "Builds the fine-tuning training set: question -&gt; SQL pairs from a small family of templates, filled with real vendor names and real columns, then …",
+  "does": "Builds the fine-tuning training set: question -&gt; SQL pairs from a small family of templates, filled with real vendor names and real columns, then kept only if they pass two counted filters: (1) the SQL actually executes against the connected snapshot, and (2) it passes the same safety validator production uses (<code>copilot.sql.validator.validate<\/code>). Vendor names are read from the database at generation time and filtered to the k=5 disclosure threshold, never hardcoded (ADR-002). Vendor filters are case-insensitive on the name exactly as the question shows it -- the v1 dataset compared stored casing against title-case question text, a rule the model could not learn from its prompt, and that was fixed as v2.",
+  "talksTo": [
+   {
+    "id": "src-copilot-sql-validator-py",
+    "label": "copilot.sql.validator"
+   },
+   {
+    "id": "src-copilot-data-store-py",
+    "label": "copilot.data.store"
+   },
+   {
+    "id": "scripts-generate-sql-pairs-py",
+    "label": "scripts/generate_sql_pairs.py"
+   }
+  ],
+  "sym": "generate_candidates()/verify_and_filter()",
+  "takes": "a live DuckDB connection and the vendor-name list.",
+  "gives": "<code>Pair<\/code> objects and a <code>FilterReport<\/code> (candidates, execution failures, validator failures, kept), plus per-category and per-table breakdowns.",
+  "isNew": true
+ },
+ {
+  "id": "scripts-generate-sql-pairs-py",
+  "group": "Fine-tuning data, MCP server and QLoRA benchmark",
+  "day": 9,
+  "path": "scripts/generate_sql_pairs.py",
+  "headline": "CLI for the pair generator.",
+  "does": "Real run (22 Oct): 1016 candidates, 0 execution failures, 0 validator failures, sampled to 400 with a fixed seed.",
+  "talksTo": [
+   {
+    "id": "src-copilot-sql-pair-generation-py",
+    "label": "copilot.sql.pair_generation"
+   },
+   {
+    "id": "src-copilot-data-store-py",
+    "label": "copilot.data.store"
+   }
+  ],
+  "takes": "<code>--target<\/code> (default 400), <code>--seed<\/code> (default 42), <code>--out<\/code>; needs the built snapshot.",
+  "gives": "<code>evals/datasets/sql_pairs_v2.jsonl<\/code> and its <code>.manifest.json<\/code> (count, by-category, by-table, sha256).",
+  "isNew": true
+ },
+ {
+  "id": "evals-datasets-sql-pairs-v1-jsonl",
+  "group": "Fine-tuning data, MCP server and QLoRA benchmark",
+  "day": 9,
+  "path": "evals/datasets/sql_pairs_v1.jsonl, sql_pairs_v2.jsonl (+ .manifest.json each)",
+  "headline": "The 400 execution-verified training/evaluation pairs.",
+  "does": "v1 is kept unchanged for history; v2 is what the notebook trains on (340 train / 60 held-out). Each manifest stores a sha256 so a changed dataset is detectable, the same pattern as the golden-set manifests.",
+  "talksTo": [
+   {
+    "id": "finetuning-day9-qlora-colab-ipynb",
+    "label": "finetuning/day9_qlora_colab.ipynb"
+   },
+   {
+    "id": "finetuning-eval-compare-py",
+    "label": "finetuning/eval_compare.py"
+   }
+  ],
+  "takes": "written by <code>scripts/generate_sql_pairs.py<\/code>.",
+  "gives": "training and held-out data for <code>finetuning/<\/code>.",
+  "isNew": true
+ },
+ {
+  "id": "src-copilot-mcp-server-py",
+  "group": "Fine-tuning data, MCP server and QLoRA benchmark",
+  "day": 9,
+  "path": "src/copilot/mcp/server.py",
+  "headline": "A read-only Model Context Protocol server (stdio transport) that gives any MCP host -- Claude Desktop, the MCP Inspector, another agent -- three …",
+  "does": "A read-only Model Context Protocol server (stdio transport) that gives any MCP host -- Claude Desktop, the MCP Inspector, another agent -- three tools over the same guarded data path the <code>/ask<\/code> API uses: one vendor's headline metrics, portfolio totals, and a free-form question that runs through <code>TextToSqlService<\/code> and then the <code>Guardian<\/code>. Every tool is hard-wired to the lowest role (<code>viewer<\/code>): a role passed in as a tool argument would be an unauthenticated claim and a privilege-escalation route. Remote MCP with real authentication is a depth-track item.",
+  "talksTo": [
+   {
+    "id": "src-copilot-data-store-py",
+    "label": "copilot.data.store"
+   },
+   {
+    "id": "src-copilot-sql-service-py",
+    "label": "copilot.sql.service.TextToSqlService"
+   },
+   {
+    "id": "src-copilot-guardrails-guardian-py",
+    "label": "copilot.guardrails.guardian"
+   },
+   {
+    "label": "tests/test_mcp_server.py"
+   }
+  ],
+  "sym": "vendor_metrics/portfolio_summary/ask_vendor_question",
+  "takes": "MCP tool calls (a vendor name, or a plain-English question).",
+  "gives": "plain-text rows or a Guardian-reviewed answer; \"not found\" messages, never raw errors.",
+  "isNew": true
+ },
+ {
+  "id": "finetuning-day9-qlora-colab-ipynb",
+  "group": "Fine-tuning data, MCP server and QLoRA benchmark",
+  "day": 9,
+  "path": "finetuning/day9_qlora_colab.ipynb + finetuning/requirements-colab.txt",
+  "headline": "The Colab notebook that fine-tunes Qwen2.5-1.5B-Instruct with QLoRA on <code>sql_pairs_v2<\/code>'s 340 training pairs: 4-bit NF4 base weights, LoRA r=16 / …",
+  "does": "The Colab notebook that fine-tunes Qwen2.5-1.5B-Instruct with QLoRA on <code>sql_pairs_v2<\/code>'s 340 training pairs: 4-bit NF4 base weights, LoRA r=16 / alpha=32 / dropout=0.05, completion-only loss, 3 epochs, free T4 GPU. <code>MAX_LEN<\/code> is 1024: at 512 every example's SQL answer was truncated away, so the first adapter trained on nothing (loss 0.000000, every LoRA B matrix still zero). GPU packages live in <code>requirements-colab.txt<\/code>, deliberately not in <code>pyproject.toml<\/code>.",
+  "talksTo": [
+   {
+    "id": "finetuning-eval-compare-py",
+    "label": "finetuning/eval_compare.py"
+   }
+  ],
+  "takes": "<code>evals/datasets/sql_pairs_v2.jsonl<\/code>.",
+  "gives": "a saved LoRA adapter and <code>held_out.jsonl<\/code> (the 60 pairs it never trained on).",
+  "isNew": true
+ },
+ {
+  "id": "finetuning-eval-compare-py",
+  "group": "Fine-tuning data, MCP server and QLoRA benchmark",
+  "day": 9,
+  "path": "finetuning/eval_compare.py",
+  "headline": "Compares base zero-shot, base few-shot and the QLoRA adapter (and optionally the frontier API) on the 60 held-out pairs by re-executing each …",
+  "does": "Compares base zero-shot, base few-shot and the QLoRA adapter (and optionally the frontier API) on the 60 held-out pairs by re-executing each generated query against the real snapshot and comparing result rows, not SQL strings. Standalone (no <code>copilot<\/code> import) so it runs in Colab. <code>few_shot_pool()<\/code> excludes held-out rows from the example pool -- without it, each test question retrieved itself as its own top example. <code>_extract_sql()<\/code> takes only the SQL from a generation, dropping trailing prose that had been glued onto correct queries. Real result (26 Oct): QLoRA 1.0 execution accuracy vs 0.017 zero-shot and 0.1 few-shot (ADR-007: adopt, conditionally).",
+  "talksTo": [
+   {
+    "id": "finetuning-readme-md",
+    "label": "finetuning/results_template.md"
+   }
+  ],
+  "takes": "<code>--held-out<\/code>, <code>--adapter-dir<\/code>, <code>--snapshot-dir<\/code>, optional <code>--include-frontier<\/code>.",
+  "gives": "a results table (execution accuracy, executable rate, mean latency per variant) on stdout and as JSON.",
+  "isNew": true
+ },
+ {
+  "id": "finetuning-readme-md",
+  "group": "Fine-tuning data, MCP server and QLoRA benchmark",
+  "day": 9,
+  "path": "finetuning/README.md, finetuning/results_template.md",
+  "headline": "How to run the notebook and comparison script, why the GPU stack is kept out of the app, and the full results table with the four bugs found and fixed before any number was trusted.",
+  "does": "How to run the notebook and comparison script, why the GPU stack is kept out of the app, and the full results table with the four bugs found and fixed before any number was trusted.",
+  "talksTo": [],
+  "isNew": true
+ },
+ {
+  "id": "docker-api-dockerfile",
+  "group": "Deploy and infrastructure",
+  "day": 2,
+  "path": "docker/api.Dockerfile",
+  "headline": "Production image for the API.",
+  "does": "Two stages: <code>uv<\/code> installs the locked dependencies in a builder, and the runtime stage copies only the virtualenv and app code, runs as a non-root user, and bakes the git SHA into <code>/version<\/code>.",
+  "talksTo": [
+   {
+    "label": ".github/workflows/ci.yml"
+   },
+   {
+    "id": "infra-server-user-data-sh",
+    "label": "infra/server/deploy.sh"
+   }
+  ],
+  "takes": "the repo plus <code>--build-arg GIT_SHA=...<\/code>.",
+  "gives": "the <code>copilot-api<\/code> image (port 8000)."
+ },
+ {
+  "id": "infra-server-user-data-sh",
+  "group": "Deploy and infrastructure",
+  "day": 2,
+  "path": "infra/server/user-data.sh, infra/server/deploy.sh",
+  "headline": "<code>user-data.sh<\/code> bootstraps the Ubuntu EC2 host once (Docker + Compose, nginx reverse proxy to 127.0.0.1:8000, Certbot, AWS CLI).",
+  "does": "<code>deploy.sh<\/code> runs on the host via SSM Run Command, switches the API to a new image and rolls back to the previous one if <code>/health<\/code> fails.",
+  "talksTo": [
+   {
+    "label": ".github/workflows/ci.yml"
+   }
+  ],
+  "takes": "<code>deploy.sh<\/code> takes the image URI and AWS region."
+ },
+ {
+  "id": "infra-aws-github-oidc-trust-json",
+  "group": "Deploy and infrastructure",
+  "day": 2,
+  "path": "infra/aws/github-oidc-trust.json, github-deploy-policy.json, ec2-instance-policy.json",
+  "headline": "IAM documents: the trust policy that lets GitHub Actions assume a deploy role through OIDC (no long-lived AWS keys in GitHub), the least-privilege …",
+  "does": "IAM documents: the trust policy that lets GitHub Actions assume a deploy role through OIDC (no long-lived AWS keys in GitHub), the least-privilege deploy policy (push images to ECR, send SSM Run Commands and read their results), and the instance policy (read and KMS-decrypt the app's SSM parameters, nothing else).",
+  "talksTo": [
+   {
+    "label": ".github/workflows/ci.yml"
+   }
+  ]
+ },
+ {
+  "id": "infra-local-compose-yaml",
+  "group": "Deploy and infrastructure",
+  "day": 8,
+  "path": "infra/local/compose.yaml",
+  "headline": "Local-only Postgres container for exercising the Postgres checkpointer branch.",
+  "does": "See the scripts table below.",
+  "talksTo": []
+ },
+ {
+  "id": "tasks-ps1",
+  "group": "Deploy and infrastructure",
+  "day": 1,
+  "path": "tasks.ps1",
+  "headline": "Windows PowerShell task runner: <code>setup<\/code>, <code>lint<\/code>, <code>typecheck<\/code>, <code>test<\/code>, <code>snapshot<\/code>, <code>check<\/code>.",
+  "does": "Windows PowerShell task runner: <code>setup<\/code>, <code>lint<\/code>, <code>typecheck<\/code>, <code>test<\/code>, <code>snapshot<\/code>, <code>check<\/code>.",
+  "talksTo": []
+ },
+ {
+  "id": "docs-project-progress-md",
+  "group": "Living docs and portfolio pages",
+  "day": 1,
+  "path": "docs/PROJECT_PROGRESS.md, BUILD_LOG.md, COMMANDS.md, TROUBLESHOOTING.md, RAID.md, TRADEOFF_LOG.md, HANDOFF.md, CODE_MAP.md",
+  "headline": "The project's memory across chats: status per day, the dated build log (including every bug found before a number was trusted), every command used, …",
+  "does": "The project's memory across chats: status per day, the dated build log (including every bug found before a number was trusted), every command used, problems and fixes, the risk register, the trade-off log, the hand-off note for the next chat, and this file. Not code; kept current in the same commit as the change they describe.",
+  "talksTo": []
+ },
+ {
+  "id": "evals-datasets-golden-v1-manifest-json",
+  "group": "Living docs and portfolio pages",
+  "day": 1,
+  "path": "evals/datasets/golden_v1.manifest.json, golden_v2.manifest.json",
+  "headline": "File name, sha256, question count and per-category/per-split counts for each golden set, so an edited golden set can't silently replace the one the results were measured on.",
+  "does": "File name, sha256, question count and per-category/per-split counts for each golden set, so an edited golden set can't silently replace the one the results were measured on.",
+  "talksTo": []
+ },
+ {
+  "id": "readme-md",
+  "group": "Living docs and portfolio pages",
+  "day": 10,
+  "path": "README.md",
+  "headline": "The project front page: problem, architecture diagram, agent roster, results table (real numbers only), cost and latency, ADR index, limitations, roadmap.",
+  "does": "The project front page: problem, architecture diagram, agent roster, results table (real numbers only), cost and latency, ADR index, limitations, roadmap.",
+  "talksTo": [],
+  "isNew": true
+ },
+ {
+  "id": "docs-demo-script-md",
+  "group": "Living docs and portfolio pages",
+  "day": 10,
+  "path": "docs/DEMO_SCRIPT.md",
+  "headline": "A timed 3-minute demo-video script (a real question, agents working, a Guardian block, a human approval, the scoped QLoRA claim) with a recording checklist.",
+  "does": "A timed 3-minute demo-video script (a real question, agents working, a Guardian block, a human approval, the scoped QLoRA claim) with a recording checklist.",
+  "talksTo": [],
+  "isNew": true
+ },
+ {
+  "id": "docs-case-study-md",
+  "group": "Living docs and portfolio pages",
+  "day": 10,
+  "path": "docs/CASE_STUDY.md + docs/case-study/index.html",
+  "headline": "The case study for recruiters.",
+  "does": "The markdown is the source text; the HTML is the published page (interactive agent graph, results ledger, bugs found in my own measurements), hosted as a shared page until the domain exists, then moved there unchanged.",
+  "talksTo": [],
+  "isNew": true
+ },
+ {
+  "id": "scripts-build-code-map-page-py",
+  "group": "Living docs and portfolio pages",
+  "day": 10,
+  "path": "scripts/build_code_map_page.py + docs/code-map/template.html -> docs/code-map/index.html",
+  "headline": "Builds the browsable Code Map page from this file.",
+  "does": "The page used to carry a hand-typed copy of these entries, which had drifted five days behind; now the markdown is the only source and the page is regenerated from it. Parses each <code>###<\/code> heading (path, symbol, day/isNew marker), its description, and its Takes in / Gives out / Talks to lines; turns backticked file and <code>copilot.*<\/code> module references in \"Talks to\" into links between entries.",
+  "talksTo": [],
+  "takes": "<code>docs/CODE_MAP.md<\/code> and the page shell <code>docs/code-map/template.html<\/code>.",
+  "gives": "<code>docs/code-map/index.html<\/code> (published as the shared Code Map page).",
+  "isNew": true
+ },
+ {
+  "id": "docs-tracker-index-html",
+  "group": "Living docs and portfolio pages",
+  "day": 10,
+  "path": "docs/tracker/index.html",
+  "headline": "Source of the shared Progress Tracker page: the original long-range plan (phases, calendar, costs) plus, from Day 10, a Sprint tab with every day's …",
+  "does": "Source of the shared Progress Tracker page: the original long-range plan (phases, calendar, costs) plus, from Day 10, a Sprint tab with every day's real outcome, the current RAID items and the next steps. Edited by hand and republished to the same link.",
+  "talksTo": [],
+  "isNew": true
+ },
+ {
+  "id": "docs-sprint-report-md",
+  "group": "Living docs and portfolio pages",
+  "day": 10,
+  "path": "docs/SPRINT_REPORT.md",
+  "headline": "The final Daily Sprint Report: all ten days, what shipped and what didn't, metrics, costs, cuts, open items, and the depth-track schedule.",
+  "does": "The final Daily Sprint Report: all ten days, what shipped and what didn't, metrics, costs, cuts, open items, and the depth-track schedule.",
+  "talksTo": [],
+  "isNew": true
+ },
+ {
+  "id": "not-yet-started",
+  "group": "Not yet started",
+  "day": null,
+  "path": "Not yet started",
+  "headline": "<code>src/copilot/dl/<\/code>, <code>src/copilot/nlp/<\/code>, <code>src/copilot/extract/<\/code>, <code>src/copilot/observability/<\/code>, <code>src/copilot/ui/<\/code> — folders exist with an <code>__init__.py<\/code> so imports work later; no real code yet.",
+  "does": "(<code>src/copilot/rag/<\/code>, <code>src/copilot/ml/<\/code>, <code>src/copilot/agents/<\/code> and, from Day 9, <code>src/copilot/mcp/<\/code> have moved to the sections above. The UI that does exist lives in <code>src/copilot/api/static/<\/code>.)",
+  "talksTo": []
+ },
+ {
+  "id": "scripts-you-run-on-your-own-machine",
+  "group": "Scripts you run on your own machine",
+  "day": null,
+  "path": "Scripts you run on your own machine",
+  "headline": "Scripts you run on your own machine",
+  "does": "<div class=\"tbl\"><table><tr><th>Script<\/th><th>Needs<\/th><th>What it does<\/th><\/tr><tr><td><code>scripts/build_snapshot.py<\/code><\/td><td>nothing (just the Excel file)<\/td><td>builds the Parquet snapshot<\/td><\/tr><tr><td><code>scripts/build_golden_set.py<\/code><\/td><td>the snapshot<\/td><td>builds <code>golden_v1.jsonl<\/code><\/td><\/tr><tr><td><code>scripts/verify_vendor_data.py<\/code><\/td><td>the snapshot<\/td><td>prints raw grounding data, no LLM call<\/td><\/tr><tr><td><code>scripts/push_golden_to_langsmith.py<\/code><\/td><td><code>LANGSMITH_API_KEY<\/code><\/td><td>syncs the golden set to LangSmith<\/td><\/tr><tr><td><code>scripts/run_effort_lab.py<\/code><\/td><td><code>ANTHROPIC_API_KEY<\/code><\/td><td>real LLM calls, effort sweep<\/td><\/tr><tr><td><code>scripts/run_tokenization_lab.py<\/code><\/td><td><code>ANTHROPIC_API_KEY<\/code> + network<\/td><td>real LLM calls + local tokenizer downloads<\/td><\/tr><tr><td><code>scripts/build_rag_index.py<\/code><\/td><td>network (no API key)<\/td><td>downloads the embedding model, builds <code>data/chroma/<\/code><\/td><\/tr><tr><td><code>scripts/train_risk_classifier.py<\/code><\/td><td>your real <code>vw_PortfolioHealth<\/code> export (CSV/XLSX)<\/td><td>real RF/XGBoost leaky-vs-safe accuracy/F1 + SHAP drivers, appends to <code>run_log.csv<\/code><\/td><\/tr><tr><td><code>scripts/run_model_selection_eval.py<\/code><\/td><td><code>ANTHROPIC_API_KEY<\/code> (every run, not just <code>--quality<\/code>)<\/td><td>real Model Selection Agent runs over the 8-question golden set; <code>--quality<\/code> adds the LLM-judged reasoning check<\/td><\/tr><tr><td><code>scripts/run_orchestrator_golden.py<\/code><\/td><td><code>ANTHROPIC_API_KEY<\/code> + the real snapshot + <code>data/chroma/<\/code><\/td><td>Day 6 step 7: runs the 10 multi-hop golden questions end to end through the real Orchestrator (real specialists, real Verifier loop); prints plan coverage, verified status, cost/latency per question, and leaves a SQLite checkpoint per run at <code>data/orchestrator_checkpoints.sqlite<\/code><\/td><\/tr><tr><td><code>scripts/generate_sql_pairs.py<\/code><\/td><td>the snapshot<\/td><td>Day 9: writes the 400 execution-verified question -&gt; SQL pairs (<code>sql_pairs_v2.jsonl<\/code> + manifest)<\/td><\/tr><tr><td><code>finetuning/day9_qlora_colab.ipynb<\/code> then <code>finetuning/eval_compare.py<\/code><\/td><td>Google Colab, free T4 GPU, <code>snapshot.duckdb<\/code> uploaded<\/td><td>Day 9: QLoRA fine-tune, then base vs few-shot vs QLoRA on the 60 held-out pairs<\/td><\/tr><tr><td><code>docker compose -f infra/local/compose.yaml up -d<\/code><\/td><td>Docker<\/td><td>Day 8 step 7: a local-only Postgres container for exercising <code>copilot.api.dependencies._build_checkpointer<\/code>'s Postgres branch for real; set <code>CHECKPOINT_DATABASE_URL<\/code> in <code>.env<\/code> to the printed connection string, nothing else changes<\/td><\/tr><\/table><\/div>",
+  "talksTo": []
+ },
+ {
+  "id": "tests",
+  "group": "Tests",
+  "day": null,
+  "path": "Tests",
+  "headline": "One test file per module above, named <code>test_&lt;module&gt;.py<\/code> — not documented individually here since they mirror the module list exactly.",
+  "does": "<code>tests/fakes/anthropic_fakes.py<\/code> is a fake Anthropic SDK used so <code>test_llm_client.py<\/code> and others can test retry/repair/caching logic without a real API key. <code>tests/conftest.py<\/code> (Day 7 step 6) is an autouse fixture that points every test's default <code>InputGate<\/code> spend tracking at a throwaway <code>tmp_path<\/code> file instead of the real repo path -- without it, every orchestrator test that builds a plain <code>Orchestrator(...)<\/code> with no explicit <code>input_gate<\/code> would share one on-disk running total across the whole test session. <code>tests/test_privacy_leakage_suite.py<\/code> (Day 7 step 8) is the one exception to \"mirrors the module list\" -- it's a cross-cutting suite, not a per-module test file: 23 named cases (15 role- escalation/poisoned-contract/cross-vendor-draft/prompt-extraction/etc. cases through <code>Guardian<\/code>/ <code>InputGate<\/code>, + 8 SQL red-team cases from <code>docs/specs/text_to_sql_safety.md<\/code> through the validator), each asserting the real outcome a leak attempt gets today, run as ordinary pytest (no separate eval harness) so a regression here fails CI the same way any other test would.",
+  "talksTo": []
+ }
+];
+
+/* ---------------------------------------------------------------------------------------
+   RENDER
+--------------------------------------------------------------------------------------- */
+const rail = document.getElementById("rail");
+const railMobile = document.getElementById("rail-mobile");
+const pane = document.getElementById("pane");
+const searchInput = document.getElementById("search");
+const countPill = document.getElementById("count-pill");
+const daybar = document.getElementById("daybar");
+
+const byId = new Map(FILES.map((f) => [f.id, f]));
+
+/* ---------------------------------------------------------------------------------------
+   DAY FILTER -- default view is the latest day only, not every day's files piled up at
+   once. "All" is one click away for anyone who wants the whole repo.
+--------------------------------------------------------------------------------------- */
+const allDays = Array.from(new Set(FILES.map((f) => f.day).filter((d) => d !== null))).sort((a, b) => a - b);
+const latestDay = allDays.length ? Math.max(...allDays) : null;
+
+let currentDay = latestDay; // null = "All"; a number = that day only
+try {
+  const savedDay = localStorage.getItem("codemap:lastDay");
+  if (savedDay !== null) currentDay = savedDay === "all" ? null : Number(savedDay);
+} catch (e) {}
+
+function buildDaybar() {
+  daybar.innerHTML = "";
+  const options = [...allDays.map((d) => ({ value: d, label: `Day ${d}` })), { value: null, label: "All" }];
+  for (const opt of options) {
+    const btn = document.createElement("button");
+    btn.type = "button";
+    btn.className = "day-pill";
+    btn.setAttribute("role", "tab");
+    btn.setAttribute("aria-pressed", String(opt.value === currentDay));
+    btn.textContent = opt.label;
+    btn.addEventListener("click", () => {
+      currentDay = opt.value;
+      try { localStorage.setItem("codemap:lastDay", opt.value === null ? "all" : String(opt.value)); } catch (e) {}
+      buildDaybar();
+      refresh();
+    });
+    daybar.appendChild(btn);
+  }
+}
+
+function groupOrder() {
+  const order = [];
+  for (const f of FILES) if (!order.includes(f.group)) order.push(f.group);
+  return order;
+}
+
+function basename(path) {
+  return path.split(" · ")[0].split(" + ")[0];
+}
+
+function matches(file, query) {
+  if (currentDay !== null && file.day !== currentDay) return false;
+  if (!query) return true;
+  const q = query.toLowerCase();
+  return (
+    file.path.toLowerCase().includes(q) ||
+    file.headline.toLowerCase().includes(q) ||
+    (file.does || "").toLowerCase().includes(q)
+  );
+}
+
+const collapsedGroups = new Set();
+
+function buildRail(query) {
+  rail.innerHTML = "";
+  let anyVisible = false;
+  for (const group of groupOrder()) {
+    const groupFiles = FILES.filter((f) => f.group === group && matches(f, query));
+    if (groupFiles.length === 0) continue;
+    anyVisible = true;
+
+    const header = document.createElement("button");
+    header.type = "button";
+    header.className = "rail-group";
+    const collapsed = collapsedGroups.has(group) && !query;
+    header.setAttribute("aria-expanded", String(!collapsed));
+    header.innerHTML = `<span class="arrow">▾</span><span>${group}</span><span class="gcount">${groupFiles.length}</span>`;
+
+    const list = document.createElement("div");
+    list.className = "rail-files";
+    if (collapsed) list.hidden = true;
+    groupFiles.forEach((f) => list.appendChild(makeFileButton(f)));
+
+    header.addEventListener("click", () => {
+      if (collapsedGroups.has(group)) collapsedGroups.delete(group);
+      else collapsedGroups.add(group);
+      buildRail(searchInput.value.trim());
+    });
+
+    rail.appendChild(header);
+    rail.appendChild(list);
+  }
+  if (!anyVisible) {
+    const empty = document.createElement("div");
+    empty.className = "rail-empty";
+    empty.textContent = "No files match.";
+    rail.appendChild(empty);
+  }
+}
+
+function buildRailMobile(query) {
+  railMobile.innerHTML = "";
+  FILES.filter((f) => matches(f, query)).forEach((f) => railMobile.appendChild(makeFileButton(f, true)));
+}
+
+function makeFileButton(file, flat) {
+  const btn = document.createElement("button");
+  btn.type = "button";
+  btn.className = "file";
+  btn.dataset.id = file.id;
+  btn.setAttribute("aria-current", "false");
+  const sub = (file.badges && file.badges.length) ? file.badges.map((b) => b.text).join(" · ") : "";
+  btn.innerHTML = `${flat ? basename(file.path) : basename(file.path)}${file.isNew ? '<span class="new-dot" title="new"></span>' : ""}` +
+    (sub && !flat ? `<span class="sub">${sub}</span>` : "");
+  btn.addEventListener("click", () => selectFile(file.id));
+  return btn;
+}
+
+function renderPane(file) {
+  const badges = (file.badges || []).map(
+    (b) => `<span class="pill ${b.warn ? "warn" : ""}">${b.text}</span>`
+  ).join("");
+  const newPill = file.isNew ? '<span class="pill new">new</span>' : "";
+
+  const talks = (file.talksTo || []).map((t) => {
+    if (t.id && byId.has(t.id)) {
+      return `<button type="button" class="chip link" data-jump="${t.id}">${t.label}</button>`;
+    }
+    return `<span class="chip plain">${t.label}</span>`;
+  }).join("");
+
+  pane.innerHTML = `
+    <div class="crumb">${file.path}</div>
+    <h1 class="headline">${file.headline}${file.sym ? ` <code style="font-size:0.7em;color:var(--fg-dim)">${file.sym}</code>` : ""}</h1>
+    <div class="badges-row">${newPill}${badges}</div>
+    <div class="field">
+      <div class="label">What it does</div>
+      <div class="value">${file.does}</div>
+    </div>
+    ${file.takes ? `<div class="field"><div class="label">Takes in</div><div class="value">${file.takes}</div></div>` : ""}
+    ${file.gives ? `<div class="field"><div class="label">Gives out</div><div class="value">${file.gives}</div></div>` : ""}
+    ${talks ? `<div class="field"><div class="label">Talks to</div><div class="chip-row">${talks}</div></div>` : ""}
+  `;
+  pane.querySelectorAll("[data-jump]").forEach((el) => {
+    el.addEventListener("click", () => selectFile(el.dataset.jump));
+  });
+}
+
+let currentId = null;
+function selectFile(id) {
+  if (!byId.has(id)) return;
+  currentId = id;
+  try { localStorage.setItem("codemap:lastFile", id); } catch (e) {}
+  [rail, railMobile].forEach((container) => {
+    container.querySelectorAll("button.file").forEach((b) => {
+      const sel = b.dataset.id === id;
+      b.setAttribute("aria-current", String(sel));
+      if (sel) b.scrollIntoView({ block: "nearest", inline: "center" });
+    });
+  });
+  renderPane(byId.get(id));
+}
+
+function refresh() {
+  const query = searchInput.value.trim();
+  buildRail(query);
+  buildRailMobile(query);
+  const visible = FILES.filter((f) => matches(f, query));
+  const dayLabel = currentDay === null ? "all days" : `Day ${currentDay}`;
+  countPill.textContent = `${visible.length} of ${FILES.length} files · ${dayLabel}`;
+  if (currentId && !visible.some((f) => f.id === currentId)) {
+    if (visible.length) selectFile(visible[0].id);
+  } else if (currentId) {
+    // keep current selection highlighted after rail rebuild
+    [rail, railMobile].forEach((c) => {
+      const b = c.querySelector(`button.file[data-id="${currentId}"]`);
+      if (b) b.setAttribute("aria-current", "true");
+    });
+  }
+}
+
+searchInput.addEventListener("input", refresh);
+
+function escapeMd(html) {
+  return String(html || "").replace(/<[^>]+>/g, "").replace(/&mdash;/g, "--").replace(/&rarr;/g, "->").replace(/&minus;/g, "-");
+}
+function fileToMarkdown(f) {
+  let md = `### \`${f.path}\`${f.sym ? ` — ${f.sym}` : ""}\n${escapeMd(f.does)}\n`;
+  if (f.takes && f.takes !== "—") md += `- **Takes in:** ${escapeMd(f.takes)}\n`;
+  if (f.gives && f.gives !== "—") md += `- **Gives out:** ${escapeMd(f.gives)}\n`;
+  if (f.talksTo && f.talksTo.length) md += `- **Talks to:** ${f.talksTo.map((t) => t.label).join(", ")}\n`;
+  return md + "\n";
+}
+function fullMarkdown() {
+  let md = "# Vendor Intelligence Copilot — Code Map\n\n";
+  for (const group of groupOrder()) {
+    md += `## ${group}\n\n`;
+    FILES.filter((f) => f.group === group).forEach((f) => { md += fileToMarkdown(f); });
+  }
+  return md;
+}
+
+async function copyText(text, label) {
+  try {
+    await navigator.clipboard.writeText(text);
+  } catch (e) {
+    const ta = document.createElement("textarea");
+    ta.value = text;
+    ta.style.position = "fixed";
+    ta.style.opacity = "0";
+    document.body.appendChild(ta);
+    ta.select();
+    try { document.execCommand("copy"); } catch (e2) {}
+    document.body.removeChild(ta);
+  }
+  showToast(label || "Copied");
+}
+let toastTimer = null;
+function showToast(msg) {
+  const el = document.getElementById("toast");
+  el.textContent = msg;
+  el.classList.add("show");
+  clearTimeout(toastTimer);
+  toastTimer = setTimeout(() => el.classList.remove("show"), 1800);
+}
+document.getElementById("copy-all").addEventListener("click", () => {
+  copyText(fullMarkdown(), "Copied the full code map as Markdown");
+});
+
+buildDaybar();
+refresh();
+let initial = "";
+try {
+  const saved = localStorage.getItem("codemap:lastFile");
+  if (saved && byId.has(saved)) initial = saved;
+} catch (e) {}
+if (location.hash && byId.has(location.hash.slice(1))) initial = location.hash.slice(1);
+// If the remembered/default file falls outside the current day filter, fall back to the
+// first visible file instead -- never auto-select a file the current view is hiding.
+const initiallyVisible = FILES.filter((f) => matches(f, ""));
+if (!initiallyVisible.some((f) => f.id === initial) && initiallyVisible.length) {
+  initial = initiallyVisible[0].id;
+}
+selectFile(initial);
+</script>

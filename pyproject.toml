@@ -1,6 +1,6 @@
 [project]
 name = "vendor-intelligence-copilot"
-version = "0.1.0"
+version = "0.1.1"
 description = "Agentic commercial decision-support system for a beverage distributor (orchestrator + specialists + Guardian)."
 readme = "README.md"
 requires-python = ">=3.12"

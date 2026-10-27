@@ -10,8 +10,13 @@ project](https://github.com/hardeep282/Commercial-Analytics---Beverage-Distribut
 side; see [Status and honest limitations](#status-and-honest-limitations). Everything below is
 built, tested and runnable locally (`uv run uvicorn copilot.api.main:app`).
 
+**Case study:** [Vendor Intelligence Copilot — case study](https://claude.ai/artifact/KyLyQ3ywwWjWuXEvKKR1YF)
+(interactive agent graph, measured results, bugs found before trusting a number; source in
+`docs/case-study/index.html`, text in `docs/CASE_STUDY.md`).
+
 Built by [Hardeep Bamrah](https://github.com/hardeep282) — MSc Business Analytics (Bournemouth,
-2024), 10+ years commercial/B2B background, moving into AI analytics consulting. The point of
+2024), BTech Mechanical Engineering, with B2B sales, financial-services and retail experience in
+India and the UK, moving into AI analytics consulting. The point of
 this project isn't the demo; it's proving I can build, evaluate, secure and ship a real
 multi-agent system, and explain every decision in it.
 
@@ -85,7 +90,7 @@ privacy-leakage cases (23/23 passing, `tests/test_privacy_leakage_suite.py`).
 
 A sixth agent, a **Model Selection Agent** (propose → critique → revise data-science model
 choices with a critic checking assumptions per model family), was added beyond the base sprint
-scope (`docs/decisions` Addendum A1) and is built and unit-tested; its real per-scenario eval
+scope (Addendum A1 to the build brief) and is built and unit-tested; its real per-scenario eval
 numbers are one of the real-key runs still pending (see below).
 
 ## Results
@@ -95,7 +100,7 @@ real API key/your machine — nothing below is invented. Full detail: `docs/PROJ
 
 | Area | Result |
 |---|---|
-| Test suite | **511 passed, 0 failed** (`uv run pytest -q`), ruff/mypy clean |
+| Test suite | **511 passed, 0 failed** (`uv run pytest -q`, re-verified 27 Oct 2026), ruff/mypy strict clean. 27 of these need the local snapshot and skip without it: build it with `scripts/build_snapshot.py` + `copilot.data.store.build_database()` |
 | Real SQL Server snapshot | 126 vendors, $451.62M revenue (all rows) / $450.9M (cleaned base), spot-checked against two canonical figures (DIAGEO $68,739,834.97 revenue; Martignetti 31.98% blended margin) |
 | Golden evaluation set | 46 questions (27 dev / 16 test / 3 adversarial); golden v2 adds 6 text-to-SQL trap questions (semantic traps, coverage gaps) |
 | SQL validator | 29/29 unit tests, 0 false positives across 33 real golden queries; catches AVG-over-margin, fan-out joins, cross-vendor count additions, unbounded cross joins (DoS) |
@@ -107,7 +112,7 @@ real API key/your machine — nothing below is invented. Full detail: `docs/PROJ
 | Forecast tool, real portfolio backtest | ETS WAPE 0.1153 ≈ naive WAPE 0.1153 (AutoETS's trend reduces to ~none on this series — naive wins the tiebreak honestly, matches the analytics repo's own 11.8% baseline) |
 | Tokenization lab (provider vs. local tokenizers) | provider avg 1889.2 tok; tiktoken underestimates cost by 41.5%, HF `gpt2` by 32.6% — using a local tokenizer alone would misbudget real spend by a third to over 40% |
 | Effort lab (`effort` sweep, this model generation has no `temperature` param — see `docs/adr/005`) | 2 real runs, $0.114 / $0.119, exec_acc 0.67 both times; found and fixed a real scoring bug (column-alias mismatch), not a model problem |
-| QLoRA fine-tune, text-to-SQL (**benchmarked, not deployed**) | n=60 held-out: QLoRA 1.0 execution accuracy / 1.0 executable rate vs. base zero-shot 0.017/0.25 and base few-shot 0.1/0.333, **no latency penalty** (4.424s vs. 6.764s/3.828s) — see Limitations for the scope of this claim |
+| QLoRA fine-tune, text-to-SQL (**benchmarked, not deployed**) | n=60 held-out: QLoRA 1.0 execution accuracy / 1.0 executable rate vs. base zero-shot 0.017/0.25 and base few-shot 0.1/0.333; mean latency 4.42s, between zero-shot (6.76s) and few-shot (3.83s), single-example and unbatched — see Limitations for the scope of this claim |
 | MCP server | Vendor Analytics tools exposed read-only via MCP, exercised against the real snapshot (sprint's "never cut" item) |
 | CI eval gate | deterministic layer PASS in every environment; `llm_judged` layer correctly SKIPs without a key rather than fabricating a pass; verified to also fail (exit 1) on an injected regression |
 
@@ -175,8 +180,10 @@ Model Selection Agent first (not infrastructure), per Addendum A1 §3: RAGAS + L
 calibration, the Model Selection Agent's real eval numbers, XGBoost-vs-RF depth, advanced RAG
 (Contextual Retrieval, GraphRAG experiment), LangGraph agent-design depth, production-essentials
 depth (IaC, staging, backups drill, SLOs), remote MCP with OAuth, then the deferred deep-learning
-builds (PyTorch/transformer from scratch, DPO, vLLM). Full order: `docs/decisions` Addendum A1 §3
-and the sprint plan's X1 section.
+builds (PyTorch/transformer from scratch, DPO, vLLM). Full order: Addendum A1 §3 of the build
+brief and the sprint plan's X1 section, plus Addendum A2 §2 (cross-encoder reranking, chunking
+experiments, model routing, async + Locust load testing, semantic caching, circuit breaker, a
+full OWASP LLM Top 10 red-team set).
 
 ## Tech stack
 

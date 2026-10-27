@@ -1,11 +1,9 @@
 # Project Progress: Vendor Intelligence Copilot
 
-Last updated: Mon 26 Oct 2026 (Day 9 of the 10-day sprint, sprint plan v3 + Addendum A2 --
-Day 8's 7 of 7 steps shipped and tagged `v0.1.0`; Day 9 is now fully build-complete: steps 1 and
-4 (SQL pair generator, MCP server) done and run for real against a real snapshot; steps 2-3 and
-5-6 (QLoRA fine-tune of Qwen2.5-1.5B-Instruct, the base/few-shot/QLoRA comparison) retrained for
-real on Colab's free T4 tier after fixing four bugs, with ADR-007 **accepted, conditionally**.
-Day 10 -- package and launch the job campaign -- is next, nothing above blocks it)
+Last updated: Tue 27 Oct 2026 (Day 10, end of the 10-day sprint -- all ten days closed out;
+build half of Day 10 shipped except the items only you can do: push the `v0.1.1` tag, record the
+demo, make the repo public. Version bumped to 0.1.1. Full close-out in `docs/SPRINT_REPORT.md`.
+The depth track starts next, scheduled in that report)
 
 ## Sprint status
 
@@ -20,7 +18,7 @@ Day 10 -- package and launch the job campaign -- is next, nothing above blocks i
 | 7 | Guardian, guardrails, approvals | **Build done: 8 of 8 steps shipped** (injection classifier cut-first) |
 | 8 | Product, API keys, latency budget, evals in CI, release v0.1 (Addendum A2 §1) | **Build done: 7 of 7 steps shipped** -- v0.1.0 not yet tagged, see "Next step" |
 | 9 | Fine-tuning benchmark and MCP (MCP never cut) | **Build done: 6 of 6 steps shipped.** Step 1 (SQL pair generator) and step 4 (MCP server) done and run for real; steps 2-3 and 5-6 (Colab QLoRA fine-tune, base/few-shot/QLoRA comparison, results table + ADR) retrained for real on Colab's T4 after fixing four bugs -- see `docs/BUILD_LOG.md`'s 25-26 Oct entries. **ADR-007: adopt, conditionally** (validate against a broader question set before replacing the frontier-API call in production) |
-| 10 | Package and launch the job campaign | **Build half in progress**: README, demo script, case-study content shipped. Code Map artifact update, Progress Tracker update, v0.1.1 tag and career half still open -- see "Next step" |
+| 10 | Package and launch the job campaign | **Build half done** (27 Oct): README re-checked and corrected, case-study page published, Code Map page regenerated for Days 1-10, Progress Tracker Sprint tab, version 0.1.1, `docs/SPRINT_REPORT.md`. Yours: push tag `v0.1.1`, record demo, make repo public. Career half in progress |
 
 ## Day 3 checklist (sprint doc v2/v3 D3)
 
@@ -401,7 +399,7 @@ entries.
 
 | Metric | Baseline | Current | Notes |
 |---|---|---|---|
-| Tests passing | 33 | 465 (+ the same 15 known missing-local-data failures as every day before this one) | `uv run pytest -q`; +12 `copilot.llm`, +12 prompts + `InsightService`, +29 SQL validator, +16 schema/examples/text-to-SQL service, +22 evaluators/langsmith_sync, +10 golden v2, +4 effort lab, +5 tokenization lab, +3 evaluator column-name fix, +10 rag corpus, +9 chunking, +7 embeddings, +10 store, +12 retrieval (BM25 + RRF), +2 store `where` filter, +10 permission filter, +6 corrective RAG, +19 eval harness (golden/metrics/quality), +12 ml metrics, +10 forecast tool, +12 inventory tools, +12 risk classifier, +6 run-log, +5 model selection agent, +9 model selection eval, +10 agent contracts, +14 agent specialists, +12 orchestrator (plan/fan-out/draft), +2 orchestrator verifier loop, +4 orchestrator budget/checkpoint enforcement, +3 orchestrator wiring, +5 orchestrator golden set, +17 Guardian, +4 PII fallback, +4 canary, +4 audit log, +2 topology/end-to-end Guardian wiring, +8 approval-gate interrupt flow, +3 input-gate orchestrator wiring, +18 input gate, +8 trace masking, +4 SQL cost-limit red-team, +23 privacy-leakage suite, +6 LLM client fallback/version-pinning, +1 InsightService graceful degradation, +4 `stream_answer()`, +7 API auth, +5 API rate limit, +6 `/ask`, +4 checkpointer-priority/dependencies, +4 `/ask/approve` + UI serving |
+| Tests passing | 33 | **511 passed, 0 failed, 0 skipped** (re-verified 27 Oct with the snapshot and `snapshot.duckdb` built; without them, 27 snapshot-dependent tests skip) | `uv run pytest -q`; Day 9 added the MCP server, pair generator and eval-compare tests on top of the list that follows; +12 `copilot.llm`, +12 prompts + `InsightService`, +29 SQL validator, +16 schema/examples/text-to-SQL service, +22 evaluators/langsmith_sync, +10 golden v2, +4 effort lab, +5 tokenization lab, +3 evaluator column-name fix, +10 rag corpus, +9 chunking, +7 embeddings, +10 store, +12 retrieval (BM25 + RRF), +2 store `where` filter, +10 permission filter, +6 corrective RAG, +19 eval harness (golden/metrics/quality), +12 ml metrics, +10 forecast tool, +12 inventory tools, +12 risk classifier, +6 run-log, +5 model selection agent, +9 model selection eval, +10 agent contracts, +14 agent specialists, +12 orchestrator (plan/fan-out/draft), +2 orchestrator verifier loop, +4 orchestrator budget/checkpoint enforcement, +3 orchestrator wiring, +5 orchestrator golden set, +17 Guardian, +4 PII fallback, +4 canary, +4 audit log, +2 topology/end-to-end Guardian wiring, +8 approval-gate interrupt flow, +3 input-gate orchestrator wiring, +18 input gate, +8 trace masking, +4 SQL cost-limit red-team, +23 privacy-leakage suite, +6 LLM client fallback/version-pinning, +1 InsightService graceful degradation, +4 `stream_answer()`, +7 API auth, +5 API rate limit, +6 `/ask`, +4 checkpointer-priority/dependencies, +4 `/ask/approve` + UI serving |
 | Day 8: CI eval gate, real run in this environment | n/a | deterministic checks: PASS (465 passed, 15 known failures); `llm_judged` layer: SKIPPED (no `ANTHROPIC_API_KEY` configured here) -- exit 0 both when passing and (verified separately) exit 1 on an injected real regression | `scripts/run_eval_gate.py`; the `llm_judged` layer's real scores still wait for a run on your machine with your key + the real snapshot/Chroma index |
 | Day 8: Postgres checkpointer | n/a | branch-selection logic unit-tested (3 tests) and priority-over-sqlite tested end to end against two real SQLite files (1 test); **not run against a live Postgres** | no Docker daemon in this environment; `infra/local/compose.yaml` + `docs/BUILD_LOG.md`'s Day 8 step 7 entry cover exactly what was and wasn't verified |
 | Day 8: minimal UI + `/ask/approve` | n/a | 4 new tests: an approver resuming a paused Action draft through `/ask` then `/ask/approve` end to end, a non-approver correctly getting 403, and the static page/script actually served; also smoke-tested by hand against a running server (`curl` on `/`, `/static/*`, `/openapi.json`) | no browser-automation test of the page's JS itself -- the SSE-parsing/approval-panel logic is exercised indirectly, through the HTTP contract it calls, not a headless-browser click-through |
@@ -501,7 +499,15 @@ MCP server and pair generator added $0 (deterministic / local-model work).
 
 ## Live URLs
 
-None yet. Target: `https://api.vendor.<domain>/health`.
+API: none yet. Target: `https://api.vendor.<domain>/health`.
+
+Shared pages (private until shared from each page's Share menu):
+
+| Page | Link | Source in repo |
+|---|---|---|
+| Case study | https://claude.ai/artifact/KyLyQ3ywwWjWuXEvKKR1YF | `docs/case-study/index.html` |
+| Code Map (Version 9, Days 1-10) | https://claude.ai/artifact/DEhdU4uUTqPr7y1RgWDRCA | `docs/code-map/index.html`, built by `scripts/build_code_map_page.py` |
+| Plan and Progress Tracker | https://claude.ai/artifact/AYJf5GTMPMdqPoXfcSztA1 | `docs/tracker/index.html` |
 
 ## Next step
 
@@ -602,3 +608,15 @@ ready to publish once the landing page exists). Still open for the build half: t
 artifact's one-time end-of-sprint update, the Progress Tracker page, tagging `v0.1.1`, and the
 final Daily Sprint Report. Career half (CV variants, LinkedIn, pitch rehearsal, applications) not
 started yet.
+
+**Update, 27 Oct, Day 10 build half done:** re-verified the suite with the snapshot rebuilt from
+the public analytics repo's workbook: 511 passed, 0 failed, 0 skipped (27 tests skip when
+`snapshot.duckdb` is absent). Full-history
+gitleaks scan clean. Found and fixed: 28 files missing from `docs/CODE_MAP.md` (all of Day 9,
+deploy/infra, living docs), a "no latency penalty" claim for QLoRA in the README and case study
+(QLoRA is slower than few-shot base: 4.42 s vs 3.83 s), and an overstated background line in
+the README. Published the case-study page, regenerated the Code Map page from the markdown
+(new `scripts/build_code_map_page.py`), added a Sprint tab to the Progress Tracker, bumped the
+version to 0.1.1, wrote `docs/SPRINT_REPORT.md` (final report, ADR-008 questions for you, the
+depth-track schedule). **Next:** your items in `docs/SPRINT_REPORT.md` ("Your items, in order"),
+then the depth track's first block (close-out: real-key runs, deploy, demo).

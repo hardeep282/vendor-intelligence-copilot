@@ -51,3 +51,13 @@ Format: symptom, root cause, the commands that fixed it, how to prevent it.
 - **Cause:** a repo-level `user.name`/`user.email` overrides your global identity.
 - **Fix:** `git config --unset user.name`, `git config --unset user.email`, then (before the first push only)
   `git rebase --root --exec "git commit --amend --reset-author --no-edit"`. If a typo pauses the rebase, `git rebase --abort`.
+
+## 27 tests skip with "snapshot not built" even after `build_snapshot.py`
+
+**Symptom:** `uv run pytest -q` reports `484 passed, 27 skipped`, every skip reason "snapshot not
+built", although `data/snapshot/*.parquet` exist.
+**Cause:** those tests check for `data/snapshot/snapshot.duckdb`. `scripts/build_snapshot.py`
+writes the Parquet files only; the DuckDB file is created by `copilot.data.store.build_database()`
+(or lazily by `connect()` the first time the app queries).
+**Fix:** `uv run python -c "from copilot.data.store import build_database; print(build_database())"`,
+then rerun: 511 passed.

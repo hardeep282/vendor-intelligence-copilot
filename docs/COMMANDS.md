@@ -231,3 +231,16 @@ Inspector and Claude Desktop setup guides assume, rather than building untested 
 major version released after this project's own knowledge cutoff). No other new dependency --
 the MCP server wraps `copilot.data.store`, `copilot.sql.service.TextToSqlService` and
 `copilot.guardrails.guardian.Guardian` exactly as they already exist.
+
+## Day 10 (close-out)
+
+| Command | What it does |
+|---|---|
+| `uv run python scripts/build_snapshot.py "path/to/Vendor_Summary.xlsx"` | Rebuilds the aggregate-only Parquet snapshot from the analytics repo's workbook |
+| `uv run python -c "from copilot.data.store import build_database; print(build_database())"` | Builds `data/snapshot/snapshot.duckdb` from those Parquet files. Without it, 27 snapshot-dependent tests skip |
+| `uv run pytest -q` | Full suite: 511 passed with the snapshot built |
+| `gitleaks git . --redact -v` | Scans every commit in history for secrets before the repo goes public (`--redact` hides any match in the output) |
+| `uv run python scripts/build_code_map_page.py` | Regenerates the Code Map page (`docs/code-map/index.html`) from `docs/CODE_MAP.md`; run after editing the markdown |
+| `uv lock --check --offline` | Confirms `uv.lock` still matches `pyproject.toml` after the version bump, without touching the network |
+| `git tag -a v0.1.1 -m "Day 10: end of sprint"` | Creates an annotated release tag on the current commit (run on your machine after `git pull`) |
+| `git push origin v0.1.1` | Pushes that one tag to GitHub (this session's credentials get HTTP 403 on tag pushes) |

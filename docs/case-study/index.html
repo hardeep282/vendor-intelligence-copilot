@@ -1,0 +1,316 @@
+<title>Vendor Intelligence Copilot</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,500;12..96,700&family=IBM+Plex+Sans:wght@400;500;600&family=IBM+Plex+Mono:wght@400;500&display=swap">
+<style>
+/* Layout: single reading column (~68ch) that widens for the system diagram and results ledger. Dark-first: an operations-console slate with a brass "ledger" accent. */
+:root {
+  --bg: #10151d;
+  --surface: #171e29;
+  --raised: #1e2734;
+  --fg: #e6e9ee;
+  --muted: #9aa5b5;
+  --line: #2c3746;
+  --accent: #d9a54c;
+  --accent-ink: #1a1408;
+  --ok: #5fbf8a;
+  --warn: #e0b250;
+  --bad: #e47a6e;
+  --esc: #a99bf0;
+  --f-display: "Bricolage Grotesque", "Segoe UI", system-ui, sans-serif;
+  --f-body: "IBM Plex Sans", "Segoe UI", system-ui, sans-serif;
+  --f-mono: "IBM Plex Mono", ui-monospace, Consolas, monospace;
+  color-scheme: dark;
+}
+@media (prefers-color-scheme: light) {
+  :root:not([data-theme="dark"]) {
+    --bg: #f5f6f8; --surface: #ffffff; --raised: #eef1f5; --fg: #18202b; --muted: #556072;
+    --line: #d5dbe3; --accent: #9a6a12; --accent-ink: #ffffff; --ok: #237a4d; --warn: #8a6410;
+    --bad: #b2392c; --esc: #5b47c4; color-scheme: light;
+  }
+}
+:root[data-theme="light"] {
+  --bg: #f5f6f8; --surface: #ffffff; --raised: #eef1f5; --fg: #18202b; --muted: #556072;
+  --line: #d5dbe3; --accent: #9a6a12; --accent-ink: #ffffff; --ok: #237a4d; --warn: #8a6410;
+  --bad: #b2392c; --esc: #5b47c4; color-scheme: light;
+}
+* { box-sizing: border-box; }
+body {
+  background: var(--bg); color: var(--fg); font-family: var(--f-body); font-size: 16px; line-height: 1.6;
+}
+.wrap {
+  max-width: 980px; margin: 0 auto;
+  padding-left: max(16px, env(safe-area-inset-left, 0px));
+  padding-right: max(16px, env(safe-area-inset-right, 0px));
+  padding-block: 40px 64px;
+  display: grid; gap: 56px;
+}
+.prose { max-width: 68ch; }
+h1, h2, h3 { font-family: var(--f-display); text-wrap: balance; margin: 0; line-height: 1.15; }
+h1 { font-size: clamp(2.2rem, 6vw, 3.6rem); font-weight: 700; letter-spacing: -0.02em; }
+h2 { font-size: clamp(1.4rem, 3vw, 1.85rem); font-weight: 700; margin-bottom: 14px; }
+h3 { font-size: 1.1rem; font-weight: 500; }
+p { margin: 0 0 14px; }
+a { color: var(--accent); text-underline-offset: 3px; }
+a:focus-visible, button:focus-visible, g.node:focus-visible { outline: 2px solid var(--accent); outline-offset: 3px; }
+.eyebrow { font-family: var(--f-mono); font-size: 0.78rem; letter-spacing: 0.08em; text-transform: uppercase; color: var(--muted); margin-bottom: 10px; }
+code, .mono { font-family: var(--f-mono); font-size: 0.88em; }
+
+/* Hero */
+.hero { display: grid; gap: 18px; border-bottom: 1px solid var(--line); padding-bottom: 36px; }
+.thesis { font-size: clamp(1.1rem, 2.4vw, 1.3rem); color: var(--fg); max-width: 60ch; margin: 0; }
+.meta { display: flex; flex-wrap: wrap; gap: 8px 18px; font-family: var(--f-mono); font-size: 0.82rem; color: var(--muted); }
+.meta b { color: var(--fg); font-weight: 500; }
+.status { display: inline-flex; align-items: center; gap: 8px; font-family: var(--f-mono); font-size: 0.8rem; padding: 4px 10px; border: 1px solid var(--line); border-radius: 999px; color: var(--muted); width: fit-content; }
+.dot { width: 8px; height: 8px; border-radius: 50%; background: var(--warn); }
+
+/* Rules strip */
+.rules { display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 1px; background: var(--line); border: 1px solid var(--line); }
+.rule { background: var(--surface); padding: 18px; display: grid; gap: 6px; min-width: 0; }
+.rule .k { font-family: var(--f-mono); font-size: 0.75rem; color: var(--accent); letter-spacing: 0.06em; text-transform: uppercase; }
+.rule p { margin: 0; color: var(--muted); font-size: 0.95rem; }
+
+/* Diagram */
+.system { display: grid; grid-template-columns: minmax(0, 1.35fr) minmax(0, 1fr); gap: 24px; align-items: start; }
+@media (max-width: 760px) { .system { grid-template-columns: 1fr; } }
+.diagram { overflow-x: auto; background: var(--surface); border: 1px solid var(--line); padding: 12px; }
+.diagram svg { display: block; width: 100%; min-width: 520px; height: auto; }
+.edge { stroke: var(--line); stroke-width: 1.6; fill: none; }
+.edge.loop { stroke: var(--accent); stroke-dasharray: 4 4; }
+.arrowhead { fill: var(--muted); }
+.arrowhead.acc { fill: var(--accent); }
+g.node { cursor: pointer; }
+g.node rect { fill: var(--raised); stroke: var(--line); stroke-width: 1.2; transition: stroke 0.15s, fill 0.15s; }
+g.node:hover rect { stroke: var(--muted); }
+g.node.gate rect { stroke: var(--accent); }
+g.node.sel rect { fill: var(--accent); stroke: var(--accent); }
+g.node text { fill: var(--fg); font-family: var(--f-body); font-size: 13px; font-weight: 500; text-anchor: middle; dominant-baseline: middle; pointer-events: none; }
+g.node text.sub { fill: var(--muted); font-family: var(--f-mono); font-size: 10.5px; font-weight: 400; }
+g.node.sel text, g.node.sel text.sub { fill: var(--accent-ink); }
+.lbl { fill: var(--muted); font-family: var(--f-mono); font-size: 10px; }
+.detail { background: var(--surface); border: 1px solid var(--line); padding: 20px; display: grid; gap: 10px; min-width: 0; position: sticky; top: calc(env(safe-area-inset-top, 0px) + 16px); }
+.detail .role { font-family: var(--f-mono); font-size: 0.75rem; color: var(--accent); text-transform: uppercase; letter-spacing: 0.06em; }
+.detail ul { margin: 0; padding-left: 18px; color: var(--muted); display: grid; gap: 6px; }
+.detail .why { border-top: 1px solid var(--line); padding-top: 10px; font-size: 0.93rem; color: var(--muted); margin: 0; }
+.hint { font-family: var(--f-mono); font-size: 0.78rem; color: var(--muted); margin-top: 8px; }
+.outcomes { display: flex; flex-wrap: wrap; gap: 6px; }
+.pill { font-family: var(--f-mono); font-size: 0.72rem; padding: 2px 8px; border: 1px solid currentColor; border-radius: 999px; }
+.pill.allow { color: var(--ok); } .pill.redact { color: var(--warn); } .pill.block { color: var(--bad); } .pill.esc { color: var(--esc); }
+
+/* Results ledger */
+.ledger { overflow-x: auto; border: 1px solid var(--line); }
+table { width: 100%; border-collapse: collapse; min-width: 620px; font-size: 0.94rem; }
+th, td { text-align: left; padding: 11px 14px; border-bottom: 1px solid var(--line); vertical-align: top; }
+th { font-family: var(--f-mono); font-size: 0.74rem; text-transform: uppercase; letter-spacing: 0.06em; color: var(--muted); background: var(--surface); font-weight: 500; }
+tr:last-child td { border-bottom: 0; }
+td.num { font-family: var(--f-mono); font-variant-numeric: tabular-nums; white-space: nowrap; color: var(--fg); }
+td .src { display: block; font-family: var(--f-mono); font-size: 0.75rem; color: var(--muted); margin-top: 3px; }
+.tag { font-family: var(--f-mono); font-size: 0.7rem; padding: 2px 7px; border-radius: 3px; white-space: nowrap; }
+.tag.real { background: color-mix(in srgb, var(--ok) 18%, transparent); color: var(--ok); }
+.tag.scoped { background: color-mix(in srgb, var(--warn) 18%, transparent); color: var(--warn); }
+
+/* Bugs */
+.bugs { display: grid; grid-template-columns: repeat(auto-fit, minmax(260px, 1fr)); gap: 16px; }
+.bug { border-top: 2px solid var(--accent); padding-top: 12px; display: grid; gap: 6px; min-width: 0; }
+.bug p { margin: 0; color: var(--muted); font-size: 0.95rem; }
+.bug .fix { color: var(--fg); }
+
+.two { display: grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); gap: 32px; }
+.two ul { margin: 0; padding-left: 18px; display: grid; gap: 8px; color: var(--muted); }
+.two ul b { color: var(--fg); font-weight: 500; }
+footer { border-top: 1px solid var(--line); padding-top: 24px; display: flex; flex-wrap: wrap; gap: 10px 28px; font-size: 0.92rem; color: var(--muted); }
+footer .mono { color: var(--fg); user-select: all; }
+@media (prefers-reduced-motion: reduce) { * { transition: none !important; } }
+</style>
+
+<div class="wrap">
+
+  <header class="hero">
+    <div class="eyebrow">Case study · Agentic AI analytics · Oct 2026</div>
+    <h1>Vendor Intelligence Copilot</h1>
+    <p class="thesis">A multi-agent decision-support system for a beverage distributor's category, procurement and finance teams, where Python computes every number, specialist agents gather the evidence, and a single mandatory Guardian decides what the user is allowed to see.</p>
+    <div class="meta">
+      <span>Built by <b>Hardeep Bamrah</b></span>
+      <span>10-day build sprint</span>
+      <span><b>511</b> automated tests</span>
+      <span>Python · LangGraph · Anthropic API · DuckDB</span>
+    </div>
+    <span class="status"><span class="dot" aria-hidden="true"></span>Runs locally and is fully tested. Cloud deployment is the next step.</span>
+  </header>
+
+  <section class="prose">
+    <div class="eyebrow">The problem</div>
+    <h2>Commercial questions cut across five kinds of evidence</h2>
+    <p>"Which vendors are leaking controllable margin, why, what will next quarter's demand look like for their top SKUs, and what should we renegotiate?" Answering that means pulling figures from a 12.8-million-row SQL medallion, running a forecast, scoring SKU risk, and reading contract terms, all at once.</p>
+    <p>Doing it by hand is slow. Handing it to one LLM is worse. A single unverified agent can invent a margin figure or quote one vendor's terms in an email to another, and in a commercial setting either mistake is costly. So I built the safety into the structure of the system rather than into a prompt.</p>
+  </section>
+
+  <section class="rules" aria-label="Design rules">
+    <div class="rule"><span class="k">Python computes</span><p>Forecasts, risk scores, reorder points and SQL results come from deterministic tools. The LLM only narrates them.</p></div>
+    <div class="rule"><span class="k">Least privilege</span><p>Each specialist agent has its own tools and cannot call another agent's tools.</p></div>
+    <div class="rule"><span class="k">One gate to the user</span><p>Every path out of the graph passes through the Guardian. A test checks this against the compiled graph itself.</p></div>
+    <div class="rule"><span class="k">Humans approve actions</span><p>Anything that would leave the system, such as a vendor email, pauses for an approver.</p></div>
+  </section>
+
+  <section>
+    <div class="eyebrow">How it works</div>
+    <h2>The agent graph</h2>
+    <p class="prose" style="color:var(--muted)">Select any step to see what it does and why it's there.</p>
+    <div class="system">
+      <div class="diagram">
+        <svg viewBox="0 0 760 640" role="group" aria-label="Agent graph: input gate, orchestrator, five specialists, draft, verifier, guardian, approval gate and outputs">
+          <defs>
+            <marker id="ah" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path class="arrowhead" d="M0,0 L10,5 L0,10 z"/></marker>
+            <marker id="aha" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path class="arrowhead acc" d="M0,0 L10,5 L0,10 z"/></marker>
+          </defs>
+          <!-- edges -->
+          <path class="edge" marker-end="url(#ah)" d="M380 52 V78"/>
+          <path class="edge" marker-end="url(#ah)" d="M380 126 V150"/>
+          <path class="edge" marker-end="url(#ah)" d="M380 198 V214 H74 V240"/>
+          <path class="edge" marker-end="url(#ah)" d="M300 214 H226 V240"/>
+          <path class="edge" marker-end="url(#ah)" d="M380 214 V240"/>
+          <path class="edge" marker-end="url(#ah)" d="M460 214 H534 V240"/>
+          <path class="edge" d="M460 214 H688 V240" marker-end="url(#ah)"/>
+          <path class="edge" d="M74 290 V310 H380"/>
+          <path class="edge" d="M226 290 V310"/>
+          <path class="edge" d="M534 290 V310"/>
+          <path class="edge" d="M688 290 V310 H380"/>
+          <path class="edge" marker-end="url(#ah)" d="M380 290 V330"/>
+          <path class="edge" marker-end="url(#ah)" d="M380 378 V410"/>
+          <path class="edge loop" marker-end="url(#aha)" d="M480 434 H560 V354 H482"/>
+          <text class="lbl" x="568" y="398">fails: redraft</text>
+          <text class="lbl" x="568" y="411">(max 2 loops)</text>
+          <path class="edge" marker-end="url(#ah)" d="M380 458 V490"/>
+          <path class="edge" marker-end="url(#ah)" d="M330 538 V556 H130 V580"/>
+          <path class="edge" marker-end="url(#ah)" d="M380 538 V580"/>
+          <path class="edge" marker-end="url(#ah)" d="M430 538 V556 H630 V580"/>
+          <path class="edge" marker-end="url(#ah)" d="M220 604 H288"/>
+          <text class="lbl" x="150" y="550">action draft</text>
+          <text class="lbl" x="388" y="566">allow / redact</text>
+          <text class="lbl" x="520" y="550">block / escalate</text>
+
+          <!-- nodes -->
+          <g class="node" data-k="q" tabindex="0" role="button" aria-label="User question"><rect x="300" y="10" width="160" height="42" rx="4"/><text x="380" y="31">User question</text></g>
+          <g class="node gate" data-k="gate" tabindex="0" role="button" aria-label="Input gate"><rect x="290" y="80" width="180" height="46" rx="4"/><text x="380" y="96">Input gate</text><text class="sub" x="380" y="113">injection · scope · spend cap</text></g>
+          <g class="node" data-k="orch" tabindex="0" role="button" aria-label="Orchestrator"><rect x="280" y="152" width="200" height="46" rx="4"/><text x="380" y="168">Orchestrator</text><text class="sub" x="380" y="185">plan · parallel fan-out</text></g>
+          <g class="node" data-k="da" tabindex="0" role="button" aria-label="Data Analyst"><rect x="10" y="242" width="128" height="48" rx="4"/><text x="74" y="259">Data Analyst</text><text class="sub" x="74" y="276">text-to-SQL</text></g>
+          <g class="node" data-k="fr" tabindex="0" role="button" aria-label="Forecasting and Risk"><rect x="162" y="242" width="128" height="48" rx="4"/><text x="226" y="259">Forecast &amp; Risk</text><text class="sub" x="226" y="276">ETS · RF · XGBoost</text></g>
+          <g class="node" data-k="ip" tabindex="0" role="button" aria-label="Inventory Planning"><rect x="316" y="242" width="128" height="48" rx="4"/><text x="380" y="259">Inventory</text><text class="sub" x="380" y="276">ROP · safety stock</text></g>
+          <g class="node" data-k="kn" tabindex="0" role="button" aria-label="Knowledge"><rect x="470" y="242" width="128" height="48" rx="4"/><text x="534" y="259">Knowledge</text><text class="sub" x="534" y="276">corrective RAG</text></g>
+          <g class="node" data-k="ac" tabindex="0" role="button" aria-label="Action"><rect x="624" y="242" width="128" height="48" rx="4"/><text x="688" y="259">Action</text><text class="sub" x="688" y="276">drafts only</text></g>
+          <g class="node" data-k="draft" tabindex="0" role="button" aria-label="Join and draft"><rect x="280" y="332" width="200" height="46" rx="4"/><text x="380" y="348">Join &amp; draft</text><text class="sub" x="380" y="365">typed AgentResults</text></g>
+          <g class="node gate" data-k="ver" tabindex="0" role="button" aria-label="Verifier"><rect x="280" y="412" width="200" height="46" rx="4"/><text x="380" y="428">Verifier</text><text class="sub" x="380" y="445">grounding · citations</text></g>
+          <g class="node gate" data-k="grd" tabindex="0" role="button" aria-label="Guardian"><rect x="280" y="492" width="200" height="46" rx="4"/><text x="380" y="508">Guardian</text><text class="sub" x="380" y="525">8 checks · worst wins</text></g>
+          <g class="node gate" data-k="apr" tabindex="0" role="button" aria-label="Approval gate"><rect x="40" y="582" width="180" height="46" rx="4"/><text x="130" y="598">Approval gate</text><text class="sub" x="130" y="615">human interrupt</text></g>
+          <g class="node" data-k="out" tabindex="0" role="button" aria-label="Answer to user"><rect x="290" y="582" width="180" height="46" rx="4"/><text x="380" y="598">Answer</text><text class="sub" x="380" y="615">cited, streamed</text></g>
+          <g class="node" data-k="blk" tabindex="0" role="button" aria-label="Safe refusal"><rect x="540" y="582" width="180" height="46" rx="4"/><text x="630" y="598">Safe message</text><text class="sub" x="630" y="615">reason code · audit log</text></g>
+        </svg>
+      </div>
+      <aside class="detail" id="detail" aria-live="polite">
+        <span class="role" id="d-role"></span>
+        <h3 id="d-title"></h3>
+        <ul id="d-list"></ul>
+        <div id="d-extra"></div>
+        <p class="why" id="d-why"></p>
+      </aside>
+    </div>
+  </section>
+
+  <section>
+    <div class="eyebrow">Results</div>
+    <h2>Measured, not projected</h2>
+    <p class="prose" style="color:var(--muted)">Every figure below comes from a real run recorded in the repository's build log. Where a result only holds in a limited scope, the scope is stated next to it.</p>
+    <div class="ledger">
+      <table>
+        <thead><tr><th>What was measured</th><th>Result</th><th>Status</th></tr></thead>
+        <tbody>
+          <tr><td>Automated test suite<span class="src">pytest, ruff, mypy strict</span></td><td class="num">511 passed, 0 failed</td><td><span class="tag real">real run</span></td></tr>
+          <tr><td>Privacy red team: 15 data-leakage attacks plus 8 SQL attacks (UNION into other tables, file reads, stacked statements, denial-of-service joins)<span class="src">tests/test_privacy_leakage_suite.py</span></td><td class="num">23 / 23 blocked</td><td><span class="tag real">real run</span></td></tr>
+          <tr><td>6-layer SQL validator: catches valid-looking but wrong SQL, such as averaging margins or a join that inflates totals<span class="src">33 real golden queries</span></td><td class="num">0 false positives</td><td><span class="tag real">real run</span></td></tr>
+          <tr><td>Hybrid retrieval (BM25 + vectors, reciprocal rank fusion) over 20 labelled questions<span class="src">all-MiniLM-L6-v2</span></td><td class="num">recall@5 0.800<br>MRR 0.662</td><td><span class="tag real">real run</span></td></tr>
+          <tr><td>SKU risk classifier on 10,495 real SKUs, after removing a leaking feature<span class="src">Random Forest / XGBoost, F1</span></td><td class="num">RF 0.919<br>XGB 0.953</td><td><span class="tag real">real run</span></td></tr>
+          <tr><td>Demand forecast, rolling-origin backtest on the portfolio series<span class="src">ETS vs naive, WAPE</span></td><td class="num">ETS 0.1153<br>naive 0.1153</td><td><span class="tag real">real run</span></td></tr>
+          <tr><td>QLoRA fine-tune of Qwen2.5-1.5B for text-to-SQL, 60 held-out questions<span class="src">execution accuracy vs base zero-shot / few-shot</span></td><td class="num">1.0 vs 0.017 / 0.1</td><td><span class="tag scoped">benchmarked, not deployed</span></td></tr>
+          <tr><td>Token counting: local tokenizers vs the provider's count<span class="src">tiktoken, HF gpt2</span></td><td class="num">−41.5% / −32.6%</td><td><span class="tag real">real run</span></td></tr>
+          <tr><td>Cost of one end-to-end insight call<span class="src">Anthropic API, logged tokens</span></td><td class="num">$0.0113 · 7.3 s</td><td><span class="tag real">real run</span></td></tr>
+        </tbody>
+      </table>
+    </div>
+    <p class="hint">The forecast tie is reported as it came out: with only 12 months of history the ETS model's trend reduces to almost nothing, so the naive baseline is as good. The fine-tune scored 1.0 within a fixed family of question templates. It has not replaced the production model; that decision is written down in ADR-007.</p>
+  </section>
+
+  <section>
+    <div class="eyebrow">Before trusting a number</div>
+    <h2>Bugs I found in my own measurements</h2>
+    <div class="bugs">
+      <div class="bug"><h3>A feature that rebuilt the target</h3><p>The first risk classifier scored F1 0.994. ProfitMargin, an input feature, could reconstruct the label it was predicting.</p><p class="fix">Removed it. F1 settled at 0.919, the number I report.</p></div>
+      <div class="bug"><h3>A fine-tune that never trained</h3><p>Training loss read 0.000000. A 512-token limit cut off every example's SQL answer, so the adapter learned nothing.</p><p class="fix">Raised the limit to 1024 and retrained. Loss fell from 0.551 to 0.0006.</p></div>
+      <div class="bug"><h3>A test question that saw its own answer</h3><p>Few-shot retrieval let each held-out question pick itself as its top example, which inflated the baseline.</p><p class="fix">Excluded held-out items from the example pool before scoring.</p></div>
+      <div class="bug"><h3>A scorer that marked right answers wrong</h3><p>Execution accuracy required exact column names, so a correct query with a different alias failed.</p><p class="fix">Compared result rows instead of column labels.</p></div>
+    </div>
+  </section>
+
+  <section class="two">
+    <div>
+      <div class="eyebrow">Decisions on record</div>
+      <h2>Why it's built this way</h2>
+      <ul>
+        <li><b>ADR-002</b> A licence-safe snapshot of vendor-level aggregates only, never committed to Git.</li>
+        <li><b>ADR-005</b> Direct Anthropic API rather than Bedrock, for now.</li>
+        <li><b>ADR-006</b> Guardian severity order: block, then escalate, then redact, then allow.</li>
+        <li><b>ADR-007</b> Adopt the fine-tune only after it passes a broader question set.</li>
+      </ul>
+    </div>
+    <div>
+      <div class="eyebrow">Open items</div>
+      <h2>What comes next</h2>
+      <ul>
+        <li><b>Deploy</b> to AWS behind HTTPS on my own domain. The Dockerfile and CI pipeline already exist.</li>
+        <li><b>Validate the fine-tune</b> on question phrasings outside its training templates.</li>
+        <li><b>Run the full multi-agent evaluation</b> with a live API key to get end-to-end p50/p95 latency and cost per question.</li>
+        <li><b>Model Selection Agent</b>: measure how often it picks an acceptable model and how many planted modelling faults its critic catches.</li>
+      </ul>
+    </div>
+  </section>
+
+  <footer>
+    <span>Hardeep Bamrah · MSc Business Analytics, Bournemouth University</span>
+    <span>Email <span class="mono">hardeep.bamrah282@gmail.com</span></span>
+    <a href="https://github.com/hardeep282/vendor-intelligence-copilot">Source and build log on GitHub</a>
+  </footer>
+</div>
+
+<script>
+const D = {
+  q:    {role:"Entry point", title:"User question", list:["Asked in a chat UI or through the /ask API, streamed back over server-sent events.","Every request carries the user's role: viewer, analyst or approver."], why:"The role travels with the question, so every later step can enforce what this person may see."},
+  gate: {role:"Gate · before any model call", title:"Input gate", list:["Prompt-injection heuristics and a scope check.","Input length limit, per-user rate limit, daily spend cap and a kill switch."], why:"Cheap checks run first, so an attack or a runaway client is stopped before it costs an LLM call."},
+  orch: {role:"Coordinator", title:"Orchestrator", list:["Writes a typed plan of which specialists to call.","Uses LangGraph's Send API to run independent specialists in parallel.","Each specialist has its own step, token, cost and time budget."], why:"Parallel fan-out keeps latency down; budgets keep one slow agent from holding up the answer."},
+  da:   {role:"Specialist", title:"Data Analyst", list:["Text-to-SQL with schema linking and three retrieved worked examples.","A 6-layer sqlglot validator: SELECT-only structure, role and k=5 aggregation threshold, business rules, data coverage, then up to two self-corrections before it abstains.","Runs on a read-only DuckDB snapshot with external file access switched off."], why:"SQL that runs can still be wrong. The semantic rules catch averaged margins and fan-out joins that a syntax check would pass."},
+  fr:   {role:"Specialist · real models", title:"Forecasting & Risk", list:["ETS against a naive baseline on a rolling-origin backtest, reported with WAPE, MASE and bias.","Random Forest and XGBoost SKU risk classifiers with SHAP drivers. Top driver after the leakage fix: StockTurnover."], why:"These are validated data-science models, not LLM guesses. The LLM only explains their output."},
+  ip:   {role:"Specialist · deterministic", title:"Inventory Planning", list:["Safety stock, reorder point and EOQ, computed from the forecast's own error.","No LLM call inside the tool."], why:"Reorder quantities feed real purchasing decisions, so the arithmetic stays in Python."},
+  kn:   {role:"Specialist", title:"Knowledge", list:["Hybrid BM25 + vector retrieval fused with reciprocal rank fusion.","The permission filter runs inside the vector query, so a viewer can never retrieve a confidential chunk.","Corrective RAG: grade the chunks, rewrite the query, retry, or abstain."], why:"Vendor names and SKU codes are exact-match terms that embeddings alone handle poorly, which is why keyword search is fused in."},
+  ac:   {role:"Specialist · least privilege", title:"Action", list:["Drafts renegotiation emails and reorder recommendations.","Cannot send anything. Every draft goes to the Guardian and then to a human approver."], why:"The agent that writes to the outside world has the fewest powers in the system."},
+  draft:{role:"Join", title:"Join & draft", list:["Collects each specialist's typed AgentResult, including which data classes it touched.","The Orchestrator drafts one answer citing those results."], why:"Typed hand-offs mean the Verifier and Guardian can check provenance instead of parsing free text."},
+  ver:  {role:"Gate · quality", title:"Verifier", list:["Checks every number in the draft against the tool results.","Checks citations and contradictions between specialists.","Sends the draft back up to twice. After that it finalises with verified=false."], why:"This is the evaluator-optimizer pattern with a hard loop cap, so a stubborn draft can't loop forever."},
+  grd:  {role:"Gate · safety", title:"Guardian", list:["Eight checks, cheapest first: canary-token leaks, restricted table names, raw-row dumps, role policy, vendor-audience scope, secrets, PII (Presidio) and grounding.","The most severe outcome wins. Every decision is written to an audit log with a reason code.","A topology test asserts that every edge to END in the compiled graph passes through this node."], extra:true, why:"Prompts are not a security boundary. The Guardian is plain code that the graph cannot route around."},
+  apr:  {role:"Gate · human", title:"Approval gate", list:["A LangGraph interrupt pauses the run and checkpoints its state.","An approver approves, edits or rejects through /ask/approve, and the run resumes from the checkpoint."], why:"Anything that would leave the company needs a person's sign-off."},
+  out:  {role:"Output", title:"Answer", list:["A cited answer, released only after the Guardian allows or redacts it.","Agent status streams live while the specialists work."], why:"The user sees progress immediately but never sees an answer the Guardian hasn't passed."},
+  blk:  {role:"Output", title:"Safe message", list:["A generic refusal or a pending-review notice, with a reason code.","No partial data from the blocked draft reaches the user."], why:"Failing closed is the default: when a check can't confirm an answer is safe, the answer doesn't go out."}
+};
+const nodes = document.querySelectorAll("g.node");
+function show(k){
+  const d = D[k]; if(!d) return;
+  nodes.forEach(n => n.classList.toggle("sel", n.dataset.k === k));
+  document.getElementById("d-role").textContent = d.role;
+  document.getElementById("d-title").textContent = d.title;
+  const ul = document.getElementById("d-list"); ul.innerHTML = "";
+  d.list.forEach(t => { const li = document.createElement("li"); li.textContent = t; ul.appendChild(li); });
+  document.getElementById("d-extra").innerHTML = d.extra ? '<div class="outcomes"><span class="pill allow">ALLOW</span><span class="pill redact">REDACT</span><span class="pill esc">ESCALATE</span><span class="pill block">BLOCK</span></div>' : "";
+  document.getElementById("d-why").textContent = d.why;
+}
+nodes.forEach(n => {
+  n.addEventListener("click", () => show(n.dataset.k));
+  n.addEventListener("keydown", e => { if(e.key === "Enter" || e.key === " "){ e.preventDefault(); show(n.dataset.k); } });
+});
+show("grd");
+</script>
