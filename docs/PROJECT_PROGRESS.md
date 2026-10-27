@@ -1,9 +1,11 @@
 # Project Progress: Vendor Intelligence Copilot
 
-Last updated: Fri 23 Oct 2026 (Day 9 of the 10-day sprint, sprint plan v3 + Addendum A2 --
-Day 8's 7 of 7 steps shipped and tagged `v0.1.0`; Day 9 steps 1 and 4 (SQL pair generator, MCP
-server) done and run for real against a real snapshot built in this session; Day 9 steps 2-3
-and 5-6, the QLoRA fine-tuning benchmark, scaffolded and ready to run in Colab)
+Last updated: Mon 26 Oct 2026 (Day 9 of the 10-day sprint, sprint plan v3 + Addendum A2 --
+Day 8's 7 of 7 steps shipped and tagged `v0.1.0`; Day 9 is now fully build-complete: steps 1 and
+4 (SQL pair generator, MCP server) done and run for real against a real snapshot; steps 2-3 and
+5-6 (QLoRA fine-tune of Qwen2.5-1.5B-Instruct, the base/few-shot/QLoRA comparison) retrained for
+real on Colab's free T4 tier after fixing four bugs, with ADR-007 **accepted, conditionally**.
+Day 10 -- package and launch the job campaign -- is next, nothing above blocks it)
 
 ## Sprint status
 
@@ -17,8 +19,8 @@ and 5-6, the QLoRA fine-tuning benchmark, scaffolded and ready to run in Colab)
 | 6 | Multi-agent system in LangGraph | **Build done: 7 of 7 steps shipped** |
 | 7 | Guardian, guardrails, approvals | **Build done: 8 of 8 steps shipped** (injection classifier cut-first) |
 | 8 | Product, API keys, latency budget, evals in CI, release v0.1 (Addendum A2 §1) | **Build done: 7 of 7 steps shipped** -- v0.1.0 not yet tagged, see "Next step" |
-| 9 | Fine-tuning benchmark and MCP (MCP never cut) | In progress: step 1 (SQL pair generator) and step 4 (MCP server) **done and run for real**; steps 2-3 and 5-6 (Colab QLoRA fine-tune, the base/few-shot/QLoRA comparison, results table + ADR) **scaffolded and ready to run** (`finetuning/`, ADR-007 PENDING) -- actual run still needs a GPU (Colab) this environment doesn't have |
-| 10 | Package and launch the job campaign | Not started |
+| 9 | Fine-tuning benchmark and MCP (MCP never cut) | **Build done: 6 of 6 steps shipped.** Step 1 (SQL pair generator) and step 4 (MCP server) done and run for real; steps 2-3 and 5-6 (Colab QLoRA fine-tune, base/few-shot/QLoRA comparison, results table + ADR) retrained for real on Colab's T4 after fixing four bugs -- see `docs/BUILD_LOG.md`'s 25-26 Oct entries. **ADR-007: adopt, conditionally** (validate against a broader question set before replacing the frontier-API call in production) |
+| 10 | Package and launch the job campaign | Not started -- see "Next step" |
 
 ## Day 3 checklist (sprint doc v2/v3 D3)
 
@@ -369,6 +371,32 @@ gated by its own `require_role("approver", "admin")` dependency. `/ask`'s SSE st
 by hand in the page's own JS (`fetch` + `ReadableStream`) because `EventSource` cannot carry a
 bearer `Authorization` header.
 
+## Day 9 checklist (sprint doc v3 D9, "fine-tuning benchmark and MCP, MCP never cut")
+
+| # | Item | Status |
+|---|---|---|
+| 1 | Question->SQL pair generator | **Done, run for real** (`copilot.sql.pair_generation`; 22 Oct: 1016 candidates, 0 execution/validator failures, sampled to 400 -- `evals/datasets/sql_pairs_v1.jsonl`, superseded by v2 below) |
+| 2-3 | QLoRA fine-tune of a small open model on the project's own question->SQL pairs | **Done, retrained for real** (`finetuning/day9_qlora_colab.ipynb`; Qwen2.5-1.5B-Instruct, 4-bit NF4 + LoRA r=16/alpha=32, 3 epochs, Colab free T4) |
+| 4 | Vendor Analytics MCP server ("never cut") | **Done, run for real** (`copilot.mcp.server`; `tests/test_mcp_server.py`) |
+| 5-6 | Base vs few-shot vs QLoRA comparison, results table, ADR | **Done** (`finetuning/eval_compare.py`; `finetuning/results_template.md`; `docs/adr/007-finetuning-outcome.md`, **accepted, conditionally**) |
+
+**Steps 1 and 4, done 22 Oct:** the SQL pair generator and the MCP server were both built and
+run for real against the real snapshot the same session the snapshot itself was built -- see
+`docs/BUILD_LOG.md`'s 22 Oct entries.
+
+**Steps 2-3 and 5-6, done 25-26 Oct, after fixing four bugs (three in measurement, one real):**
+`sql_pairs_v1`'s vendor-casing literals turned out to be unlearnable by design (fixed as
+`sql_pairs_v2`, 400 execution-verified pairs, 85/15 split -> 340 train / 60 held-out), the
+few-shot baseline was leaking held-out questions into its own retrieval pool, and the SQL
+extraction step was gluing trailing model prose onto otherwise-correct SQL. Those three fixed,
+the actual training bug surfaced: `MAX_LEN=512` silently truncated away every training
+example's SQL answer before it was ever appended, so the first "trained" adapter was a
+mathematical no-op (loss `0.000000`, every LoRA `B` matrix still zero). Raised to `MAX_LEN=1024`
+and retrained for real in one uninterrupted Colab sitting -- training loss fell from 0.551 to
+0.0006 across 66 steps, and the adapter's three sanity-check examples matched ground-truth SQL
+word for word before any result was trusted. Full story: `docs/BUILD_LOG.md`'s 25-26 Oct
+entries.
+
 ## Results
 
 | Metric | Baseline | Current | Notes |
@@ -409,6 +437,10 @@ bearer `Authorization` header.
 | Input gate (Day 7 step 6) | n/a | 18 unit tests + 3 orchestrator-wiring tests pass | found and fixed a real test-isolation bug before shipping: the default `InputGate`'s `SpendTracker` persists to a real on-disk file, so dozens of orchestrator tests sharing one `InputGate()` default tripped the daily cap for reasons unrelated to what any one test checked -- fixed with `tests/conftest.py`'s autouse fixture, not by weakening the cap |
 | LangSmith trace masking (Day 7 step 7) | n/a | 8 tests pass | chose `@traceable(process_inputs=..., process_outputs=...)` over a `Client(anonymizer=...)` after two things ruled the latter out (confirmed empirically, not assumed): constructing a `Client()` calls `GET /info` eagerly, and a `contextvars`-based default client doesn't survive into `_run_specialist`'s worker thread |
 | 23-case privacy-leakage suite (Day 7 step 8) | n/a | 23/23 pass | surfaced a real, previously-unguarded gap (an unbounded cross join) rather than just re-testing what already existed; fixed in the SQL validator, verified against the real golden set (`gq-025`) before shipping so the fix doesn't regress a legitimate query |
+| Day 9: question->SQL pair generator, real run | n/a | 1016 candidates, 0 execution failures, 0 validator failures, sampled to 400 | `copilot.sql.pair_generation`; `evals/datasets/sql_pairs_v1.jsonl` (v2 fixes an unlearnable vendor-casing pattern in v1) |
+| Day 9: Vendor Analytics MCP server, real run | n/a | built and exercised against the real snapshot | `copilot.mcp.server`; `tests/test_mcp_server.py` -- the sprint's "MCP never cut" item |
+| Day 9: QLoRA fine-tuning benchmark, real retrained result | n/a | execution_accuracy: qlora 1.0 vs base_zero_shot 0.017 vs base_few_shot 0.1; executable_rate: qlora 1.0 vs 0.25 vs 0.333; mean_latency_s: qlora 4.424 vs 6.764 vs 3.828 (n=60 held-out each) | `finetuning/eval_compare.py`, `finetuning/results_template.md`; first training attempt silently failed (`MAX_LEN=512` truncation, loss stuck at 0.000000) -- these numbers are from the retrained adapter, sanity-checked word-for-word against ground truth before being trusted |
+| Day 9: ADR-007, fine-tuning adopt/don't-adopt decision | n/a | **Adopt, conditionally** -- all three decision-framework criteria (accuracy, executable rate, latency) pass clearly on real numbers | `docs/adr/007-finetuning-outcome.md`; the one named condition: validate against a broader, non-template question set before this replaces the frontier-API call in `TextToSqlService`'s primary path -- `sql_pairs_v2` is a fixed template family, so the 1.0 proves that family is learned, not arbitrary generalization |
 
 ## Decisions
 
@@ -438,6 +470,14 @@ storage object, don't build your own" posture (Day 6 step 6) from one concrete t
 alternatives here; the auth/rate-limit file-backed, hashed-secret shape reuses `SpendTracker`'s
 own established pattern; and the UI is a static-files mount, the simplest option for "serve one
 page from the same process," not a framework decision with competing options weighed.
+**ADR-007 (fine-tuning outcome), Day 9's required decision per the sprint brief, is resolved:**
+adopt the QLoRA-tuned model into the production text-to-SQL path, conditionally -- real numbers
+clearly pass all three of the decision framework's own criteria (execution accuracy, executable
+rate, latency), but the one named condition (validate against question phrasings outside
+`sql_pairs_v2`'s fixed template family) is explicitly not yet done, so this is not yet wired into
+`TextToSqlService`'s primary path. No other new ADR for Day 9 -- the MCP server follows the
+project's own existing service-boundary conventions rather than a build-vs-buy call made fresh
+here.
 
 ## Costs to date
 
@@ -454,7 +494,10 @@ also added $0 (no API key needed for that). Day 8 added $0 too -- the auth/rate-
 checkpointer/UI work is all deterministic Python with no API key; the CI eval gate's own
 `llm_judged` layer, the one piece of Day 8 that would spend real money, correctly SKIPPED in
 this environment rather than running (no `ANTHROPIC_API_KEY` here) -- its real scores still
-wait for a run on your machine with your key and the real snapshot/Chroma index.
+wait for a run on your machine with your key and the real snapshot/Chroma index. Day 9 added
+under $1 total for the real fine-tuning benchmark (Colab's free T4 tier has no compute cost;
+the 180 base/few-shot/QLoRA generations for `eval_compare.py` are the only real spend) -- the
+MCP server and pair generator added $0 (deterministic / local-model work).
 
 ## Live URLs
 
@@ -512,15 +555,31 @@ step 4 (the Vendor Analytics MCP server, "never cut" per the sprint's own cut-fi
 both done and run for real against the real snapshot above -- see `docs/BUILD_LOG.md`'s Day 9
 entries.
 
-**Update, 23 Oct ("Option A"):** steps 2-3 and 5-6 are now **scaffolded and ready to run**, not
-started-for-real -- the actual GPU training run still needs Colab, which this environment
-doesn't have, so the honest status stays "ready, not yet executed." What's ready: a 19-cell
-Colab notebook (`finetuning/day9_qlora_colab.ipynb`, QLoRA fine-tune of
-Qwen2.5-1.5B-Instruct on the 400 real pairs, completion-only loss), the comparison harness
-(`finetuning/eval_compare.py`, base/few-shot/QLoRA/optional-frontier, re-executed against the
-real snapshot and compared row-for-row using the project's own existing
-`copilot.evals.golden`-style convention), and templates for the results
-(`finetuning/results_template.md`) and the decision (`docs/adr/007-finetuning-outcome.md`,
-status PENDING with the adopt/don't-adopt framework spelled out) -- see
-`finetuning/README.md` for exactly how to run it. Day 10 (packaging and the job campaign)
-hasn't started and isn't blocked by anything above.
+**Update, 23 Oct ("Option A"):** steps 2-3 and 5-6 scaffolded and ready to run, not yet executed
+for real -- superseded by the update below.
+
+**Update, 25-26 Oct, Day 9 build-complete:** retrained for real on Colab's free T4, after
+finding and fixing four bugs (three in the measurement code, one real training bug that needed
+the GPU step rerun -- full story in `docs/BUILD_LOG.md`'s 25-26 Oct entries and the Day 9
+checklist above). `docs/adr/007-finetuning-outcome.md` moved from PENDING to **Accepted,
+conditionally**: adopt the QLoRA-tuned model, but validate it against a broader, non-template
+question set before it replaces the frontier-API call in `TextToSqlService`'s primary path --
+that validation is explicitly not done as part of this ADR, and is the one open item carried
+forward from Day 9.
+
+**Day 9 is now fully build-complete, all 6 of 6 steps shipped** (MCP server + pair generator
+from 22 Oct, fine-tuning benchmark + ADR-007 from 25-26 Oct). Nothing above blocks Day 10.
+
+## Next: Day 10 -- package and launch the job campaign
+
+Per the sprint doc's own D10 section: a build half (~6h -- README with architecture diagram,
+agent roster, results table, cost/latency, ADR index, limitations, roadmap; a 3-minute demo
+video; a case-study page on your domain, linked from the landing page that was itself deferred
+here from Day 2-3; tag `v0.1.1`; a final Daily Sprint Report) and a career half (~5h -- CV
+variants for AI Analytics Consultant / GenAI Engineer / Agentic AI Engineer / AI Solutions
+Engineer, LinkedIn headline/About/Featured + one architecture post, a 60-second and 5-minute
+pitch rehearsed against the sprint doc's 40 Tier-A interview questions, and 15-20 applications
+across India/remote/UK/EU) that run in parallel, not sequentially. One standing constraint going
+into it: the sprint doc is explicit that the repo can claim "benchmarked a QLoRA fine-tune for
+text-to-SQL," not "deployed a fine-tuned model to production," since ADR-007 is
+adopt-conditionally, not adopt-and-shipped.

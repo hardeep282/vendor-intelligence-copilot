@@ -1,11 +1,12 @@
-# HANDOFF: Vendor Intelligence Copilot, end of chat 6 (Days 7-8) → start chat 7 (Day 9)
+# HANDOFF: Vendor Intelligence Copilot, end of chat 7 (Day 9) → start chat 8 (Day 10)
 
-Written: Thu 22 Oct 2026. Paste this whole file into the new chat together with the two files listed under "Attach".
-Superseded version (end of chat 5, Day 6 → start chat 6) is in git history at the previous commit to this file.
+Written: Mon 26 Oct 2026. Paste this whole file into the new chat together with the two files listed under "Attach".
+Superseded version (end of chat 6, Days 7-8 → start chat 7) is in git history at the previous commit to this file.
 
-**Note on this handoff's span:** Days 7 and 8 were both built in the same chat as the Day 6→7
-handoff (no new chat was started at the Day 7→8 boundary), so this file covers two days of work,
-not one -- same discipline as every prior handoff, just a wider slice this time.
+**Note on this handoff's span:** Day 9 ran across two sittings in the same chat -- steps 1 and 4
+(pair generator, MCP server) on 22 Oct, then steps 2-3 and 5-6 (the fine-tuning benchmark)
+scaffolded on 23 Oct and actually retrained for real on 25-26 Oct after four bugs were found and
+fixed. All of it is one Day 9, covered here as a single completed day.
 
 ## Attach to the new chat (in this order)
 
@@ -13,48 +14,56 @@ not one -- same discipline as every prior handoff, just a wider slice this time.
    Model Selection Agent, guardrails/tokenization/fine-tuning/cost/latency/temperature coverage --
    and Addendum A2 §1, adopted Day 8: fallback model + graceful degradation, rate limiting,
    reliability patterns, prompt/model version pinning, determinism note)
-2. `Job_Ready_Sprint_10_Days_v3.md` (sprint plan v3) -- **bring Day 9's exact step list; it was
+2. `Job_Ready_Sprint_10_Days_v3.md` (sprint plan v3) -- **bring Day 10's exact step list; it was
    not re-typed into this handoff, same discipline as every prior handoff, and this new chat has
    no other way to see it**
 3. This file
 
 ## First message for the new chat
 
-> SPRINT MODE, continue from this handoff. Days 7-8 are fully built, tested, and released:
-> **Day 7** (Guardian, guardrails, approvals -- 8 of 8 steps, one cut-first): the Guardian node
-> (role/audience/provenance/raw-row checks, ALLOW/REDACT/BLOCK/ESCALATE, worst-severity-wins,
-> audit log), Presidio PII + secret patterns + canary tokens, a topology test proving no path to
-> END skips the Guardian, the approval-gate `interrupt()`/`resume_approval()` flow, the input gate
-> (kill switch, injection heuristics, scope, rate limit, daily spend cap), trace masking, and the
-> SQL/privacy red-team suites -- an injection *classifier* (the sprint doc's cut-first allowance)
-> is the one skipped item.
-> **Day 8** (product layer, Addendum A2 §1 -- 7 of 7 steps): `POST /ask` streamed over SSE,
-> invite-code + API-key auth with per-user/IP rate limiting and a daily spend cap, a
-> deterministic-first CI eval gate with a budget-capped, licence-aware `llm_judged` layer, a
-> fallback model + graceful degradation + prompt/model version pinning into traces, a determinism
-> note, an optional Postgres checkpointer alongside the existing SQLite one, and a minimal UI
-> (chat, live agent-status, citations, pending-review badge, approvals panel) plus the
-> `POST /ask/approve` endpoint it needed.
-> **Released:** `v0.1.0` is tagged on `main` (`git tag -l -n99 v0.1.0` has the full release
-> note). 465 tests pass; ruff/mypy clean. Two honest, stated gaps: the Postgres checkpointer
-> path is unit-tested but not run against a live database (no Docker daemon in the build
-> environment), and the CI eval gate's `llm_judged` layer has never produced real scores anywhere
-> (needs your API key + the real snapshot/Chroma index, which this repo's own licence rule keeps
-> out of CI by design).
-> Day 9: fine-tuning benchmark and MCP (MCP is never cut, per the sprint plan) -- read its exact
-> step list in the sprint doc before planning, this handoff deliberately doesn't re-type it.
-> Repo: hardeep282/vendor-intelligence-copilot (private), branch main, latest commit `4a56275`,
-> tag `v0.1.0` on that same commit. Attach it with push access, clone it, rebuild the snapshot
-> from the public analytics repo's workbook (`scripts/build_snapshot.py`), run the checks
-> (`uv run pytest -q`, `uv run ruff check .`, `uv run mypy`), confirm the state in five lines,
-> flag anything inconsistent with `docs/PROJECT_PROGRESS.md`, then give me the Day 9 plan with
-> hour estimates and start step 1.
-> Do not re-derive decisions already settled in `docs/adr/` (000-006) or re-explain things
+> SPRINT MODE, continue from this handoff. Day 9 is fully built, tested, and decided:
+> **Step 1** (question->SQL pair generator, `copilot.sql.pair_generation`): run for real on 22
+> Oct, 1016 candidates, 0 execution/validator failures, sampled to 400 (`evals/datasets/
+> sql_pairs_v1.jsonl`, superseded by v2 below).
+> **Step 4** (Vendor Analytics MCP server, `copilot.mcp.server` -- "never cut" per the sprint's
+> own cut-first list): built and run for real against the real snapshot the same session.
+> **Steps 2-3 and 5-6** (QLoRA fine-tuning benchmark): scaffolded 23 Oct, then retrained for real
+> 25-26 Oct on Colab's free T4 after finding and fixing four bugs -- few-shot retrieval leakage
+> (held-out questions were drawing themselves as their own top example), an unlearnable
+> vendor-casing pattern in `sql_pairs_v1` (fixed as `sql_pairs_v2`, 400 pairs, 85/15 split), an
+> SQL-extraction bug gluing trailing model prose onto otherwise-correct SQL, and the one real
+> training bug -- `MAX_LEN=512` silently truncated away every training example's SQL answer
+> before it was appended, so the first "trained" adapter was a mathematical no-op (loss
+> `0.000000`, every LoRA `B` matrix still zero). Fixed to `MAX_LEN=1024`, retrained in one
+> uninterrupted sitting (loss 0.551 -> 0.0006 over 66 steps), sanity-checked word-for-word
+> against ground truth before trusting any number. Real result: `qlora` scores 1.0 execution
+> accuracy and 1.0 executable rate against `base_zero_shot` (0.017 / 0.25) and `base_few_shot`
+> (0.1 / 0.333), with no latency penalty (4.424s vs 6.764s / 3.828s, n=60 held-out).
+> **ADR-007: adopt, conditionally** -- `sql_pairs_v2` is a fixed template family of real
+> vendor/column fill-ins, so the 1.0 proves the model learned that family thoroughly, not that it
+> generalizes to arbitrary new question phrasings; validate against a broader question set before
+> this replaces the frontier-API call in `TextToSqlService`'s primary path -- not yet done, the
+> one open item carried forward.
+> **Day 9 is 6 of 6 steps shipped.** `docs/BUILD_LOG.md` and `docs/PROJECT_PROGRESS.md` are both
+> current through this point.
+> Repo: hardeep282/vendor-intelligence-copilot (private), branch main, latest commit `b4b57f9`
+> "Record Day 9's real result: adopt, conditionally", tag `v0.1.0` still on the Day 8 release
+> commit (Day 9 added no new release tag). Attach it with push access, clone it, rebuild the
+> snapshot from the public analytics repo's workbook (`scripts/build_snapshot.py`), run the
+> checks (`uv run pytest -q`, `uv run ruff check .`, `uv run mypy`), confirm the state in five
+> lines, flag anything inconsistent with `docs/PROJECT_PROGRESS.md`, then give me the Day 10 plan
+> with hour estimates and start the build half (README first).
+> Do not re-derive decisions already settled in `docs/adr/` (000-007) or re-explain things
 > already covered in `docs/BUILD_LOG.md` -- read them, then build.
 > Standing rule, unchanged: whenever you add a new file or change what an existing file does, add
 > or update its entry in `docs/CODE_MAP.md` in the same commit. The companion Code Map HTML
 > artifact (https://claude.ai/artifact/DEhdU4uUTqPr7y1RgWDRCA, Version 8, current through Day 5)
-> stays a one-time, end-of-sprint update -- don't republish it mid-sprint.
+> is due its one-time, end-of-sprint update as part of Day 10 -- this is the day that update
+> finally happens, not a mid-sprint republish.
+> One constraint specific to Day 10: the sprint doc says the README/case-study page can claim
+> "benchmarked a QLoRA fine-tune for text-to-SQL," not "deployed a fine-tuned model to
+> production" -- ADR-007 is adopt-conditionally, not adopt-and-shipped, and the copy should say
+> exactly that.
 
 ## Repo and versions
 
@@ -62,93 +71,54 @@ not one -- same discipline as every prior handoff, just a wider slice this time.
 |---|---|
 | Repo | `hardeep282/vendor-intelligence-copilot` (private; attach with push access) |
 | Branch | `main` |
-| Latest commit | `4a56275` "docs: record real vw_PortfolioHealth risk-classifier validation (Oct 17)" |
-| Release tag | `v0.1.0`, on the same commit as `main`'s tip (verified: both resolve to `4a56275538a9a7e1663d2e498f4001a2be23d7407` on GitHub) |
+| Latest commit | `b4b57f9` "Record Day 9's real result: adopt, conditionally" |
+| Release tag | `v0.1.0`, still on the Day 8 release commit -- Day 9 added no new tag; Day 10 is expected to tag `v0.1.1` |
 | Local folder | `C:\Projects\vendor-intelligence-copilot` |
 | Analytics repo (source data) | `hardeep282/Commercial-Analytics---Beverage-Distribution-Project---Vendor-and-Stock-Analysis` (public) |
-| Python / tooling | Python 3.12, uv, ruff, mypy (strict), pytest; FastAPI, boto3, anthropic, langsmith, sqlglot, tiktoken, tokenizers, sentence-transformers, chromadb, rank-bm25, langgraph 1.2.15, langgraph-checkpoint-sqlite, **langgraph-checkpoint-postgres + psycopg[binary,pool] (new Day 8)**, **presidio-analyzer + presidio-anonymizer (new Day 7)**, scikit-learn, xgboost, shap |
+| Python / tooling | Python 3.12, uv, ruff, mypy (strict), pytest; FastAPI, boto3, anthropic, langsmith, sqlglot, tiktoken, tokenizers, sentence-transformers, chromadb, rank-bm25, langgraph 1.2.15, langgraph-checkpoint-sqlite, langgraph-checkpoint-postgres + psycopg[binary,pool], presidio-analyzer + presidio-anonymizer, scikit-learn, xgboost, shap, **peft + bitsandbytes + transformers (Day 9, Colab-only -- deliberately kept out of `pyproject.toml`, see `finetuning/README.md`)** |
 | Deployed version | None yet. Target `https://api.vendor.<domain>/health` |
-| Code Map artifact | https://claude.ai/artifact/DEhdU4uUTqPr7y1RgWDRCA (Version 8, current through Day 5 -- **next update is the one-time end-of-sprint pass, not per-commit**) |
-| Day 8 walkthrough artifact | https://claude.ai/artifact/LzWEFpD2k1mk1Ne8J7YZMf (commands + architecture-concept diagrams, Day 8-specific, not part of the Code Map cadence) |
+| Code Map artifact | https://claude.ai/artifact/DEhdU4uUTqPr7y1RgWDRCA (Version 8, current through Day 5 -- **due its one-time end-of-sprint update during Day 10**) |
+| Day 8 walkthrough artifact | https://claude.ai/artifact/LzWEFpD2k1mk1Ne8J7YZMf (commands + architecture-concept diagrams, Day 8-specific) |
+| Day 10 roadmap artifact | https://claude.ai/artifact/DdsJttaoMqKyRy5QsXewEY (close-Day-9 + Day-10 task breakdown, written going into this handoff) |
 
-## What exists (verified), end of Day 8
+## What exists (verified), end of Day 9
 
-Everything from the Day 1-6 handoff (data snapshot, disclosure policy, golden v1/v2, API
-skeleton, Docker/CI/CD, IAM, SQL safety layer 0, LLM client, InsightService, Text-to-SQL,
-RAG (corpus/chunking/embeddings/hybrid retrieval/permission filter/Corrective RAG/eval harness,
-plus MMR, a LangGraph/LangChain adapter facade, HyDE and Self-RAG added 18 Oct), forecast/
-inventory/risk-classifier ML tools, the Model Selection Agent, the five specialists, the
-Orchestrator with `Send` fan-out, the Verifier, per-agent budgets, a SQLite checkpointer -- all
-unchanged, still passing) **plus**, built across Days 7-8:
+Everything from the Day 7-8 handoff (Guardian, approval gate, input gate, `/ask` over SSE, auth
++ rate limiting, CI eval gate, reliability/determinism, Postgres checkpointer option, minimal UI
++ `/ask/approve` -- all unchanged, still passing) **plus**, built across Day 9:
 
-- **Guardian** (`copilot.guardrails.guardian.Guardian`): role policy, audience policy, data-class
-  provenance (reads each specialist's honestly-filled `AgentResult.data_classes`), a raw-row-shape
-  heuristic, PII via Presidio (regex fallback when its spaCy model isn't available) + secret
-  patterns + canary-token leak detection, grounding (`not verified` → ESCALATE, not BLOCK --
-  unconfirmed-safe isn't known-unsafe). Worst-severity-wins (BLOCK > ESCALATE > REDACT > ALLOW);
-  every finding's reason code lands in `reason_codes` regardless of which one wins. A topology
-  test asserts, against the compiled graph's own edges, that no path to `END` skips the Guardian.
-- **Approval gate** (`Orchestrator._approval_gate`): an Action draft the Guardian allowed or
-  redacted (never one already BLOCKed/ESCALATEd) pauses one node short of `END` via LangGraph's
-  `interrupt()`, until `resume_approval(thread_id, decision, approver_role=, edited_answer=)`
-  sends back `Command(resume=...)`. An `edit` decision is re-run through the Guardian before its
-  text is accepted (new, unreviewed text). Role-checked in plain Python before the graph is
-  touched. Skips gracefully when built with no checkpointer (most tests, one-shot callers).
-- **Input gate** (`copilot.guardrails.input_gate.InputGate`): kill switch, input length,
-  injection heuristics, scope, rate limit, daily spend cap -- cheapest check first, every finding
-  BLOCK-only (nothing to partially salvage before a request starts). Runs as `answer()`'s first
-  line of work; a BLOCK returns straight away, before the graph (or any spend) exists.
-- **ADR-006 (Guardian design)** answers the 4 open questions: severity ordering and the
-  vendor-audience/raw-row-shape check scopes are confirmed as-shipped from Day 7; ESCALATE's
-  intended behaviour changed from "withhold until manually released" to "show as visibly pending
-  review" -- this was scheduled as a *required* Day 8 task (not deferred) and shipped: the API/
-  orchestrator layer returns a structured pending-review state with a `review_id`, and the Day 8
-  UI renders it as its own badge.
-- **`POST /ask`** (`copilot.api.main`): the Orchestrator streamed over Server-Sent Events, hand-
-  rolled (`event: <type>\ndata: <json>\n\n`) rather than a library, because `EventSource` can't
-  send a custom `Authorization` header -- the browser side uses `fetch()` + `ReadableStream`
-  instead.
-- **Auth + rate limiting**: invite-code and API-key auth (`copilot.api.auth`), per-user/per-IP
-  rate limiting and a per-identity daily spend cap (`copilot.api.rate_limit`, Addendum A2 §1.6) --
-  both run before the Orchestrator is touched, same "cheapest/least-trusting check first"
-  ordering the input gate already established.
-- **CI eval gate** (`scripts/run_eval_gate.py`, Addendum A2 §1.3): deterministic-first -- the
-  full test suite, tolerant of a fixed 15-item known-failure allowlist, zero real LLM calls --
-  plus an optional, budget-capped `llm_judged` layer that cleanly SKIPs (exit 0) wherever this
-  repo's own licence rule keeps the real snapshot/Chroma index out of CI, verified bidirectionally
-  (clean pass, and a deliberately-injected regression correctly fails with exit 1).
-- **Reliability + determinism** (Addendum A2 §1.1/§1.2/§1.5/§1.7): a fallback model for when the
-  primary errors, graceful degradation when a narration call fails, prompt/model version pinning
-  into every LangSmith trace, and a written determinism note explaining exactly what in this
-  system is deterministic and what isn't, and why.
-- **Postgres checkpointer** (`copilot.api.dependencies._build_checkpointer`, Day 8 step 7): an
-  alternative to the existing local `SqliteSaver`, selected by `settings.checkpoint_database_url`
-  -- unset keeps SQLite (fine for one process); a real DSN builds a `psycopg_pool.ConnectionPool`
-  → `PostgresSaver(pool)` (survives restarts, shareable across replicas). The `Orchestrator`
-  itself never imports psycopg -- the decision is pushed entirely to the dependency-injection
-  layer via `BaseCheckpointSaver`. **Not verified against a live Postgres** (no Docker daemon in
-  the build environment) -- branch-selection logic and priority-over-sqlite are unit-tested; a
-  real round-trip against `infra/local/compose.yaml` is still owed.
-- **Minimal UI + `POST /ask/approve`** (Day 8 step 6, closing a real gap the UI work surfaced):
-  a credentials panel, a chat box, a live agent-status strip built from real
-  `StreamEvent(type="node")` events in execution order, result badges (verified, Guardian
-  escalated/blocked, pending-review with its `review_id`, pending-approval), a citations section
-  built entirely from real `AgentResult` fields (nothing invented for the UI), and an approval
-  panel -- backed by the new `/ask/approve` endpoint, which didn't exist until this step.
-- **Checks:** 465 tests pass (`uv run pytest -q`; 15 known missing-local-data failures, same as
-  every prior day); ruff, mypy (strict) clean.
-- **Released:** `pyproject.toml` bumped to `0.1.0`; tagged `v0.1.0` on `main`
-  (`git tag -l -n99 v0.1.0` has the full release note, honest gaps included) -- **and now
-  actually pushed to GitHub**, after this chat found and fixed a stale `v0.1.0` tag left over
-  from an earlier point in the project (it had been pointing at a pre-release commit,
-  `d81dbb4`, where `pyproject.toml` still said `0.0.1`; deleted and recreated against the real
-  release commit, confirmed by direct `git ls-remote`).
-- **Also landed this chat, outside the Day 7-8 build itself:** a real `vw_PortfolioHealth` run
-  of the Day 5 risk classifier (17 Oct, your machine, real SQL Server export) -- n=10,495 real
-  SKU rows, confirming the 14 Oct leakage fix generalizes to real data (see the Day 5 results
-  table in `docs/PROJECT_PROGRESS.md` for the actual numbers). This had been sitting as an
-  uncommitted local edit on the laptop, separately from the cloud build, and was reconciled and
-  pushed as part of closing out Day 8.
+- **Question->SQL pair generator** (`copilot.sql.pair_generation`): generates candidate
+  question->SQL pairs from a small template family applied to real vendor names and columns,
+  executes each against the real snapshot, keeps only pairs that both run and pass the SQL
+  validator. Real run: 1016 candidates -> 400 kept, 0 execution failures, 0 validator failures.
+  `sql_pairs_v1.jsonl` had vendor-name literals compared case-sensitively (unlearnable -- the
+  model can't learn a rule that contradicts itself across examples); `sql_pairs_v2.jsonl` fixes
+  this by always matching vendor names case-insensitively, and is the dataset everything below
+  actually trains and evaluates on.
+- **Vendor Analytics MCP server** (`copilot.mcp.server`): exposes the project's existing vendor
+  analytics as MCP tools/resources rather than bypassing `copilot.llm.client.LLMClient` or the
+  five specialists -- the sprint's explicit "MCP never cut" item. Built and exercised against the
+  real snapshot; `tests/test_mcp_server.py` covers it.
+- **QLoRA fine-tuning benchmark** (`finetuning/`): `day9_qlora_colab.ipynb` (4-bit NF4 + LoRA
+  r=16/alpha=32/dropout=0.05, completion-only loss, 3 epochs, Qwen2.5-1.5B-Instruct, Colab free
+  T4) fine-tunes on `sql_pairs_v2`'s 340-pair train split; `eval_compare.py` re-executes
+  base_zero_shot / base_few_shot / qlora against the 60-pair held-out split and the real
+  snapshot, comparing result rows exactly (not string match). Four bugs found and fixed before
+  trusting any number -- full story in `docs/BUILD_LOG.md`'s 25-26 Oct entries; the one real
+  training bug (`MAX_LEN=512` truncating away every answer) required an actual GPU retrain, not
+  just re-evaluation.
+- **ADR-007 (fine-tuning outcome), resolved:** adopt the QLoRA-tuned model into
+  `TextToSqlService`'s path, conditionally on validating against question phrasings outside
+  `sql_pairs_v2`'s fixed template family first -- not yet done, and explicitly not actioned as
+  part of this ADR. Also recorded as real deployment work, not done here: the adapter needs GPU
+  inference hosting, which the rest of this project deliberately keeps out of (`finetuning/
+  README.md` explains why GPU deps stay out of `pyproject.toml`).
+- **Checks:** full suite passed with the same known-failure count as every prior day at the time
+  of the last real run in this environment (511 passed per `docs/BUILD_LOG.md`'s 25-26 Oct
+  entry); ruff/mypy clean. (A `uv sync`/test re-run attempted while writing this handoff hit a
+  network error fetching the CPU-only `torch` wheel in this environment -- an infrastructure
+  hiccup, not a code regression; re-run `uv run pytest -q` at the start of the Day 10 chat to
+  confirm current numbers before building on top.)
 
 ## Canonical metrics (from the snapshot, tested) — unchanged since Day 1
 
@@ -159,17 +129,26 @@ $5.99M (loss-making $4.35M + freight $1.64M) + excise $18.97M · net profit $109
 adds 5 more verified figures. Real vendor names for testing: `"DIAGEO NORTH AMERICA INC"` and
 `"DIAGEO CHATEAU ESTATE WINES"`.
 
+Day 9's own real numbers (fine-tuning benchmark, n=60 held-out each):
+
+```
+variant             n  executable_rate  execution_accuracy  mean_latency_s
+--------------------------------------------------------------------------
+base_zero_shot     60             0.25               0.017           6.764
+base_few_shot      60            0.333                 0.1           3.828
+qlora              60              1.0                 1.0           4.424
+```
+
 ## Decisions (docs/adr)
 
 ADR-000 prompt corrections · ADR-001 separate repo · ADR-002 licence-safe snapshot · ADR-003 EC2
 + Compose runtime · ADR-004 secrets in SSM, OIDC for CI · ADR-005 direct Anthropic API, not
-Bedrock · **ADR-006 (new, resolved this span): Guardian design** -- severity ordering, ESCALATE's
-visible-pending-review behaviour (a deliberate deviation from what Day 7 first shipped, closed as
-a required Day 8 task), vendor-audience check scope, raw-row-shape detection approach. No other
-new ADR for Day 7-8 -- the input gate, CI eval gate, reliability patterns, and Postgres
-checkpointer all follow postures already established (propose/critique/revise shape, "real thing
-needs real infrastructure, skip gracefully otherwise," interface-based programming over
-`BaseCheckpointSaver`) rather than new build-vs-buy calls. Next ADR number: 007.
+Bedrock · ADR-006 Guardian design. **ADR-007 (new, resolved this span): fine-tuning outcome** --
+adopt the QLoRA-tuned model into the production text-to-SQL path, conditionally on validating it
+against question phrasings outside the benchmark's fixed template family before it replaces the
+frontier-API call -- not yet actioned. No other new ADR for Day 9 -- the MCP server follows the
+project's existing service-boundary conventions rather than a fresh build-vs-buy call. Next ADR
+number: 008.
 
 ## Status of your actions (update before pasting)
 
@@ -190,11 +169,13 @@ needs real infrastructure, skip gracefully otherwise," interface-based programmi
 | Run `scripts/build_rag_index.py` + `scripts/run_rag_eval.py` (+ `--quality`) on your machine | ☐ |
 | Run `scripts/train_risk_classifier.py` against your real `vw_PortfolioHealth` export | ☑ (17 Oct) |
 | A real walkthrough of the new UI against a running server (`uv run uvicorn copilot.api.main:app`) | ☐ |
-| `git push` + `git push origin v0.1.0` (tag) | ☑ (22 Oct, this chat -- including fixing a stale tag) |
+| `git push` + `git push origin v0.1.0` (tag) | ☑ (22 Oct) |
+| Run the QLoRA fine-tuning notebook end to end on Colab, paste the printed loss curve and sanity-check outputs back | ☑ (25-26 Oct, this chat) |
+| Decide whether to pursue the Day 10 landing page + domain before or alongside the case-study page | ☐ -- flag your preference at the top of the Day 10 chat |
 
-Day 9 can start before every unchecked row above is done -- same pattern as every day so far.
-If you run any of the scripts above, paste the printed output into the new chat so it gets
-logged in `docs/PROJECT_PROGRESS.md`.
+Day 10 can start before every unchecked row above is done -- same pattern as every day so far,
+though the AWS/domain rows now matter more directly since Day 10's case-study page and demo
+video are strongest with a real live link.
 
 ## How this project runs (carry forward, unchanged)
 
@@ -205,10 +186,12 @@ logged in `docs/PROJECT_PROGRESS.md`.
 - Laptop repo has `core.fileMode=false` and `.gitattributes` (LF for scripts/config/json/jsonl).
 - Claude writes and tests code in its cloud workspace and pushes to the repo; you `git pull` in
   VS Code. **Tag pushes are the one exception** -- this session's git credentials can push
-  commits but not tags (`HTTP 403` on `git push origin <tag>`), confirmed twice now (end of Day 8
-  originally, and again this chat) -- tags must be pushed from your own machine.
+  commits but not tags (`HTTP 403` on `git push origin <tag>`), confirmed twice (end of Day 8,
+  and again that same chat) -- tags must be pushed from your own machine. Expect the same for
+  `v0.1.1` at the end of Day 10.
 - **Keys never go in chat, ever.** Real-API/network scripts run on your machine with your own
-  keys; you paste back the printed results.
+  keys; you paste back the printed results. The Day 9 fine-tuning notebook follows the same rule
+  -- it runs on Colab with your own Google account, not in this cloud session, which has no GPU.
 - The DuckDB snapshot is rebuilt from the public analytics repo's workbook
   (`scripts/build_snapshot.py`) -- never committed.
 - **Docs are the source of truth across chats.** `docs/BUILD_LOG.md` and
@@ -216,12 +199,8 @@ logged in `docs/PROJECT_PROGRESS.md`.
   before building anything, and treat a decision in `docs/adr/` as settled unless you say
   otherwise.
 - **Code Map:** `docs/CODE_MAP.md` updated every file add/change, same commit. The HTML artifact
-  companion is a one-time, end-of-sprint update -- don't republish mid-sprint.
-- **New this span:** when you and Claude disagree about which machine has the current state of a
-  file (as happened with `orchestrator.py` between the laptop and the cloud clone this chat), the
-  cloud clone is the one with continuous build history and should generally be treated as ahead
-  -- but check before assuming, the same way this chat did (decompressing git objects by hand
-  when no shell was available on the linked device) rather than guessing.
+  companion is a one-time, end-of-sprint update -- **Day 10 is that update**, not a mid-sprint
+  republish before this.
 
 ## Open RAID items (docs/RAID.md)
 
@@ -229,27 +208,31 @@ R1 High: `Vendor_Summary.xlsx` licence check, still open. R2 High: scope, ongoin
 only 12 months of demand. R6 Medium: 0.1% revenue gap between two source tables. R8 High: AWS
 Free plan ends ~25 Dec 2026. R9 Low: Docker image only builds in CI, mitigated. R10 High:
 text-to-SQL semantic traps -- layers 1-4 + golden v2 in, red team done Day 7. R11 High:
-prompt-to-SQL injection -- layer 0 + sqlglot allowlist + Day 7 red team, mitigating. **R12
-Medium:** the Orchestrator's per-specialist timeout bounds how long it *waits*, not whether a
-runaway specialist's thread actually stops -- acceptable for this sprint's single-process
-posture, open for a real concurrent-request deployment.
+prompt-to-SQL injection -- layer 0 + sqlglot allowlist + Day 7 red team, mitigating. R12 Medium:
+the Orchestrator's per-specialist timeout bounds how long it *waits*, not whether a runaway
+specialist's thread actually stops -- open for a real concurrent-request deployment. **R13 New,
+Medium:** the QLoRA adapter's 1.0 accuracy is proven only within `sql_pairs_v2`'s fixed question
+template family (ADR-007's own condition) -- treat any claim about it in the Day 10 README/
+case-study as scoped to that, not as general text-to-SQL accuracy.
 
 ## Costs to date
 
 AWS $0, domain $0. LLM: ~$0.01 (Day 3, one real `InsightService` call). Day 4-5 real-data runs:
-embedding/RAG-eval under $1 total. Day 6's `run_orchestrator_golden.py` not yet run. Day 7 added
-$0 (every guardrail/privacy test is deterministic). Day 8 added $0 (auth/rate-limit/SSE/
-checkpointer/UI work is all deterministic Python; the CI eval gate's `llm_judged` layer correctly
-SKIPPED with no API key here). Expected once Day 2 resources exist: ~$22/month on AWS (Mumbai).
+embedding/RAG-eval under $1 total. Day 6's `run_orchestrator_golden.py` not yet run. Day 7-8
+added $0 (deterministic work, `llm_judged` layer correctly SKIPPED with no API key). Day 9 added
+under $1 total: Colab's free T4 tier has no compute cost, and the real spend is the 180
+base/few-shot/QLoRA generations `eval_compare.py` ran against the held-out set; the MCP server
+and pair generator added $0 (deterministic / local work). Expected once Day 2 resources exist:
+~$22/month on AWS (Mumbai).
 
 ## Cuts and moves (carry forward)
 
-Landing page → Day 10. Day 3 step 7 (question→SQL generator) → stayed cut. Day 4's cross-encoder
-reranker and full Ragas suite → both reduced, per sprint-doc cut-first allowances. Day 5's MLflow
-→ CSV run-log instead. Day 6's LangGraph Studio → cut-first (external tool, not code). Day 7's
-injection *classifier* → cut-first, the one Day 7 item not shipped (heuristic input-gate checks
-cover the deterministic cases). **Code Map HTML artifact cadence** → once at the end of the
-sprint, unchanged.
+Landing page → Day 10, **still not built as of this handoff** -- needed before or alongside the
+Day 10 case-study page, since the sprint doc has the case-study page linked from it. Day 3 step 7
+→ stayed cut (built later, as Day 9 step 1). Day 4's cross-encoder reranker and full Ragas suite
+→ both reduced. Day 5's MLflow → CSV run-log instead. Day 6's LangGraph Studio → cut-first. Day
+7's injection *classifier* → cut-first. **Code Map HTML artifact cadence** → once at the end of
+the sprint -- **that update is now due, as part of Day 10**.
 
 ## Living documents (all in the repo)
 
@@ -260,40 +243,53 @@ sprint, unchanged.
 | `docs/COMMANDS.md` | Every command used, by day, with explanations |
 | `docs/TROUBLESHOOTING.md` | Problems hit and their fixes |
 | `docs/RAID.md` | Risks, assumptions, issues, dependencies |
-| `docs/adr/` | ADR-000 to ADR-006 |
+| `docs/adr/` | ADR-000 to ADR-007 |
 | `docs/specs/text_to_sql_safety.md` | The 6-layer SQL safety spec Day 3 implemented |
 | `docs/CODE_MAP.md` | Plain-language map of every file: what it does, takes in, gives out, talks to |
 | `docs/HANDOFF.md` | This file (previous version in git history) |
+| `finetuning/README.md` | How to run the Day 9 Colab notebook and comparison script |
+| `finetuning/results_template.md` | Day 9's full results table, bugs found and fixed, caveats |
 
 ## Pages from earlier chats
 
 Plan and tracker: https://claude.ai/artifact/AYJf5GTMPMdqPoXfcSztA1 · Day 1 setup guide:
 https://claude.ai/artifact/LVqBF2eUBjDrB81kYF8JcC · Day 2 deploy guide:
 https://claude.ai/artifact/2jkTr9nxbjB6VbBNTgLtGX · Day 3 step 4/5 explainer:
-https://claude.ai/artifact/MLZ5DhA5r1wHkJNpM2D77H · Code Map (once, at the end of the sprint):
-https://claude.ai/artifact/DEhdU4uUTqPr7y1RgWDRCA · Day 8 walkthrough (commands + architecture
-diagrams): https://claude.ai/artifact/LzWEFpD2k1mk1Ne8J7YZMf
+https://claude.ai/artifact/MLZ5DhA5r1wHkJNpM2D77H · Code Map (due its one-time update in Day 10):
+https://claude.ai/artifact/DEhdU4uUTqPr7y1RgWDRCA · Day 8 walkthrough:
+https://claude.ai/artifact/LzWEFpD2k1mk1Ne8J7YZMf · Day 10 roadmap (close-Day-9 + Day-10 task
+breakdown): https://claude.ai/artifact/DdsJttaoMqKyRy5QsXewEY
 
-## Day 9 scope — read the sprint doc for the exact step list
+## Day 10 scope — read the sprint doc for the exact step list
 
-Known anchors going in (don't re-derive, the sprint doc v3 has the full itemized list):
+Known anchors going in (don't re-derive, the sprint doc v3 has the full itemized list under its
+D10 heading):
 
-1. **Theme line from `docs/PROJECT_PROGRESS.md`'s sprint-status table:** "Fine-tuning benchmark
-   and MCP (MCP never cut)" -- the parenthetical is a standing instruction from earlier in this
-   project: whatever else gets trimmed on Day 9, MCP does not.
-2. Nothing in this repo yet implements fine-tuning or MCP -- this is a clean start for both,
-   unlike most prior days which extended something already partially built.
-3. Likely natural anchor points already in this codebase that Day 9 may hook into: `copilot.llm.client.LLMClient`
-   (the one place every model call already goes through -- an MCP tool-use surface or a
-   fine-tuned-model variant would likely plug in here rather than bypass it), and the five
-   existing specialists (`copilot.agents.specialists`) as the likely candidates for whatever gets
-   fine-tuned or exposed over MCP, if the sprint doc's Day 9 steps name specific agents.
+1. **Theme:** "Package and launch the job campaign" -- this is the sprint's last day; the build
+   half and the career half run in parallel, not sequentially.
+2. **Build half (~6h):** README (problem, live link, architecture diagram, agent roster, results
+   table, eval numbers, cost + latency, ADR index, limitations, roadmap); a 3-minute demo video
+   (a question, agents working, a Guardian block, an approval); a case-study page on your domain
+   linked from the landing page (landing page itself is still unbuilt -- see "Cuts and moves");
+   tag `v0.1.1`; Progress Tracker update; final Daily Sprint Report.
+3. **Career half (~5h):** CV variants (AI Analytics Consultant, GenAI Engineer, Agentic AI
+   Engineer, Analytics/AI Solutions Engineer -- every line backed by the repo); LinkedIn headline/
+   About/Featured + one architecture post; 60-second and 5-minute pitch, rehearsed against the
+   sprint doc's 40 Tier-A interview questions; 15-20 applications across India, remote, UK
+   (sponsorship) and EU.
+4. **One constraint carried from ADR-007:** claim "benchmarked a QLoRA fine-tune for
+   text-to-SQL," never "deployed a fine-tuned model to production" -- the README and case study
+   should say exactly that.
+5. **After Day 10:** the sprint doc frames this as the start of the depth track -- same repo,
+   same folder layout, same agent contracts, no rewrites -- plus the deferred Addendum A2 §2
+   items (reranking, chunking experiments, model routing, async/load testing, semantic caching,
+   circuit breaker, full OWASP red-team set) and ADR-007's own open validation condition.
 
-**Read `Job_Ready_Sprint_10_Days_v3.md`'s Day 9 section for the exact step-by-step list and hour
+**Read `Job_Ready_Sprint_10_Days_v3.md`'s D10 section for the exact step-by-step list and hour
 estimates** before planning -- this handoff deliberately doesn't re-type it, the same discipline
 every prior handoff used.
 
 ## Alternative start
 
 Your `Next_Chat_Continuation_Prompt.md` template works too: put v2.7+A1+A2§1 in Part 1, this file
-in Part 2, `docs/PROJECT_PROGRESS.md` in Part 3, and "Resume at: Day 9, step 1".
+in Part 2, `docs/PROJECT_PROGRESS.md` in Part 3, and "Resume at: Day 10, build half, step 1".
