@@ -2249,3 +2249,34 @@ silently truncated away every training example's answer (the one real training b
 an actual GPU retrain). Every one of them was found the same way -- reading a handful of raw
 results by hand instead of trusting a summary table on sight -- before any number got written
 down as a fact.
+
+## 27 Oct 2026 -- Day 10 build half, started
+
+Confirmed repo state against the Day 9->10 handoff at the start of this chat: cloned fresh,
+`git rev-parse HEAD` matched the handoff's expected successor commit, `v0.1.0` tag present on
+origin (shallow clone needed an explicit `git fetch --tags` to see it -- not an inconsistency,
+just how `--depth 1` works). `uv sync --frozen` failed on `torch==2.14.1+cpu` with a proxy
+tunnel error fetching from `download-r2.pytorch.org` -- identical symptom to the one the handoff
+itself flagged ("an infrastructure hiccup, not a code regression"); retried once, same result,
+not pursued further since it's an environment-specific gap unrelated to Day 10's own scope
+(packaging and career materials, not code changes).
+
+Found one real inconsistency while confirming state: `docs/HANDOFF.md` narrated an "R13" RAID
+item (the QLoRA adapter's 1.0 accuracy being scoped to `sql_pairs_v2`'s fixed template family)
+that was never actually written into `docs/RAID.md` -- added as R13 now.
+
+Shipped: the full README.md (previously an 8-line stub) -- problem statement, a Mermaid
+architecture diagram matching the real compiled graph's topology (Guardian as the only path to
+END), the agent roster table including the Model Selection Agent (built beyond the base sprint
+scope per Addendum A1), a results table built entirely from numbers already recorded in this
+file and `docs/PROJECT_PROGRESS.md` (no new numbers invented), the ADR index, and an explicit
+"Status and honest limitations" section naming every open item (no live URL, QLoRA benchmarked-
+not-deployed per ADR-007's own condition, Postgres checkpointer unit-tested not live-proven,
+pending real-key runs). Also shipped `docs/DEMO_SCRIPT.md` (a timed 3-minute script -- problem,
+agents working in parallel, a real Guardian block on camera, a human approval, the honest
+QLoRA caveat, close) and `docs/CASE_STUDY.md` (case-study page content, held as a repo file
+since the landing page itself doesn't exist yet -- Day 2 scope, still pending).
+
+Still open for the build half: the Code Map HTML artifact's one-time end-of-sprint update
+(version 8, current through Day 5), the Progress Tracker page, tagging `v0.1.1`, and the final
+Daily Sprint Report. Career half not started.

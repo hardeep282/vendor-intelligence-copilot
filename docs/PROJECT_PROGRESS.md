@@ -20,7 +20,7 @@ Day 10 -- package and launch the job campaign -- is next, nothing above blocks i
 | 7 | Guardian, guardrails, approvals | **Build done: 8 of 8 steps shipped** (injection classifier cut-first) |
 | 8 | Product, API keys, latency budget, evals in CI, release v0.1 (Addendum A2 §1) | **Build done: 7 of 7 steps shipped** -- v0.1.0 not yet tagged, see "Next step" |
 | 9 | Fine-tuning benchmark and MCP (MCP never cut) | **Build done: 6 of 6 steps shipped.** Step 1 (SQL pair generator) and step 4 (MCP server) done and run for real; steps 2-3 and 5-6 (Colab QLoRA fine-tune, base/few-shot/QLoRA comparison, results table + ADR) retrained for real on Colab's T4 after fixing four bugs -- see `docs/BUILD_LOG.md`'s 25-26 Oct entries. **ADR-007: adopt, conditionally** (validate against a broader question set before replacing the frontier-API call in production) |
-| 10 | Package and launch the job campaign | Not started -- see "Next step" |
+| 10 | Package and launch the job campaign | **Build half in progress**: README, demo script, case-study content shipped. Code Map artifact update, Progress Tracker update, v0.1.1 tag and career half still open -- see "Next step" |
 
 ## Day 3 checklist (sprint doc v2/v3 D3)
 
@@ -583,3 +583,22 @@ across India/remote/UK/EU) that run in parallel, not sequentially. One standing 
 into it: the sprint doc is explicit that the repo can claim "benchmarked a QLoRA fine-tune for
 text-to-SQL," not "deployed a fine-tuned model to production," since ADR-007 is
 adopt-conditionally, not adopt-and-shipped.
+
+**Update, 27 Oct, Day 10 build half in progress:** confirmed repo state at the start of this
+chat (matched the handoff exactly: commit `b4b57f9`'s successor `2e3b0c2`, `v0.1.0` tag present
+on origin, 511 passed/0 failed as of the last real run on 26 Oct). `uv sync --frozen` hit the
+same infrastructure hiccup the handoff already flagged -- the `download-r2.pytorch.org` CDN host
+isn't reachable through this session's proxy -- confirmed non-blocking (same category as every
+prior day's environment gap, not a code regression) and not retried further since it doesn't
+block Day 10's own scope. Found and fixed one real inconsistency while confirming state: the
+handoff's own narrative mentioned an "R13" RAID item that was never actually added to
+`docs/RAID.md` -- added now.
+
+Shipped so far: the full README (problem, Mermaid architecture diagram, agent roster incl. the
+Model Selection Agent, a results table pulling only real numbers already recorded in this file,
+the ADR index, an explicit limitations section, and the roadmap), `docs/DEMO_SCRIPT.md` (timed
+3-minute script with a recording checklist), and `docs/CASE_STUDY.md` (case-study page content,
+ready to publish once the landing page exists). Still open for the build half: the Code Map
+artifact's one-time end-of-sprint update, the Progress Tracker page, tagging `v0.1.1`, and the
+final Daily Sprint Report. Career half (CV variants, LinkedIn, pitch rehearsal, applications) not
+started yet.
