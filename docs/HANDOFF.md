@@ -27,8 +27,8 @@ Written: Tue 27 Oct 2026. Previous version (end of chat 7, Day 9 → Day 10) is 
 
 | Item | Value |
 |---|---|
-| Repo | `hardeep282/vendor-intelligence-copilot`, private until you flip it (history scanned clean 27 Oct) |
-| Version | 0.1.1 in `pyproject.toml` and `uv.lock`; tag `v0.1.1` is yours to push |
+| Repo | `hardeep282/vendor-intelligence-copilot`, public since 28 Oct (history scanned clean 27 Oct) |
+| Version | 0.1.1 in `pyproject.toml` and `uv.lock`; tag `v0.1.1` pushed 28 Oct (points at 584d79f) |
 | Checks | 511 passed / 0 failed / 0 skipped with the snapshot built; ruff, mypy strict clean |
 | Deployed | No. Target `https://api.vendor.<domain>/health` |
 | Shared pages | Case study, Code Map (v9, Days 1-10), Progress Tracker -- links in `docs/PROJECT_PROGRESS.md` "Live URLs" |
@@ -36,8 +36,8 @@ Written: Tue 27 Oct 2026. Previous version (end of chat 7, Day 9 → Day 10) is 
 
 ## Your open items (from `docs/SPRINT_REPORT.md`)
 
-1. Push tag `v0.1.1`.
-2. Decide R1/R7, make the repo public, pin it.
+1. ~~Push tag `v0.1.1`~~ done 28 Oct.
+2. ~~Make the repo public~~ done 28 Oct. Still: decide R1/R7 in writing (ADR-008), add the About text and topics, pin the repo.
 3. Share the case-study page with "anyone with the link".
 4. Record the demo (`docs/DEMO_SCRIPT.md`).
 5. Run on your machine and paste results: `scripts/run_orchestrator_golden.py`,
