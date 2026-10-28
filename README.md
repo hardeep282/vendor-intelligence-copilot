@@ -1,24 +1,26 @@
 # Vendor Intelligence Copilot
 
-An evaluated AI analytics system on real commercial data: an agentic decision-support copilot
-for a beverage distributor's category, procurement and finance teams, built over a 10-day sprint
-on top of the [Beverage Distribution vendor analytics
+**An evaluated AI analytics system on real commercial data.** A multi-agent decision-support
+copilot for a beverage distributor's category, procurement and finance teams, answering
+questions like *"Which vendors are leaking margin, and what should we renegotiate?"* over 12.8M+
+records. Built on my [Beverage Distribution analytics
 project](https://github.com/hardeep282/Commercial-Analytics---Beverage-Distribution-Project---Vendor-and-Stock-Analysis)
-(SQL medallion architecture, forecasting, ML, Power BI).
+(SQL medallion, forecasting, ML, Power BI).
 
-**Live link:** not yet deployed — AWS/domain provisioning (Day 2 scope) is still pending on my
-side; see [Status and honest limitations](#status-and-honest-limitations). Everything below is
-built, tested and runnable locally (`uv run uvicorn copilot.api.main:app`).
+**511 automated tests · 23/23 privacy attacks blocked · SKU risk model F1 0.92 · hybrid retrieval
+recall@5 0.80 · CI evaluation gate**
 
-**Case study:** [Vendor Intelligence Copilot — case study](https://claude.ai/artifact/KyLyQ3ywwWjWuXEvKKR1YF)
-(interactive agent graph, measured results, bugs found before trusting a number; source in
-`docs/case-study/index.html`, text in `docs/CASE_STUDY.md`).
+**Case study:** [interactive agent graph, measured results, and the bugs I found before trusting
+a number](https://claude.ai/artifact/KyLyQ3ywwWjWuXEvKKR1YF)
 
-Built by [Hardeep Bamrah](https://github.com/hardeep282) — MSc Business Analytics (Bournemouth,
-2024), BTech Mechanical Engineering, with B2B sales, financial-services and retail experience in
-India and the UK, moving into AI analytics consulting. The point of
-this project isn't the demo; it's proving I can build, evaluate, secure and ship a real
-multi-agent system, and explain every decision in it.
+**Status:** runs locally (`uv run uvicorn copilot.api.main:app`); cloud deployment is next. See
+[Status and honest limitations](#status-and-honest-limitations).
+
+Built by [Hardeep Bamrah](https://github.com/hardeep282): MSc Business Analytics (Bournemouth
+University, 2024), with B2B sales, financial-services and retail experience in India and the UK.
+I designed it, ran it on my own machine and data, and recorded every design decision as an ADR;
+I wrote it with Claude Code as an AI pair programmer. The aim: show I can build, evaluate and
+secure a real multi-agent system, and explain every decision in it.
 
 ---
 
