@@ -61,3 +61,15 @@ writes the Parquet files only; the DuckDB file is created by `copilot.data.store
 (or lazily by `connect()` the first time the app queries).
 **Fix:** `uv run python -c "from copilot.data.store import build_database; print(build_database())"`,
 then rerun: 511 passed.
+
+## CI "Build image" fails intermittently: "no space left on device"
+
+**Symptom:** the `image` job fails at Build image with `write /app/.venv/...: no space left on
+device`; some pushes pass, others fail. Tests, lint and the secrets scan all pass.
+**Cause:** the image (CPU-only torch, xgboost, the spaCy model) sits right at the ~14 GB a
+standard `ubuntu-24.04` runner leaves free. The 23 Oct CPU-only torch fix reduced the size but
+didn't leave enough headroom.
+**Fix (28 Oct):** a "Free runner disk space" step before the build in both `image` and `deploy`
+deletes preinstalled toolchains the job never uses (.NET, Android SDK, Haskell, CodeQL, Boost)
+and prunes Docker images, freeing well over 20 GB. `df -h /` before and after is printed in the
+step log.

@@ -2320,3 +2320,13 @@ new Sprint tab, current RAID, next steps). Version 0.1.0 -> 0.1.1 in `pyproject.
 **Open, yours:** push tag `v0.1.1`; decide R1/R7 and make the repo public; share the case-study
 page; record the demo; run the pending real-key scripts; deploy. ADR-008 questions are in the
 sprint report.
+
+## 28 Oct 2026 -- repo made public; CI "Build image" disk failure fixed
+
+You made the repo public and saw red crosses on recent commits. Cause, from the failed job's
+own annotation: `no space left on device` while Docker wrote the virtualenv -- the same
+runner-disk limit as 23 Oct. That day's CPU-only torch fix shrank the image but left it at the
+edge of the runner's ~14 GB, so builds passed on some pushes (`dbd5907`) and failed on others
+(`f245cbe`, `d5ebc9e`). Tests, lint, mypy and gitleaks passed on every one of those runs.
+Fix: a "Free runner disk space" step in the `image` and `deploy` jobs (removes unused
+.NET/Android/Haskell/CodeQL toolchains, prunes Docker images). Recorded in TROUBLESHOOTING.md.
