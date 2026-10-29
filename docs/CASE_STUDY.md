@@ -43,7 +43,7 @@ I built a multi-agent system where the architecture itself is the guardrail, not
 Nothing below is a projection — it's a real number from a real run, or explicitly marked as
 still pending a credential or a local run I haven't done yet:
 
-- **511 automated tests passing, 0 failing.**
+- **512 automated tests passing, 0 failing.**
 - **23/23 on a privacy red team** — 15 data-leakage attack patterns plus 8 SQL-injection
   attempts (UNION into uncatalogued tables, file reads via table functions, unbounded
   denial-of-service joins), all correctly blocked or escalated.

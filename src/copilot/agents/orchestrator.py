@@ -187,6 +187,14 @@ class VerifierVerdict(BaseModel):
         return self.grounded and self.citations_ok and self.sufficient and not self.contradictions
 
 
+#: Shown instead of an Action draft when no approver can ever review it (see
+#: `Orchestrator._withhold_action`). Plain English, no draft text, nothing to act on.
+WITHHELD_ACTION_MESSAGE = (
+    "This request produced an action draft that needs a human approver, but approvals are not "
+    "enabled in this setup, so the draft has been held back and not shown."
+)
+
+
 class OrchestratorResult(BaseModel):
     question: str
     role: Role
@@ -209,7 +217,10 @@ class OrchestratorResult(BaseModel):
     # draft the Guardian allowed/redacted, awaiting an approver) -- `answer` above is still the
     # Guardian's `safe_answer` at that point; it only changes once `resume_approval()` runs.
     pending_approval: bool = False
-    approval_decision: Literal["approved", "edited", "rejected"] | None = None
+    # "withheld": an Action draft the Guardian allowed, in an Orchestrator built with no
+    # checkpointer -- no approver can ever resume it, so the draft is held back (fail closed)
+    # instead of being returned as if it needed no approval. See `_withhold_action`.
+    approval_decision: Literal["approved", "edited", "rejected", "withheld"] | None = None
     # Day 7 step 6: set by `answer()` when the input gate blocked this request before the graph
     # ever ran -- `plan`/`results` stay empty and `total_cost_usd` stays 0.0 in that case, since
     # nothing was spent. `None` means the gate allowed the request through (its ALLOW verdict
@@ -473,6 +484,7 @@ class Orchestrator:
         graph.add_node("finalize", self._finalize)
         graph.add_node("guardian", self._guardian_node)
         graph.add_node("approval_gate", self._approval_gate)
+        graph.add_node("withhold_action", self._withhold_action)
         graph.set_entry_point("plan")
         graph.add_conditional_edges("plan", self._fan_out, ["run_specialist", "draft"])
         graph.add_edge("run_specialist", "draft")
@@ -488,8 +500,11 @@ class Orchestrator:
         # Day 7 step 5: "guardian" no longer edges straight to END -- an allowed/redacted Action
         # draft routes through "approval_gate" first (`_route_after_guardian` decides per-run;
         # everything else still goes straight to END, same as before this step).
-        graph.add_conditional_edges("guardian", self._route_after_guardian, ["approval_gate", END])
+        graph.add_conditional_edges(
+            "guardian", self._route_after_guardian, ["approval_gate", "withhold_action", END]
+        )
         graph.add_edge("approval_gate", END)
+        graph.add_edge("withhold_action", END)
         return graph.compile(checkpointer=self._checkpointer)
 
     # -- nodes -----------------------------------------------------------------------------
@@ -837,20 +852,20 @@ class Orchestrator:
         """Pure routing function (no LLM call, no state mutation, mirrors
         `_route_after_verify`): decides whether this run needs the human approval gate at all.
 
-        Three independent reasons route straight to `END` instead of `"approval_gate"`:
-        (a) no checkpointer -- `interrupt()`/`Command(resume=...)` need one to actually pause-
-        and-resume (confirmed against a real `SqliteSaver` before this was wired in; without
-        one, LangGraph itself raises `RuntimeError` on resume, and a pause nothing can ever
-        resume is worse than skipping it); (b) no Action draft in this run's results --
+        Two reasons route straight to `END`: (a) no Action draft in this run's results --
         `run_action` is the only specialist that drafts an outbound renegotiation email/reorder
-        recommendation, so nothing here needs a human's sign-off before being shown; (c) the
-        Guardian already BLOCKed or ESCALATEd -- a draft that already failed Guardian review
-        isn't "awaiting approval", it's already been handled, and routing it to the gate would
-        put an approver in the position of approving text the user never even sees (`answer` is
-        already the Guardian's safe generic message by this point).
+        recommendation, so nothing else needs a human's sign-off before being shown; (b) the
+        Guardian already BLOCKed or ESCALATEd -- that draft isn't "awaiting approval", it's
+        already been handled, and `answer` is already the Guardian's safe generic message.
+
+        An Action draft the Guardian allowed goes to `"approval_gate"` when there is a
+        checkpointer to pause and resume against. **Without one, it fails closed** and goes to
+        `"withhold_action"`: `interrupt()`/`Command(resume=...)` need a checkpointer (LangGraph
+        raises `RuntimeError` on resume without one), so no approver could ever release the
+        draft. Before 29 Oct 2026 this case routed to `END` and returned the draft as a normal
+        answer -- human approval silently skipped. Holding it back keeps approval a hard
+        requirement in code, not a setting that depends on how the class was constructed.
         """
-        if self._checkpointer is None:
-            return END
         result = state["result"]
         if result is None or result.guardian_verdict is None:
             # Can't happen: "guardian" always sets both before this router runs.
@@ -859,7 +874,36 @@ class Orchestrator:
             return END
         if not any(r.agent == "action" for r in result.results):
             return END
+        if self._checkpointer is None:
+            return "withhold_action"
         return "approval_gate"
+
+    def _withhold_action(self, state: _State) -> dict[str, object]:
+        """Fail-closed branch of the approval requirement: an Action draft the Guardian
+        allowed, in an Orchestrator with no checkpointer. The draft text is replaced, never
+        shown, and the hold is written to the audit log, so a caller that forgot to configure
+        approvals gets an explicit refusal rather than an unapproved draft.
+        """
+        result = state["result"]
+        if result is None:
+            # Can't happen: only reached from "guardian", which always sets "result".
+            raise RuntimeError("withhold_action invoked with no result to hold")
+        held = result.model_copy(
+            update={
+                "answer": WITHHELD_ACTION_MESSAGE,
+                "pending_approval": False,
+                "approval_decision": "withheld",
+            }
+        )
+        # `role` here is the requester's role: nobody approved anything, so there is no
+        # approver role to record. The "withheld" decision makes that unambiguous in the log.
+        log_approval(
+            question=held.question,
+            role=held.role,
+            decision="withheld",
+            final_answer=held.answer or "",
+        )
+        return {"result": held}
 
     def _approval_gate(self, state: _State) -> dict[str, object]:
         """Day 7 step 5: master prompt C5's "Action draft behind interrupt -> Guardian ->

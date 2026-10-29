@@ -2330,3 +2330,31 @@ edge of the runner's ~14 GB, so builds passed on some pushes (`dbd5907`) and fai
 (`f245cbe`, `d5ebc9e`). Tests, lint, mypy and gitleaks passed on every one of those runs.
 Fix: a "Free runner disk space" step in the `image` and `deploy` jobs (removes unused
 .NET/Android/Haskell/CodeQL toolchains, prunes Docker images). Recorded in TROUBLESHOOTING.md.
+
+## 2026-10-29 · After Day 10 · Human approval now fails closed
+
+**Covered:** while answering "can the AI bypass human approval in our code?", found that the
+approval requirement depended on how the `Orchestrator` was constructed. Without a checkpointer,
+`_route_after_guardian` sent an allowed Action draft straight to `END`, so the draft came back as
+a normal answer with `pending_approval=False`: human approval silently skipped. The web API always
+builds a checkpointer (`copilot.api.dependencies`), so the app itself was never affected; scripts
+or anyone reusing the class directly could hit it. Nothing could ever be *sent* either way (the
+Action agent has no send tool); what was lost was the hold.
+
+**Fix:** a new `withhold_action` node. An Action draft the Guardian allowed, with no checkpointer,
+is now held back: the answer becomes `WITHHELD_ACTION_MESSAGE`, `approval_decision="withheld"`,
+the draft text is never shown, and the hold is written to the audit log. The topology test now
+also asserts `withhold_action` is only reachable from `guardian`, so every path to `END` still
+passes through the Guardian.
+
+**Tests:** `test_no_checkpointer_skips_the_approval_gate_entirely` (which asserted the old,
+fail-open behaviour) replaced by `test_no_checkpointer_withholds_the_action_draft`; new
+`test_no_checkpointer_still_answers_questions_with_no_action_draft`. Full suite 512 passed;
+ruff and mypy strict clean.
+
+**Also:** `docs/COMMANDS.md`'s `/ask` example sent `"role": "analyst"` in the request body. The
+server never read it (`AskRequest` has no role field; the role comes only from the API key), but
+the example suggested otherwise. Corrected.
+
+**Industry equivalent:** fail-closed authorisation, as in OWASP LLM06 (Excessive Agency): require
+human approval for high-impact actions and enforce it in the system, not the prompt.

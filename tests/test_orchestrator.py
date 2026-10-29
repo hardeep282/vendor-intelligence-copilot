@@ -16,7 +16,11 @@ from pathlib import Path
 from langgraph.checkpoint.sqlite import SqliteSaver
 
 from copilot.agents.contracts import AgentBudget, AgentResult, TaskSpec
-from copilot.agents.orchestrator import MAX_VERIFICATION_LOOPS, Orchestrator
+from copilot.agents.orchestrator import (
+    MAX_VERIFICATION_LOOPS,
+    WITHHELD_ACTION_MESSAGE,
+    Orchestrator,
+)
 from copilot.guardrails.input_gate import InputGate
 from copilot.llm.client import LLMClient
 from tests.fakes.anthropic_fakes import FakeMessagesResource, structured_response
@@ -603,9 +607,13 @@ def test_every_path_to_end_passes_through_guardian() -> None:
     edges_into_end = [e for e in compiled.edges if e.target == end_node_id]
     sources_into_end = {e.source for e in edges_into_end}
 
-    assert sources_into_end <= {"guardian", "approval_gate"}
+    assert sources_into_end <= {"guardian", "approval_gate", "withhold_action"}
     edges_into_approval_gate = [e for e in compiled.edges if e.target == "approval_gate"]
     assert {e.source for e in edges_into_approval_gate} == {"guardian"}
+    # 29 Oct 2026: the fail-closed hold for Action drafts with no checkpointer is a third hop
+    # before END, and it too is only ever reached from "guardian".
+    edges_into_withhold = [e for e in compiled.edges if e.target == "withhold_action"]
+    assert {e.source for e in edges_into_withhold} == {"guardian"}
 
 
 def test_guardian_blocks_a_restricted_name_leak_end_to_end() -> None:
@@ -657,12 +665,11 @@ def _action_plan_llm() -> list[object]:
     ]
 
 
-def test_no_checkpointer_skips_the_approval_gate_entirely() -> None:
-    """Day 7 step 5: `interrupt()`/`Command(resume=...)` need a checkpointer to actually pause
-    and resume (confirmed against a real SqliteSaver -- resuming without one raises a LangGraph
-    RuntimeError). An Orchestrator built without `checkpoint_path` (every test above this one,
-    and any one-shot caller) must never pause on an Action draft it has no way to ever resume --
-    it should route straight through to a normal, non-pending result.
+def test_no_checkpointer_withholds_the_action_draft() -> None:
+    """Fail closed (29 Oct 2026): `interrupt()`/`Command(resume=...)` need a checkpointer to
+    pause and resume, so an Orchestrator built without one can never get an approver's
+    sign-off. It used to return the draft as a normal answer (approval silently skipped); it
+    must now hold the draft back, say so, and never show the draft text.
     """
     llm = _llm_with(_action_plan_llm())
     orch = Orchestrator(llm, executors={"action": _ok("action", "x", ["public"])})
@@ -670,10 +677,35 @@ def test_no_checkpointer_skips_the_approval_gate_entirely() -> None:
     result = orch.answer("x?", role="analyst")
 
     assert result.pending_approval is False
-    assert result.approval_decision is None
+    assert result.approval_decision == "withheld"
+    assert result.answer == WITHHELD_ACTION_MESSAGE
+    assert "Draft: confirm the reorder" not in (result.answer or "")
+    # The Guardian still reviewed the draft first -- the hold happens after it, not instead of it.
     assert result.guardian_verdict is not None
     assert result.guardian_verdict.outcome == "allow"
-    assert result.answer == "Draft: confirm the reorder, thanks."
+
+
+def test_no_checkpointer_still_answers_questions_with_no_action_draft() -> None:
+    """The hold applies only to Action drafts: an ordinary answer from a one-shot Orchestrator
+    (no checkpointer) comes back unchanged, with no approval decision at all.
+    """
+    llm = _llm_with(
+        [
+            structured_response(
+                {"tasks": [{"agent": "data_analyst", "objective": "x", "constraints": {}}]}
+            ),
+            structured_response(
+                {"answer": "Revenue was $1.", "cited_tasks": ["t0"], "conflicts_noted": []}
+            ),
+            _PASSING_VERDICT,
+        ]
+    )
+    orch = Orchestrator(llm, executors={"data_analyst": _ok("data_analyst", "x", ["public"])})
+
+    result = orch.answer("x?", role="analyst")
+
+    assert result.approval_decision is None
+    assert result.answer == "Revenue was $1."
 
 
 def test_action_draft_pauses_for_approval_when_checkpointed(tmp_path: Path) -> None:

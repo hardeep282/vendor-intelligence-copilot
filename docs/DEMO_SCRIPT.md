@@ -62,7 +62,7 @@ interrupt, then approve it through `/ask/approve` as the `approver` role.
 
 ## 2:50–3:00 — Close
 
-> "511 tests passing, a 23-case privacy red team at zero leaks, real numbers on every claim in
+> "512 tests passing, a 23-case privacy red team at zero leaks, real numbers on every claim in
 > the README. Full write-up and every decision I made along the way is in the repo."
 
 Show the GitHub repo URL and the README on screen for the last 3 seconds.

@@ -1040,6 +1040,8 @@ interface `checkpointer` is typed against); `langgraph.checkpoint.sqlite` (`Sqli
 Does not import `copilot.agents.specialists` directly -- tests inject fake executors, and the
 real caller is `copilot.agents.wiring` (Day 6 step 7) via `scripts/run_orchestrator_golden.py`.
 
+**29 Oct 2026: human approval fails closed.** `withhold_action` is a third hop between `guardian` and `END`: an Action draft the Guardian allowed, in an `Orchestrator` built without a checkpointer (so no approver could ever resume it), is held back instead of returned. The answer becomes `WITHHELD_ACTION_MESSAGE`, `approval_decision="withheld"`, and the hold is audit-logged. Before this, that case skipped approval silently.
+
 ### `src/copilot/agents/wiring.py` -- `build_executors()` *(day: 6, isNew: true)*
 The one piece of glue nothing else needed: turns the five already-tested `run_*` functions
 (step 2) into the `dict[AgentName, SpecialistExecutor]` shape `Orchestrator` takes, against real
