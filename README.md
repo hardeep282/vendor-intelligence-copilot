@@ -7,7 +7,7 @@ records. Built on my [Beverage Distribution analytics
 project](https://github.com/hardeep282/Commercial-Analytics---Beverage-Distribution-Project---Vendor-and-Stock-Analysis)
 (SQL medallion, forecasting, ML, Power BI).
 
-**512 automated tests · 23/23 privacy attacks blocked · SKU risk model F1 0.92 · hybrid retrieval
+**515 automated tests · 23/23 privacy attacks blocked · SKU risk model F1 0.92 · hybrid retrieval
 recall@5 0.80 · CI evaluation gate**
 
 **Case study:** [interactive agent graph, measured results, and the bugs I found before trusting
@@ -26,8 +26,8 @@ secure a real multi-agent system, and explain every decision in it.
 
 ## The problem
 
-*"Which vendors are leaking controllable margin, why, what will next quarter's demand look like
-for their top SKUs, and what should I renegotiate?"* — a category manager needs figures pulled
+*"Which vendors are leaking controllable margin, why, what will next quarter's demand look like,
+and what should I renegotiate?"* — a category manager needs figures pulled
 from a 12.8M-row SQL medallion, forecasts, risk scores and contract context stitched together,
 without ever getting a hallucinated number or a leaked confidential field. One agent answering
 that directly, unverified, is a liability in a commercial setting. This copilot's answer: Python
@@ -102,7 +102,7 @@ real API key/your machine — nothing below is invented. Full detail: `docs/PROJ
 
 | Area | Result |
 |---|---|
-| Test suite | **512 passed, 0 failed** (`uv run pytest -q`, re-verified 29 Oct 2026), ruff/mypy strict clean. 27 of these need the local snapshot and skip without it: build it with `scripts/build_snapshot.py` + `copilot.data.store.build_database()` |
+| Test suite | **515 passed, 0 failed** (`uv run pytest -q`, re-verified 30 Oct 2026), ruff/mypy strict clean. 27 of these need the local snapshot and skip without it: build it with `scripts/build_snapshot.py` + `copilot.data.store.build_database()` |
 | Real SQL Server snapshot | 126 vendors, $451.62M revenue (all rows) / $450.9M (cleaned base), spot-checked against two canonical figures (DIAGEO $68,739,834.97 revenue; Martignetti 31.98% blended margin) |
 | Golden evaluation set | 46 questions (27 dev / 16 test / 3 adversarial); golden v2 adds 6 text-to-SQL trap questions (semantic traps, coverage gaps) |
 | SQL validator | 29/29 unit tests, 0 false positives across 33 real golden queries; catches AVG-over-margin, fan-out joins, cross-vendor count additions, unbounded cross joins (DoS) |
@@ -120,7 +120,7 @@ real API key/your machine — nothing below is invented. Full detail: `docs/PROJ
 
 **Cost per query:** one real end-to-end `InsightService` call cost **$0.01127** (7.31s, 1
 attempt). The fine-tuning benchmark's 180 held-out generations cost under $1 total. Every
-deterministic layer (Guardian, input gate, SQL validator, trace masking, the 512-test suite)
+deterministic layer (Guardian, input gate, SQL validator, trace masking, the 515-test suite)
 costs $0 — no LLM call in any of it. Full multi-agent per-question cost (Orchestrator +
 specialists + Verifier, real numbers) is one of the real-key runs still pending.
 

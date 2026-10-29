@@ -17,8 +17,13 @@ saying this.
 ## 0:20–1:10 — A real question, agents working
 
 Type a real question into the UI, e.g.:
-*"Which vendors are leaking the most controllable margin, and what's the demand forecast for
-their top SKUs next quarter?"*
+*"Which vendors are leaking the most controllable margin, and what's the portfolio demand
+forecast for next quarter?"*
+
+Ask at **vendor and portfolio level only**. The snapshot holds no SKU-level rows (ADR-002), so a
+"top SKUs" question makes the Data Analyst correctly report that it can't answer, the Verifier
+can't confirm the draft, and the Guardian escalates it. That happened in the first real UI run on
+29 Oct 2026 (see `docs/BUILD_LOG.md`), which is why the question changed.
 
 As the agent-status strip updates live (`StreamEvent(type="node")`), narrate each node by name
 as it lights up:
@@ -62,7 +67,7 @@ interrupt, then approve it through `/ask/approve` as the `approver` role.
 
 ## 2:50–3:00 — Close
 
-> "512 tests passing, a 23-case privacy red team at zero leaks, real numbers on every claim in
+> "Over 500 tests passing, a 23-case privacy red team at zero leaks, real numbers on every claim in
 > the README. Full write-up and every decision I made along the way is in the repo."
 
 Show the GitHub repo URL and the README on screen for the last 3 seconds.

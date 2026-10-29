@@ -43,6 +43,27 @@ class PiiEntity:
     source: str  # "presidio" or "regex_fallback"
 
 
+#: Presidio entity types this Guardian looks for (30 Oct 2026). With no `entities` argument,
+#: Presidio runs every recognizer it has, and on this project's business text that produced
+#: only false positives on a real laptop run: DATE_TIME on "next quarter", URL on
+#: "vendor_profit_leakage.ControllableLeakage", US_DRIVER_LICENSE (score 0.01) on the forecast
+#: value 3758005. The data here is vendor-level aggregates with no people in it (ADR-002), so
+#: the check is narrowed to identifiers that are personal by construction. PERSON is left out
+#: on purpose: vendor names such as "JIM BEAM BRANDS" read as personal names to an NER model.
+PRESIDIO_ENTITIES = [
+    "EMAIL_ADDRESS",
+    "PHONE_NUMBER",
+    "CREDIT_CARD",
+    "IBAN_CODE",
+    "US_SSN",
+    "UK_NHS",
+]
+
+#: Presidio's own confidence floor. 0.4 keeps its phone recognizer (which scores 0.4) and
+#: every checksum-validated hit (cards, IBANs, NHS numbers score 1.0), while dropping the
+#: weak pattern guesses that scored 0.01-0.3 in the false-positive run above.
+PRESIDIO_SCORE_THRESHOLD = 0.4
+
 _analyzer_cache: object | None = None
 _analyzer_unavailable = False
 
@@ -78,7 +99,12 @@ def _presidio_entities(text: str) -> list[PiiEntity] | None:
     if analyzer is None:
         return None
     try:
-        results = analyzer.analyze(text=text, language="en")  # type: ignore[attr-defined]
+        results = analyzer.analyze(  # type: ignore[attr-defined]
+            text=text,
+            language="en",
+            entities=PRESIDIO_ENTITIES,
+            score_threshold=PRESIDIO_SCORE_THRESHOLD,
+        )
     except Exception:  # noqa: BLE001 -- an analysis-time failure also falls back to regex
         # rather than crashing the Guardian; the engine itself stays cached for next time.
         return None
@@ -108,4 +134,4 @@ def find_pii(text: str) -> list[PiiEntity]:
     return _regex_entities(text)
 
 
-__all__ = ["PiiEntity", "find_pii"]
+__all__ = ["PRESIDIO_ENTITIES", "PRESIDIO_SCORE_THRESHOLD", "PiiEntity", "find_pii"]

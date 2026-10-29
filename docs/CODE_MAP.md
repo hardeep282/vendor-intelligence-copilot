@@ -126,6 +126,8 @@ itself, whichever backend fires.
 **Gives out:** `list[PiiEntity]` (`entity_type`, `text`, `source: "presidio" | "regex_fallback"`).
 **Talks to:** `copilot.guardrails.guardian` is the only caller.
 
+**30 Oct 2026:** Presidio now runs only `PRESIDIO_ENTITIES` (email, phone, card, IBAN, US SSN, UK NHS) above `PRESIDIO_SCORE_THRESHOLD` 0.4. With every recognizer on, a real forecast answer was flagged as DATE_TIME, URL and US_DRIVER_LICENSE. PERSON is excluded because vendor names look like personal names.
+
 ### `src/copilot/guardrails/canary.py` -- `canary_token()`/`canary_line()` *(day: 7, isNew: true)*
 Fixed per-agent markers planted in every system prompt this project builds, so any appearance of
 one in a *final answer* is unambiguous proof of a system-prompt/instruction leak, not a guess.

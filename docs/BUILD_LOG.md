@@ -2358,3 +2358,45 @@ the example suggested otherwise. Corrected.
 
 **Industry equivalent:** fail-closed authorisation, as in OWASP LLM06 (Excessive Agency): require
 human approval for high-impact actions and enforce it in the system, not the prompt.
+
+## 2026-10-29/30 · First real UI run: three findings, one fixed in code
+
+**Covered:** the first time a person used the web UI against the real server (your laptop,
+real Anthropic key, analyst role). Question: *"Which vendors are leaking the most controllable
+margin, and what's the demand forecast for their top SKUs next quarter?"* Result: Not verified,
+Escalated, pending review. Reason codes `pii:date_time`, `pii:url`, `pii:us_driver_license` x3,
+`unverified_grounding`.
+
+**Finding 1, the question didn't fit the data (docs fixed).** The Data Analyst reported, correctly,
+that no SKU-level table exists (ADR-002 keeps vendor-level aggregates only). With half the
+question unanswerable, the Verifier failed twice and the Guardian escalated. That is the designed
+behaviour, but the demo script, README and case study all used a "top SKUs" question. All three
+now ask at vendor and portfolio level.
+
+**Finding 2, PII false positives (code fixed).** On a machine with full Presidio and
+`en_core_web_lg`, `find_pii` called `AnalyzerEngine.analyze()` with no `entities` list, so every
+recognizer ran. Reproduced exactly in this workspace: DATE_TIME on "next 3" and "next quarter",
+URL on "leakage.Co" (from `vendor_profit_leakage.ControllableLeakage`), and US_DRIVER_LICENSE on
+the forecast value 3758005, three times, at score 0.01. Those are REDACT findings, so correct
+figures would have been replaced in answers. Fix: `PRESIDIO_ENTITIES` (email, phone, card, IBAN,
+US SSN, UK NHS) and `PRESIDIO_SCORE_THRESHOLD = 0.4`. PERSON is deliberately excluded because
+vendor names read as personal names. Verified with real Presidio: the forecast text is clean;
+a real email, card and phone are still found. Three tests added (`tests/test_guardrails_pii.py`).
+
+**Finding 3, two runs from one question.** The status strip showed Planning and Guardian review
+twice: two concurrent runs, most likely a double-click on Ask. Not fixed yet; disabling the Ask
+button while a run streams is a small UI change for later.
+
+**Forecast seen in the run (real data):** naive and ETS tie at WAPE 0.1153 on the backtest;
+naive chosen; next 3 months 3,758,005 units each (MonthlyDemand, flat because naive repeats the
+last month).
+
+**Also noted:** `run_rag_eval.py` on the laptop prints a sentence-transformers FutureWarning
+(`get_sentence_embedding_dimension` renamed to `get_embedding_dimension`) in
+`copilot/rag/embeddings.py`. Harmless today; one-line fix for later.
+
+**Tests:** 515 passed; ruff and mypy strict clean.
+
+**Industry equivalent:** tuning a PII detector's entity set and thresholds to the domain is
+standard Presidio practice; the same trade-off exists in AWS Comprehend PII and Google Cloud DLP
+info-type selection.

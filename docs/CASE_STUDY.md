@@ -11,7 +11,7 @@ the domain unchanged once it does. Edit the text here first, then the HTML.*
 
 A beverage distributor's category, procurement and finance teams need to answer commercial
 questions that span several data sources at once: which vendors are leaking controllable
-margin, what next quarter's demand looks like for their top SKUs, and what to renegotiate.
+margin, what next quarter's demand looks like, and what to renegotiate.
 Getting that from a 12.8-million-row SQL medallion by hand is slow. Handing it to an LLM
 directly is worse — a single agent answering unverified is a liability when the answer touches
 real vendor contracts and real margin figures.
@@ -43,7 +43,7 @@ I built a multi-agent system where the architecture itself is the guardrail, not
 Nothing below is a projection — it's a real number from a real run, or explicitly marked as
 still pending a credential or a local run I haven't done yet:
 
-- **512 automated tests passing, 0 failing.**
+- **515 automated tests passing, 0 failing.**
 - **23/23 on a privacy red team** — 15 data-leakage attack patterns plus 8 SQL-injection
   attempts (UNION into uncatalogued tables, file reads via table functions, unbounded
   denial-of-service joins), all correctly blocked or escalated.
