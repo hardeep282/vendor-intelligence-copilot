@@ -132,7 +132,7 @@ footer .mono { color: var(--fg); user-select: all; }
     <div class="meta">
       <span>Built by <b>Hardeep Bamrah</b></span>
       <span>10-day build sprint</span>
-      <span><b>515</b> automated tests</span>
+      <span><b>524</b> automated tests</span>
       <span>Python · LangGraph · Anthropic API · DuckDB</span>
     </div>
     <span class="status"><span class="dot" aria-hidden="true"></span>Runs locally and is fully tested. Cloud deployment is the next step.</span>
@@ -224,7 +224,7 @@ footer .mono { color: var(--fg); user-select: all; }
       <table>
         <thead><tr><th>What was measured</th><th>Result</th><th>Status</th></tr></thead>
         <tbody>
-          <tr><td>Automated test suite<span class="src">pytest, ruff, mypy strict</span></td><td class="num">515 passed, 0 failed</td><td><span class="tag real">real run</span></td></tr>
+          <tr><td>Automated test suite<span class="src">pytest, ruff, mypy strict</span></td><td class="num">524 passed, 0 failed</td><td><span class="tag real">real run</span></td></tr>
           <tr><td>Privacy red team: 15 data-leakage attacks plus 8 SQL attacks (UNION into other tables, file reads, stacked statements, denial-of-service joins)<span class="src">tests/test_privacy_leakage_suite.py</span></td><td class="num">23 / 23 blocked</td><td><span class="tag real">real run</span></td></tr>
           <tr><td>6-layer SQL validator: catches valid-looking but wrong SQL, such as averaging margins or a join that inflates totals<span class="src">33 real golden queries</span></td><td class="num">0 false positives</td><td><span class="tag real">real run</span></td></tr>
           <tr><td>Hybrid retrieval (BM25 + vectors, reciprocal rank fusion) over 20 labelled questions<span class="src">all-MiniLM-L6-v2</span></td><td class="num">recall@5 0.800<br>MRR 0.662</td><td><span class="tag real">real run</span></td></tr>

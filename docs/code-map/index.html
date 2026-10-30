@@ -382,7 +382,7 @@ main { flex: 1; min-width: 0; overflow-y: auto; display: flex; flex-direction: c
       <div class="pane-scroll"><div class="pane" id="pane"></div></div>
       <div class="pane-foot">
         Generated from <code>docs/CODE_MAP.md</code> by <code>scripts/build_code_map_page.py</code>
-        (85 entries, built 2026-10-29). The markdown is the source of truth; whenever a file is added or changes
+        (86 entries, built 2026-10-30). The markdown is the source of truth; whenever a file is added or changes
         job, its entry there changes in the same commit and this page is regenerated.
       </div>
     </main>
@@ -485,6 +485,19 @@ const FILES = [
   ],
   "takes": "a table name and its columns/row count.",
   "gives": "raises <code>LicenceViolation<\/code> if a table looks like row-level/SKU-level data."
+ },
+ {
+  "id": "src-copilot-data-units-py",
+  "group": "Data layer",
+  "day": 10,
+  "path": "src/copilot/data/units.py",
+  "headline": "Added 30 Oct 2026, after the sprint.",
+  "does": "What each snapshot column measures: \"US dollars\", \"units sold, not dollars\", \"percent of that vendor's total revenue\", and so on. Every percentage label was checked by recomputing it from the snapshot. <code>describe_units(sql)<\/code> labels each selected column that reads exactly one known column (directly or via SUM/AVG/MIN/MAX/ROUND); ratios, COUNTs and unknown columns get no label rather than a guessed one.",
+  "talksTo": [],
+  "sym": "describe_units()",
+  "takes": "the SQL a Data Analyst query ran.",
+  "gives": "one plain-English units line per labelled output column.",
+  "isNew": true
  },
  {
   "id": "scripts-build-snapshot-py",
@@ -1415,7 +1428,7 @@ const FILES = [
   "day": 5,
   "path": "src/copilot/ml/forecast.py",
   "headline": "Demand forecast tool: ETS vs naive, honest out-of-sample accuracy from a rolling-origin backtest (never an in-sample fit -- ADR-000 item 2 is exactly …",
-  "does": "Demand forecast tool: ETS vs naive, honest out-of-sample accuracy from a rolling-origin backtest (never an in-sample fit -- ADR-000 item 2 is exactly that mistake, in the Excel tool this project replaces). Matches the analytics repo's <code>forecast_backtest.py<\/code> methodology (one-month-ahead, expanding window) so the numbers are comparable.",
+  "does": "<p>Demand forecast tool: ETS vs naive, honest out-of-sample accuracy from a rolling-origin backtest (never an in-sample fit -- ADR-000 item 2 is exactly that mistake, in the Excel tool this project replaces). Matches the analytics repo's <code>forecast_backtest.py<\/code> methodology (one-month-ahead, expanding window) so the numbers are comparable.<\/p><p><strong>30 Oct 2026:<\/strong> <code>forecast_warnings()<\/code> adds plain-English cautions to <code>ForecastResult.warnings<\/code>: under 24 months of history (seasonality can't be learned), and a last month 20% or more above or below the median earlier month (both models start from it, so the next months are likely over- or under-forecast). On the real snapshot both fire: December 2024 is 38% above the typical month.<\/p>",
   "talksTo": [
    {
     "id": "src-copilot-data-store-py",
@@ -1583,7 +1596,7 @@ const FILES = [
   "day": 6,
   "path": "src/copilot/agents/specialists.py",
   "headline": "The five specialist nodes (C3 roster), each a plain <code>TaskSpec -&gt; AgentResult<\/code> function wrapping an already-tested service -- no new logic, just the C3 contract on top.",
-  "does": "- <code>run_data_analyst(spec, sql_service, policy=None, effort=None)<\/code> -- wraps <code>TextToSqlService.answer()<\/code>; <code>data_classes<\/code> comes from a new helper, <code>_sql_data_classes(sql, policy)<\/code>, which parses the generated SQL with sqlglot and looks up every referenced table's class via <code>DisclosurePolicy.class_of()<\/code> -- not self-reported by the SQL service, same \"the policy is the one source of truth\" posture <code>copilot.rag.permissions<\/code> takes. - <code>run_forecasting_risk(spec, con=None, risk_df=None, compute_shap=False)<\/code> -- always runs a real <code>forecast_demand()<\/code> against this repo's own snapshot (<code>spec.constraints[&quot;level&quot;]<\/code> = portfolio/vendor); the SKU risk-classifier half only runs when <code>spec.constraints[&quot;run_risk_classifier&quot;] == &quot;true&quot;<\/code>, and against <code>make_synthetic_skus()<\/code> unless the caller supplies a real <code>risk_df<\/code> -- this repo's licence-safe snapshot has no SKU-level features, same limitation Day 5's classifier had. <code>forecast_result_for_inventory()<\/code> is a small sibling that returns the raw <code>ForecastResult<\/code> the Orchestrator (step 3) will chain into Inventory Planning. - <code>run_inventory_planning(spec, forecast)<\/code> -- wraps <code>compute_inventory_plan()<\/code>, fed by <code>demand_stats_from_backtest(forecast)<\/code> exactly as Day 5's real run did; cost/service-level constraints read from <code>spec.constraints<\/code> with Day 5's own real-run defaults. - <code>run_knowledge(spec, rag_service, retriever)<\/code> -- wraps <code>CorrectiveRagService.answer()<\/code>; <code>data_classes<\/code> comes from looking up each <code>cited_chunk_ids<\/code> entry via the new <code>PermissionedRetriever.chunk_by_id()<\/code> (see that file's entry above). - <code>run_action(spec, llm, effort=None)<\/code> -- the one specialist with its own prompt (<code>prompts/action_draft/v1.yaml<\/code>), drafting a <code>renegotiation_email<\/code> or <code>reorder_recommendation<\/code> via <code>LLMClient.structured()<\/code> into <code>ActionDraft<\/code> (<code>subject<\/code>/<code>body<\/code>). Always returns <code>status=&quot;partial&quot;<\/code> with a gap stating the draft hasn't passed the Guardian/an approver yet (Day 7) -- this function never sends anything. Day 7 step 2: <code>run_action<\/code>'s system prompt now appends <code>canary_line(&quot;action&quot;)<\/code> -- any leak of that marker into a final answer is what <code>Guardian._check_canary<\/code> catches.",
+  "does": "<p>- <code>run_data_analyst(spec, sql_service, policy=None, effort=None)<\/code> -- wraps <code>TextToSqlService.answer()<\/code>; <code>data_classes<\/code> comes from a new helper, <code>_sql_data_classes(sql, policy)<\/code>, which parses the generated SQL with sqlglot and looks up every referenced table's class via <code>DisclosurePolicy.class_of()<\/code> -- not self-reported by the SQL service, same \"the policy is the one source of truth\" posture <code>copilot.rag.permissions<\/code> takes. - <code>run_forecasting_risk(spec, con=None, risk_df=None, compute_shap=False)<\/code> -- always runs a real <code>forecast_demand()<\/code> against this repo's own snapshot (<code>spec.constraints[&quot;level&quot;]<\/code> = portfolio/vendor); the SKU risk-classifier half only runs when <code>spec.constraints[&quot;run_risk_classifier&quot;] == &quot;true&quot;<\/code>, and against <code>make_synthetic_skus()<\/code> unless the caller supplies a real <code>risk_df<\/code> -- this repo's licence-safe snapshot has no SKU-level features, same limitation Day 5's classifier had. <code>forecast_result_for_inventory()<\/code> is a small sibling that returns the raw <code>ForecastResult<\/code> the Orchestrator (step 3) will chain into Inventory Planning. - <code>run_inventory_planning(spec, forecast)<\/code> -- wraps <code>compute_inventory_plan()<\/code>, fed by <code>demand_stats_from_backtest(forecast)<\/code> exactly as Day 5's real run did; cost/service-level constraints read from <code>spec.constraints<\/code> with Day 5's own real-run defaults. - <code>run_knowledge(spec, rag_service, retriever)<\/code> -- wraps <code>CorrectiveRagService.answer()<\/code>; <code>data_classes<\/code> comes from looking up each <code>cited_chunk_ids<\/code> entry via the new <code>PermissionedRetriever.chunk_by_id()<\/code> (see that file's entry above). - <code>run_action(spec, llm, effort=None)<\/code> -- the one specialist with its own prompt (<code>prompts/action_draft/v1.yaml<\/code>), drafting a <code>renegotiation_email<\/code> or <code>reorder_recommendation<\/code> via <code>LLMClient.structured()<\/code> into <code>ActionDraft<\/code> (<code>subject<\/code>/<code>body<\/code>). Always returns <code>status=&quot;partial&quot;<\/code> with a gap stating the draft hasn't passed the Guardian/an approver yet (Day 7) -- this function never sends anything. Day 7 step 2: <code>run_action<\/code>'s system prompt now appends <code>canary_line(&quot;action&quot;)<\/code> -- any leak of that marker into a final answer is what <code>Guardian._check_canary<\/code> catches.<\/p><p><strong>30 Oct 2026:<\/strong> <code>run_data_analyst<\/code> appends a \"Units:\" line from <code>copilot.data.units<\/code>; <code>run_forecasting_risk<\/code> states that demand is units sold, labels bias in units, passes every forecast warning through as a \"WARNING:\" line, and reports confidence \"low\" when there are warnings.<\/p>",
   "talksTo": [
    {
     "id": "src-copilot-sql-service-py",

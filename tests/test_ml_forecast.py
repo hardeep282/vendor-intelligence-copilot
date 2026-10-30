@@ -14,7 +14,9 @@ from copilot.data.store import DB_NAME, connect
 from copilot.ml.forecast import (
     SEASONALITY_NOTE,
     ForecastRequest,
+    MonthlyPoint,
     forecast_demand,
+    forecast_warnings,
     rolling_origin_backtest,
 )
 from copilot.settings import get_settings
@@ -121,3 +123,58 @@ def test_forecast_demand_unknown_vendor_raises() -> None:
         forecast_demand(
             ForecastRequest(level="vendor", vendor_name="NOT A REAL VENDOR XYZ"), con=con
         )
+
+
+# -- forecast_warnings (30 Oct 2026) -------------------------------------------------------------
+# A real run forecast Jan-Mar at December's peak level and the answer called it "a baseline".
+
+
+def _points(values: list[float], start_year: int = 2024) -> list[MonthlyPoint]:
+    out = []
+    for i, v in enumerate(values):
+        out.append(MonthlyPoint(year=start_year + i // 12, month=i % 12 + 1, value=v))
+    return out
+
+
+def test_one_year_with_a_december_peak_gets_both_warnings() -> None:
+    # The real portfolio series from the snapshot (units per month, Jan-Dec 2024).
+    real = [
+        2194959,
+        2125292,
+        2219626,
+        2289425,
+        2624496,
+        2858944,
+        3439648,
+        2892266,
+        2840043,
+        2724657,
+        2950515,
+        3758005,
+    ]
+    warnings_ = forecast_warnings(_points(real), "naive")
+    assert len(warnings_) == 2
+    assert "Only 12 months of history" in warnings_[0]
+    assert "Dec 2024" in warnings_[1]
+    assert "38% above" in warnings_[1]
+    assert "repeats it" in warnings_[1]
+    assert "over-forecast" in warnings_[1]
+
+
+def test_two_steady_years_get_no_warnings() -> None:
+    assert forecast_warnings(_points([100.0] * 24), "ets") == []
+
+
+def test_an_unusually_low_last_month_warns_of_under_forecasting() -> None:
+    warnings_ = forecast_warnings(_points([100.0] * 25 + [60.0]), "ets")
+    assert len(warnings_) == 1
+    assert "40% below" in warnings_[0]
+    assert "starts from it" in warnings_[0]
+    assert "under-forecast" in warnings_[0]
+
+
+@pytestmark_snapshot
+def test_forecast_demand_carries_the_warnings_on_the_real_snapshot() -> None:
+    result = forecast_demand(ForecastRequest(level="portfolio", horizon_months=3))
+    assert any("Only 12 months" in w for w in result.warnings)
+    assert any("Dec 2024" in w for w in result.warnings)

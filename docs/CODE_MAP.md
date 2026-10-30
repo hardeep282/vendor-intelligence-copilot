@@ -63,6 +63,17 @@ Makes "no raw licensed row-level data leaves the machine" a tested rule instead 
 **Gives out:** raises `LicenceViolation` if a table looks like row-level/SKU-level data.
 **Talks to:** `scripts/build_snapshot.py` calls this before writing any Parquet table.
 
+
+### `src/copilot/data/units.py` -- `describe_units()` *(day: 10, isNew: true)*
+Added 30 Oct 2026, after the sprint. What each snapshot column measures: "US dollars", "units
+sold, not dollars", "percent of that vendor's total revenue", and so on. Every percentage label
+was checked by recomputing it from the snapshot. `describe_units(sql)` labels each selected
+column that reads exactly one known column (directly or via SUM/AVG/MIN/MAX/ROUND); ratios,
+COUNTs and unknown columns get no label rather than a guessed one.
+**Takes in:** the SQL a Data Analyst query ran.
+**Gives out:** one plain-English units line per labelled output column.
+**Talks to:** `run_data_analyst` appends the lines to its findings as "Units: ...", which the
+v2 draft and verify prompts use.
 ### `scripts/build_snapshot.py` *(day: 1)*
 Turns the vendor project's Excel workbook into the aggregate-only Parquet tables the app is allowed
 to query. SKU-level sheets are only ever aggregated, never copied as-is.
@@ -749,6 +760,8 @@ network needed): portfolio WAPE 11.5%, matching the analytics repo's own documen
 the portfolio series (AutoETS's auto-selected trend reduces to effectively no trend on this
 short, noisy series) -- a real finding, not a bug, logged in `docs/BUILD_LOG.md`.
 
+**30 Oct 2026:** `forecast_warnings()` adds plain-English cautions to `ForecastResult.warnings`: under 24 months of history (seasonality can't be learned), and a last month 20% or more above or below the median earlier month (both models start from it, so the next months are likely over- or under-forecast). On the real snapshot both fire: December 2024 is 38% above the typical month.
+
 ### `src/copilot/ml/inventory.py` — `compute_inventory_plan()` *(day: 5)*
 Safety stock, reorder point, EOQ -- standard OR formulas (Silver/Pyke/Peterson; Wilson 1913 for
 EOQ), from a forecast's output. `demand_stats_from_backtest()` is the bridge from a
@@ -893,6 +906,8 @@ that marker into a final answer is what `Guardian._check_canary` catches.
 **Talks to:** `copilot.sql.service`, `copilot.ml.forecast`/`inventory`/`risk_classifier`,
 `copilot.rag.corrective`/`permissions`, `copilot.llm.client`/`prompts`,
 `copilot.guardrails.policy`, `copilot.guardrails.canary` (Day 7).
+
+**30 Oct 2026:** `run_data_analyst` appends a "Units:" line from `copilot.data.units`; `run_forecasting_risk` states that demand is units sold, labels bias in units, passes every forecast warning through as a "WARNING:" line, and reports confidence "low" when there are warnings.
 
 ### `prompts/action_draft/v1.yaml` *(day: 6, isNew: true)*
 The Action specialist's one prompt. System prompt states the vendor-facing audience rule
@@ -1097,6 +1112,8 @@ inputs, not an adversarial safety check -- scoring `grounded`/`citations_ok`/`su
 *(Added 27 Oct, Day 10: these Day 9 files shipped without Code Map entries, breaking the
 standing rule above; caught while preparing the end-of-sprint Code Map page and backfilled
 here.)*
+
+**30 Oct 2026: `orchestrator_draft/v2.yaml` and `orchestrator_verify/v2.yaml`.** Draft v2 must use units exactly as the findings state them and pass on every "WARNING:" line; verify v2 fails grounding for a wrong unit or a dropped warning. v1 files are unchanged (project rule: a changed rule is a new version).
 
 ### `src/copilot/sql/pair_generation.py` -- `generate_candidates()`/`verify_and_filter()` *(day: 9, isNew: true)*
 Builds the fine-tuning training set: question -> SQL pairs from a small family of templates,

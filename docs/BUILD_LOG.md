@@ -2400,3 +2400,44 @@ last month).
 **Industry equivalent:** tuning a PII detector's entity set and thresholds to the domain is
 standard Presidio practice; the same trade-off exists in AWS Comprehend PII and Google Cloud DLP
 info-type selection.
+
+## 2026-10-30 · Units travel with the numbers; forecasts warn when they're probably wrong
+
+**Covered:** the second real UI run came back **Verified**, and every vendor figure matched the
+snapshot exactly (Martignetti $874,764.97 controllable leakage, and so on; the top five are
+about $3.0M of the $5.99M portfolio total). Checking it by hand still found three errors the
+Verifier passed:
+- "$3,758,005 per month": the forecast is MonthlyDemand, **units sold**, not dollars (December
+  2024: 3,758,005 units and $52.3M revenue, about $13.92 per unit).
+- "2.14% of controllable margin": ControllableLeakagePct is **% of the vendor's total revenue**
+  ($874,765 / $40.96M). Recomputed every *Pct column in the snapshot to confirm their bases.
+- "treat the flat forecast as a baseline": the history is Jan-Dec 2024 only and December is the
+  highest month, 38% above the median of the other eleven. The naive model repeats it, so
+  January to March were almost certainly over-forecast.
+
+**Root cause:** the Verifier checks the draft against the findings, and the findings carried
+bare numbers with no units or cautions. A wrong unit had nothing to be checked against.
+`ForecastResult.seasonality_note` already existed but never reached the drafter.
+
+**Fix:**
+- `src/copilot/data/units.py` (new): verified units for snapshot columns, and
+  `describe_units(sql)`, which labels each selected column conservatively.
+- `run_data_analyst` appends a "Units:" line; `run_forecasting_risk` says "units sold per month
+  ... not dollars", labels bias in units, passes warnings through as "WARNING:" lines, and drops
+  to confidence "low" when there are any.
+- `forecast_warnings()` in `copilot/ml/forecast.py`: under 24 months of history, and a last
+  month at least 20% off the median earlier month.
+- `prompts/orchestrator_draft/v2.yaml` and `prompts/orchestrator_verify/v2.yaml`: use units
+  exactly as stated, pass on every warning; a wrong unit or a dropped warning fails grounding.
+
+**Tests:** `tests/test_data_units.py` (4), three `forecast_warnings` tests plus one on the real
+snapshot, a units test for the Data Analyst, and the real-forecast specialist test now checks the
+unit, the warning and confidence "low". Full suite 524 passed; ruff and mypy strict clean.
+
+**Also from the user's question "units can't be this big":** 3,758,005 is the whole portfolio
+(126 vendors, 8,721 active SKUs in December). Per SKU it's about 431 units that month, and the
+median vendor sold 1,530, which is the "thousands" scale seen in the analytics project.
+
+**Industry equivalent:** column descriptions and units in a semantic layer (dbt docs and
+`meta`, LookML `value_format` and descriptions, Cube measures), so every consumer, including an
+LLM, gets the meaning with the number.

@@ -136,6 +136,12 @@ def test_forecasting_risk_runs_a_real_portfolio_forecast() -> None:
     assert result.data_classes == ["public"]
     assert "demand forecast" in result.findings
     assert result.gaps == []
+    # 30 Oct 2026: the unit and the forecast's own cautions reach the drafter, and a forecast
+    # with warnings is never reported at medium confidence.
+    assert "units sold per month" in result.findings
+    assert "not dollars" in result.findings
+    assert "WARNING: Only 12 months of history" in result.findings
+    assert result.confidence == "low"
 
 
 @pytestmark_snapshot
@@ -297,3 +303,34 @@ def test_action_always_returns_partial_with_a_guardian_gap() -> None:
     assert "Guardian" in result.gaps[0] or "approver" in result.gaps[0]
     assert result.data_classes == ["confidential"]
     assert "Re: Q1 freight terms" in result.findings
+
+
+def test_data_analyst_findings_carry_the_units_of_the_selected_columns() -> None:
+    """30 Oct 2026: a real run's drafter called a percent of vendor revenue "% of controllable
+    margin"; the findings now say what each selected column measures."""
+    sql_service = Mock()
+    sql = (
+        "SELECT VendorName, ROUND(ControllableLeakage, 2) AS controllable_leakage, "
+        "ROUND(ControllableLeakagePct, 2) AS controllable_leakage_pct FROM vendor_profit_leakage"
+    )
+    sql_service.answer.return_value = TextToSqlResult(
+        question="x",
+        role="analyst",
+        sql=sql,
+        rows=[
+            {
+                "VendorName": "MARTIGNETTI COMPANIES",
+                "controllable_leakage": 874764.97,
+                "controllable_leakage_pct": 2.14,
+            }
+        ],
+        abstained=False,
+        total_cost_usd=0.01,
+        total_latency_s=1.0,
+        llm_calls=1,
+    )
+
+    result = run_data_analyst(_spec("data_analyst", "controllable leakage"), sql_service)
+
+    assert "Units: controllable_leakage (ControllableLeakage): US dollars" in result.findings
+    assert "percent of that vendor's total revenue" in result.findings

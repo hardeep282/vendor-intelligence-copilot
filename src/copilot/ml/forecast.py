@@ -31,6 +31,8 @@ caller, including the Model Selection Agent (Day 5 step 6) and any future agent 
 
 from __future__ import annotations
 
+import calendar
+import statistics
 import warnings
 from typing import Literal
 
@@ -48,6 +50,15 @@ SEASONALITY_NOTE = (
     "compare against) and a true seasonal-naive baseline is undefined. 'naive' below means "
     "repeat-last-month; ETS is fit non-seasonally for the same reason. See docs/RAID.md R3."
 )
+
+#: Below two full years, the same calendar month can't be compared year on year, so a seasonal
+#: peak (December, in this data) is invisible to both models.
+MIN_MONTHS_FOR_SEASONALITY = 24
+
+#: How far the last month may sit from the typical (median) earlier month before the forecast
+#: is flagged: both models start from the last observed level, so an unusual last month is
+#: carried straight into the next quarter. 20% is a deliberately simple, explainable rule.
+LAST_MONTH_OUTLIER_RATIO = 0.20
 
 Level = Literal["portfolio", "vendor"]
 
@@ -94,6 +105,44 @@ class ForecastResult(BaseModel):
     chosen_model: Literal["ets", "naive"]
     backtest: list[BacktestMetrics]
     seasonality_note: str = SEASONALITY_NOTE
+    # Added 30 Oct 2026: plain-English cautions the drafter must pass on (see
+    # `forecast_warnings`). Empty when nothing looks off.
+    warnings: list[str] = Field(default_factory=list)
+
+
+def forecast_warnings(history: list[MonthlyPoint], chosen_model: str) -> list[str]:
+    """Cautions about this forecast, in words a business reader understands.
+
+    Added 30 Oct 2026 after a real run forecast January to March at December's level: the
+    history is one calendar year, December is its highest month (38% above the median of the
+    other eleven), and the naive model repeats the last month, so the next quarter was almost
+    certainly over-forecast while the answer called it "a baseline". The backtest couldn't see
+    this, because no backtest month was a December following another December.
+    """
+    out: list[str] = []
+    n = len(history)
+    if n < MIN_MONTHS_FOR_SEASONALITY:
+        out.append(
+            f"Only {n} months of history, so seasonal patterns (such as a holiday peak) can't "
+            "be learned. Treat this forecast as rough."
+        )
+    if n >= 3:
+        last = history[-1]
+        typical = statistics.median(p.value for p in history[:-1])
+        if typical > 0:
+            change = (last.value - typical) / typical
+            if abs(change) >= LAST_MONTH_OUTLIER_RATIO:
+                when = f"{calendar.month_abbr[last.month]} {last.year}"
+                direction = "above" if change > 0 else "below"
+                outcome = "over-forecast" if change > 0 else "under-forecast"
+                carried = "repeats it" if chosen_model == "naive" else "starts from it"
+                out.append(
+                    f"The last month ({when}: {last.value:,.0f} units) is {abs(change):.0%} "
+                    f"{direction} the typical month in this history ({typical:,.0f} units). "
+                    f"The {chosen_model} "
+                    f"forecast {carried}, so the next months are probably {outcome}."
+                )
+    return out
 
 
 def _load_series(
@@ -217,4 +266,5 @@ def forecast_demand(
         forecast=forecast_points,
         chosen_model=chosen,
         backtest=[ets_metrics, naive_metrics],
+        warnings=forecast_warnings(history, chosen),
     )

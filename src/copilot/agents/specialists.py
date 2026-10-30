@@ -50,6 +50,7 @@ from pydantic import BaseModel
 from sqlglot import exp
 
 from copilot.agents.contracts import AgentResult, TaskSpec
+from copilot.data.units import describe_units
 from copilot.guardrails.canary import canary_line
 from copilot.guardrails.policy import DataClass, DisclosurePolicy, load_policy
 from copilot.llm.client import Effort, LLMClient
@@ -121,6 +122,11 @@ def run_data_analyst(
         f"Query returned {len(result.rows)} row(s)"
         f"{' (truncated)' if result.truncated else ''}: {row_preview}"
     )
+    # 30 Oct 2026: units travel with the numbers, so the drafter can't guess "$" for a unit
+    # count and the Verifier has something to check units against (copilot.data.units).
+    units = describe_units(result.sql, dialect=DIALECT)
+    if units:
+        findings += "\nUnits: " + "; ".join(units)
     gaps = list(result.assumptions)
     if result.truncated:
         gaps.append("result set was truncated to the row cap")
@@ -165,14 +171,20 @@ def run_forecasting_risk(
     )
     latency = time.perf_counter() - t0
 
+    # 30 Oct 2026: state the unit (demand is units sold, not dollars) and pass the forecast's
+    # own warnings through, so the drafter can't present an over-forecast as a "baseline".
     lines = [
-        f"{level} demand forecast ({forecast.chosen_model} chosen by WAPE): "
+        f"{level} demand forecast, in units sold per month (individual items such as bottles, "
+        f"not dollars) ({forecast.chosen_model} chosen by WAPE): "
         f"next {horizon} month(s) = {[p.value for p in forecast.forecast]}."
     ]
     for bt in forecast.backtest:
         lines.append(
-            f"  backtest {bt.model}: WAPE={bt.wape:.4f} MASE={bt.mase:.3f} bias={bt.bias:.0f}"
+            f"  backtest {bt.model}: WAPE={bt.wape:.4f} MASE={bt.mase:.3f} "
+            f"bias={bt.bias:.0f} units (negative = forecasts ran below actual sales)"
         )
+    for w in forecast.warnings:
+        lines.append(f"WARNING: {w}")
     gaps: list[str] = []
     evidence = [f"chosen_model={forecast.chosen_model}"]
     classifier_results: dict[str, ClassifierResult] = {}
@@ -201,7 +213,7 @@ def run_forecasting_risk(
         findings="\n".join(lines),
         evidence=evidence,
         gaps=gaps,
-        confidence="medium" if not run_risk or risk_df is not None else "low",
+        confidence=("low" if forecast.warnings or (run_risk and risk_df is None) else "medium"),
         data_classes=["internal"] if level == "vendor" else ["public"],
         latency_s=latency,
     )
