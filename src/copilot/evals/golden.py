@@ -58,18 +58,28 @@ def load_golden(path: Path = GOLDEN_PATH) -> list[GoldenQuestion]:
 
 
 def run_rows(con: duckdb.DuckDBPyConnection, sql: str) -> list[dict[str, Any]]:
-    """Execute SQL and return rows as dicts with floats rounded to 2 dp (stable for comparison)."""
-    cur = con.execute(sql)
-    cols = [d[0] for d in cur.description]
-    out: list[dict[str, Any]] = []
-    for row in cur.fetchall():
-        out.append(
-            {
-                c: (round(v, 2) if isinstance(v, float) else v)
-                for c, v in zip(cols, row, strict=True)
-            }
-        )
-    return out
+    """Execute SQL and return rows as dicts with floats rounded to 2 dp (stable for comparison).
+
+    Runs on its own cursor (31 Oct 2026). A DuckDB connection handles one call at a time, and
+    the Orchestrator runs specialists in parallel threads that share one connection; without a
+    cursor, two queries interleaved and one got another's (empty) result. The read-only lockdown
+    is database-wide, so it still applies to the cursor.
+    """
+    cur = con.cursor()
+    try:
+        cur.execute(sql)
+        cols = [d[0] for d in cur.description]
+        out: list[dict[str, Any]] = []
+        for row in cur.fetchall():
+            out.append(
+                {
+                    c: (round(v, 2) if isinstance(v, float) else v)
+                    for c, v in zip(cols, row, strict=True)
+                }
+            )
+        return out
+    finally:
+        cur.close()
 
 
 def dataset_hash(path: Path = GOLDEN_PATH) -> str:

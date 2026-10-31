@@ -261,6 +261,8 @@ never touched.
 (`SECRET_PATTERNS`). Called from `copilot.llm.client.LLMClient.complete`/`.structured`'s
 `@traceable` decorators -- the only caller.
 
+**31 Oct 2026:** `mask_run_payload` accepts non-dict outputs (LangSmith passes tuples straight through) and masks inside pydantic models via `model_dump()`.
+
 ### `src/copilot/guardrails/policy.py` *(day: 1)*
 Parses `policies/disclosure.yaml` into typed objects and answers "may this role see this?".
 **Takes in:** the YAML policy file.
@@ -376,6 +378,8 @@ test_privacy_leakage_suite.py` (Day 7 step 8's SQL red-team half).
 ### `src/copilot/evals/golden.py` *(day: 3)*
 Defines what one golden question looks like and re-checks it against the snapshot.
 **Gives out:** typed `GoldenQuestion` objects; `verify()` re-executes every SQL and compares results.
+
+**31 Oct 2026:** `run_rows` executes on its own cursor, so parallel specialists sharing one connection can't interleave results.
 
 ### `src/copilot/evals/evaluators.py` *(day: 3)*
 Two separate scores per answer: `execution_accuracy` (did it compute the right numbers, or
@@ -767,6 +771,8 @@ short, noisy series) -- a real finding, not a bug, logged in `docs/BUILD_LOG.md`
 
 **30 Oct 2026:** `forecast_warnings()` adds plain-English cautions to `ForecastResult.warnings`: under 24 months of history (seasonality can't be learned), and a last month 20% or more above or below the median earlier month (both models start from it, so the next months are likely over- or under-forecast). On the real snapshot both fire: December 2024 is 38% above the typical month.
 
+**31 Oct 2026:** `_load_series` queries on its own cursor; a shared connection used by parallel specialists returned None from `.df()`.
+
 ### `src/copilot/ml/inventory.py` — `compute_inventory_plan()` *(day: 5)*
 Safety stock, reorder point, EOQ -- standard OR formulas (Silver/Pyke/Peterson; Wilson 1913 for
 EOQ), from a forecast's output. `demand_stats_from_backtest()` is the bridge from a
@@ -915,6 +921,8 @@ that marker into a final answer is what `Guardian._check_canary` catches.
 **30 Oct 2026:** `run_data_analyst` appends a "Units:" line from `copilot.data.units`; `run_forecasting_risk` states that demand is units sold, labels bias in units, passes every forecast warning through as a "WARNING:" line, and reports confidence "low" when there are warnings.
 
 **31 Oct 2026:** `run_action` uses `ACTION_DRAFT_NOTE` as its status gap and, when the plan has no `vendor_name`, calls `identify_vendor()` against the snapshot vendor list (full name, or a short name like "Jim Beam"; returns None rather than choosing between two matches).
+
+**31 Oct 2026, later:** `resolve_level()` decides portfolio vs vendor for forecasting and inventory planning and returns the "Level:" line both now lead their findings with; inventory findings also state units, assumed inputs and the forecast's warnings.
 
 ### `prompts/action_draft/v1.yaml` *(day: 6, isNew: true)*
 The Action specialist's one prompt. System prompt states the vendor-facing audience rule
@@ -1129,6 +1137,8 @@ here.)*
 **30 Oct 2026, later: `orchestrator_draft/v3.yaml` and `orchestrator_verify/v3.yaml`.** Ranking questions must use the measure the question names (checked against the "Sorted by:" line), and a definition or reason no finding states fails grounding.
 
 **31 Oct 2026: `orchestrator_plan/v2.yaml`** requires `vendor_name` and `draft_type` on every action task.
+
+**31 Oct 2026, later: `orchestrator_plan/v3`, `orchestrator_draft/v4`, `orchestrator_verify/v4`** make the level explicit: the plan must set it, the draft must not present portfolio figures as a vendor's, and the verifier fails a figure at the wrong level.
 
 ### `src/copilot/sql/pair_generation.py` -- `generate_candidates()`/`verify_and_filter()` *(day: 9, isNew: true)*
 Builds the fine-tuning training set: question -> SQL pairs from a small family of templates,

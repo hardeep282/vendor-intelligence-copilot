@@ -2523,3 +2523,50 @@ directly with `issue_invite_code.py --role approver --api-key-directly`.
 `/ask/approve` mocked (three clicks sent one request; the Approved badge appears). Python: 3 new
 tests (vendor identification, missing-vendor fallback, ambiguity), the action test now pins the
 note. Full suite 534 passed; ruff and mypy strict clean.
+
+## 2026-10-31 · First real-key smoke test: a wrong "Verified" answer and a parallel-query crash
+
+**Covered:** `run_orchestrator_golden.py --questions oq-001` on the laptop with the real key.
+First real per-question cost: **$0.0345, 8 LLM calls**, 22.1 s summed latency (steps that ran in
+parallel are added together). Plan coverage ok. Three problems, all fixed here:
+
+1. **Wrong level, still Verified (serious).** "What's the recommended reorder point for DIAGEO
+   NORTH AMERICA INC?" was answered with reorder point 4,355,542, safety stock 597,537, EOQ
+   300,320. Recomputed: those are the **whole-portfolio** figures; Diageo's own are 696,261,
+   89,170 and 120,707 units. The planner passed no `level`, `forecast_result_for_inventory`
+   defaulted to "portfolio", and nothing in the findings said which level the numbers were
+   for, so the Verifier couldn't see the mismatch.
+   Fix: `resolve_level()` in `agents/specialists.py` (a `vendor_name` means vendor level,
+   normalised to the exact name; otherwise the objective is checked for one known vendor;
+   explicit "portfolio" is respected; ambiguity is reported, never guessed). Forecast and
+   inventory findings now start with a "Level:" line; inventory findings also say the figures
+   are units, list the assumed inputs (lead time 1 month, $500 per order, $0.50 per unit per
+   year, none of them from the data), and carry the forecast's WARNING lines, with confidence
+   "low" when there are any. `orchestrator_plan/v3`, `orchestrator_draft/v4` and
+   `orchestrator_verify/v4` make the level part of planning, drafting and grounding.
+2. **Forecasting crashed: "'NoneType' object has no attribute 'empty'".** Forecasting and
+   inventory planning run in parallel threads on one shared DuckDB connection, and a connection
+   handles one call at a time; interleaved queries made `.df()` return None. Reproduced: 7 of 20
+   parallel runs failed on a shared connection, 0 of 20 with a cursor per thread. Fix: every
+   query now runs on its own cursor (`run_rows`, `_load_series`, the vendor-list loader).
+   Checked that the read-only lockdown still applies to a cursor (SET, file reads and writes
+   are all refused).
+3. **"process_outputs failed ... 'tuple' object has no attribute 'items'".** LangSmith passes a
+   non-dict return value straight to `process_outputs`; `LLMClient.structured` returns a
+   (model, CallMetrics) tuple, so every structured call's outputs were dropped from traces.
+   Fix: `mask_run_payload` wraps non-dicts as `{"output": ...}`. Found while fixing it:
+   masking also didn't look inside pydantic model outputs, so PII or restricted names in a
+   structured answer would have reached the trace unmasked. Models are now converted with
+   `model_dump()` before masking.
+
+Also noted: the planner added the Knowledge agent to oq-001, which found nothing relevant
+(extra cost, no harm).
+
+**Tests:** 5 new (level rules, Diageo's real figures on the snapshot, 10 parallel rounds on one
+connection with zero failures, two masking cases). Full suite 539 passed; ruff and mypy strict
+clean.
+
+**Interview line:** "My first real-key smoke test came back Verified with another level's
+numbers. I recomputed it, found the default that caused it, and made the level explicit in the
+findings so the checker can see it. The same run exposed a race between two parallel agents on
+one database connection, which I reproduced 7 times in 20 before fixing."

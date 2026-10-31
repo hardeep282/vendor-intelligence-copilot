@@ -68,3 +68,29 @@ def test_an_unrelated_question_about_a_restricted_sounding_word_is_not_hidden() 
     """
     payload = {"question": "Which views are considered restricted in our data policy?"}
     assert mask_run_payload(payload) == payload
+
+
+# -- 31 Oct 2026: tuple and model outputs -------------------------------------------------------
+# LLMClient.structured returns (model, CallMetrics). LangSmith passed that tuple straight to
+# process_outputs, which called .items() on it and dropped every output from the trace.
+
+
+def test_a_tuple_output_is_wrapped_and_masked_not_dropped() -> None:
+    from pydantic import BaseModel
+
+    class Draft(BaseModel):
+        answer: str
+
+    masked = mask_run_payload((Draft(answer="email jane@example.com"), {"cost": 0.01}))
+    assert masked == {"output": [{"answer": "email [REDACTED:EMAIL_ADDRESS]"}, {"cost": 0.01}]}
+
+
+def test_a_restricted_name_inside_a_model_output_hides_the_payload() -> None:
+    from pydantic import BaseModel
+
+    class Draft(BaseModel):
+        answer: str
+
+    assert mask_run_payload((Draft(answer="from vw_PortfolioHealth"), 1)) == {
+        "_masked": RESTRICTED_PAYLOAD_MARKER
+    }

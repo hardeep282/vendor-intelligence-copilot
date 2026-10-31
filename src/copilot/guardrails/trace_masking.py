@@ -75,7 +75,19 @@ def _mask_string(text: str) -> str:
     return masked
 
 
+def _as_plain(value: Any) -> Any:  # noqa: ANN401
+    """Pydantic models (structured outputs, CallMetrics) become dicts so they get masked too."""
+    dump = getattr(value, "model_dump", None)
+    if callable(dump):
+        try:
+            return dump()
+        except Exception:  # noqa: BLE001 -- fall back to the object itself
+            return value
+    return value
+
+
 def _mask_value(value: Any) -> Any:  # noqa: ANN401 -- recurses over arbitrary JSON-ish data
+    value = _as_plain(value)
     if isinstance(value, str):
         return _mask_string(value)
     if isinstance(value, dict):
@@ -88,6 +100,7 @@ def _mask_value(value: Any) -> Any:  # noqa: ANN401 -- recurses over arbitrary J
 def _contains_restricted_name(value: Any, names: frozenset[str]) -> bool:  # noqa: ANN401
     if not names:
         return False
+    value = _as_plain(value)
     if isinstance(value, str):
         return any(name in value for name in names)
     if isinstance(value, dict):
@@ -97,12 +110,18 @@ def _contains_restricted_name(value: Any, names: frozenset[str]) -> bool:  # noq
     return False
 
 
-def mask_run_payload(payload: dict[str, Any]) -> dict[str, Any]:
+def mask_run_payload(payload: Any) -> dict[str, Any]:  # noqa: ANN401
     """The function passed as both `process_inputs` and `process_outputs` on
     `LLMClient.complete`/`.structured`'s `@traceable` decorators. Same shape in, same shape out
     (a dict) -- `@traceable` requires that; it's what gets *recorded*, not what the decorated
     function actually returns to its caller, so masking here never changes real behaviour.
     """
+    # 31 Oct 2026: LangSmith passes a function's raw return value to process_outputs when it
+    # isn't a dict. LLMClient.structured returns a (model, CallMetrics) tuple, so every call
+    # logged "process_outputs failed ... 'tuple' object has no attribute 'items'" and its
+    # outputs were dropped from the trace. Wrap anything that isn't a dict.
+    if not isinstance(payload, dict):
+        payload = {"output": payload}
     names = frozenset(_policy().restricted_names)
     if _contains_restricted_name(payload, names):
         return {"_masked": RESTRICTED_PAYLOAD_MARKER}

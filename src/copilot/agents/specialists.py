@@ -162,6 +162,7 @@ def run_forecasting_risk(
     con: duckdb.DuckDBPyConnection | None = None,
     risk_df: pd.DataFrame | None = None,
     compute_shap: bool = False,
+    known_vendors: Sequence[str] | None = None,
 ) -> AgentResult:
     """Demand forecast (always real, against this repo's own snapshot) plus an optional SKU
     risk classification pass. `spec.constraints["level"]` is "portfolio" (default) or "vendor"
@@ -169,8 +170,7 @@ def run_forecasting_risk(
     ("true"/"false", default "false") turns on the classifier half -- off by default because,
     unlike the forecast, it has no real-data path in this repo (see module docstring).
     """
-    level = cast("Level", spec.constraints.get("level", "portfolio"))
-    vendor_name = spec.constraints.get("vendor_name")
+    level, vendor_name, level_line = resolve_level(spec, known_vendors)
     horizon = int(spec.constraints.get("horizon_months", "3"))
 
     t0 = time.perf_counter()
@@ -182,9 +182,10 @@ def run_forecasting_risk(
     # 30 Oct 2026: state the unit (demand is units sold, not dollars) and pass the forecast's
     # own warnings through, so the drafter can't present an over-forecast as a "baseline".
     lines = [
-        f"{level} demand forecast, in units sold per month (individual items such as bottles, "
+        f"{level_line.rstrip('.')}.",
+        f"Demand forecast, in units sold per month (individual items such as bottles, "
         f"not dollars) ({forecast.chosen_model} chosen by WAPE): "
-        f"next {horizon} month(s) = {[p.value for p in forecast.forecast]}."
+        f"next {horizon} month(s) = {[p.value for p in forecast.forecast]}.",
     ]
     for bt in forecast.backtest:
         lines.append(
@@ -228,14 +229,15 @@ def run_forecasting_risk(
 
 
 def forecast_result_for_inventory(
-    spec: TaskSpec, con: duckdb.DuckDBPyConnection | None = None
+    spec: TaskSpec,
+    con: duckdb.DuckDBPyConnection | None = None,
+    known_vendors: Sequence[str] | None = None,
 ) -> ForecastResult:
     """Convenience for the Orchestrator (step 3): run the same forecast
     `run_forecasting_risk` would, returning the raw `ForecastResult` Inventory Planning needs
     as its own input -- the "Inventory waits for Forecasting" dependency from master prompt C3.
     """
-    level = cast("Level", spec.constraints.get("level", "portfolio"))
-    vendor_name = spec.constraints.get("vendor_name")
+    level, vendor_name, _ = resolve_level(spec, known_vendors)
     horizon = int(spec.constraints.get("horizon_months", "3"))
     return forecast_demand(
         ForecastRequest(level=level, vendor_name=vendor_name, horizon_months=horizon), con=con
@@ -245,7 +247,9 @@ def forecast_result_for_inventory(
 # == 3. Inventory Planning =====================================================================
 
 
-def run_inventory_planning(spec: TaskSpec, forecast: ForecastResult) -> AgentResult:
+def run_inventory_planning(
+    spec: TaskSpec, forecast: ForecastResult, known_vendors: Sequence[str] | None = None
+) -> AgentResult:
     """Safety stock / reorder point / EOQ from a forecast's own history (for demand
     variability) and horizon (for mean demand) -- `demand_stats_from_backtest` is the Day 5
     bridge that already does this correctly (std dev from *history*, not across a flat
@@ -265,18 +269,30 @@ def run_inventory_planning(spec: TaskSpec, forecast: ForecastResult) -> AgentRes
     )
     plan = compute_inventory_plan(request)
 
-    findings = (
-        f"safety stock={plan.safety_stock:,.0f}, reorder point={plan.reorder_point:,.0f}, "
-        f"EOQ={plan.economic_order_quantity:,.0f} "
-        f"(service level {request.service_level:.0%}, z={plan.z_score:.2f})"
-    )
+    # 31 Oct 2026: say which level the plan is for, that the figures are units, which inputs are
+    # assumptions rather than data, and pass the forecast's warnings through (the mean demand
+    # comes straight from that forecast, so an over-forecast inflates the reorder point too).
+    _, _, level_line = resolve_level(spec, known_vendors)
+    if forecast.request.level == "vendor":
+        level_line = f"Level: vendor {forecast.request.vendor_name}"
+    lines = [
+        f"{level_line.rstrip('.')}.",
+        f"In units: safety stock={plan.safety_stock:,.0f}, "
+        f"reorder point={plan.reorder_point:,.0f}, EOQ={plan.economic_order_quantity:,.0f} "
+        f"(service level {request.service_level:.0%}, z={plan.z_score:.2f}).",
+        f"Assumed, not from your data: lead time {request.lead_time_periods:g} month(s), "
+        f"ordering cost ${request.ordering_cost_per_order:,.0f} per order, holding cost "
+        f"${request.holding_cost_per_unit_per_year:,.2f} per unit per year. EOQ depends on "
+        f"these.",
+    ]
+    lines += [f"WARNING: {w}" for w in forecast.warnings]
     return AgentResult(
         task_id=spec.task_id,
         agent="inventory_planning",
         status="ok",
-        findings=findings,
+        findings="\n".join(lines),
         evidence=[f"forecast chosen_model={forecast.chosen_model}"],
-        confidence="medium",
+        confidence="low" if forecast.warnings else "medium",
         data_classes=["internal"] if forecast.request.level == "vendor" else ["public"],
     )
 
@@ -370,6 +386,43 @@ def identify_vendor(text: str, known_vendors: Sequence[str]) -> str | None:
     return by_short_name[0] if len(by_short_name) == 1 else None
 
 
+PORTFOLIO_LEVEL_LINE = "Level: whole portfolio (all vendors combined)"
+
+
+def resolve_level(
+    spec: TaskSpec, known_vendors: Sequence[str] | None = None
+) -> tuple[Level, str | None, str]:
+    """Which level a forecast or inventory plan should run at: (level, vendor_name, Level line).
+
+    Added 31 Oct 2026. A real run asked for DIAGEO NORTH AMERICA INC's reorder point; the planner
+    passed no level, the code defaulted to the whole portfolio, and the answer presented the
+    portfolio's reorder point (4,355,542) as Diageo's (really 696,261) and was Verified, because
+    nothing in the findings said which level the numbers were for. Now:
+    - a vendor_name constraint means vendor level (normalised to the exact name in the data);
+    - with no vendor_name and no explicit level="portfolio", the objective is checked for one
+      known vendor with `identify_vendor`;
+    - the returned "Level:" line goes into the findings, so the Verifier can compare it with
+      the question. If vendor level was asked for but no single vendor could be identified, the
+      line says plainly that these are NOT vendor figures.
+    """
+    vendor = spec.constraints.get("vendor_name")
+    asked = spec.constraints.get("level")
+    if vendor and known_vendors and vendor not in known_vendors:
+        vendor = identify_vendor(vendor, known_vendors) or vendor
+    if not vendor and asked != "portfolio" and known_vendors:
+        vendor = identify_vendor(spec.objective, known_vendors)
+    if vendor:
+        return "vendor", vendor, f"Level: vendor {vendor}"
+    if asked == "vendor":
+        return (
+            "portfolio",
+            None,
+            PORTFOLIO_LEVEL_LINE + ". The request asked for one vendor, but no single vendor "
+            "could be identified, so these are NOT figures for any one vendor.",
+        )
+    return "portfolio", None, PORTFOLIO_LEVEL_LINE
+
+
 DraftType = Literal["renegotiation_email", "reorder_recommendation"]
 
 
@@ -456,6 +509,8 @@ def run_action(
 
 __all__ = [
     "ACTION_DRAFT_NOTE",
+    "PORTFOLIO_LEVEL_LINE",
+    "resolve_level",
     "identify_vendor",
     "ActionDraft",
     "DraftType",

@@ -18,9 +18,11 @@ import pytest
 from copilot.agents.contracts import TaskSpec
 from copilot.agents.specialists import (
     ACTION_DRAFT_NOTE,
+    PORTFOLIO_LEVEL_LINE,
     _sql_data_classes,
     forecast_result_for_inventory,
     identify_vendor,
+    resolve_level,
     run_action,
     run_data_analyst,
     run_forecasting_risk,
@@ -136,7 +138,8 @@ def test_forecasting_risk_runs_a_real_portfolio_forecast() -> None:
 
     assert result.status == "ok"
     assert result.data_classes == ["public"]
-    assert "demand forecast" in result.findings
+    assert "Demand forecast" in result.findings
+    assert result.findings.startswith("Level: whole portfolio (all vendors combined).")
     assert result.gaps == []
     # 30 Oct 2026: the unit and the forecast's own cautions reach the drafter, and a forecast
     # with warnings is never reported at medium confidence.
@@ -423,3 +426,86 @@ def test_action_flags_an_unidentified_vendor_instead_of_guessing() -> None:
     result = run_action(spec, _action_llm(), known_vendors=_VENDORS)
     assert "vendor_name=unidentified vendor" in result.evidence
     assert any("couldn't be identified" in g for g in result.gaps)
+
+
+# -- level resolution and parallel safety (31 Oct 2026) ---------------------------------------
+# A real run answered "Diageo's reorder point" with whole-portfolio figures (4,355,542) and was
+# Verified; another crashed when two specialists queried one connection at the same moment.
+
+
+def test_resolve_level_rules() -> None:
+    vendors = ["DIAGEO NORTH AMERICA INC", "DIAGEO CHATEAU ESTATE WINES", "BACARDI USA INC"]
+    named = _spec("inventory_planning", "reorder point for DIAGEO NORTH AMERICA INC")
+    assert resolve_level(named, vendors)[:2] == ("vendor", "DIAGEO NORTH AMERICA INC")
+    short = _spec("forecasting_risk", "x", {"vendor_name": "Bacardi"})
+    assert resolve_level(short, vendors)[:2] == ("vendor", "BACARDI USA INC")
+    explicit_portfolio = _spec(
+        "forecasting_risk", "Bacardi aside, forecast", {"level": "portfolio"}
+    )
+    assert resolve_level(explicit_portfolio, vendors) == ("portfolio", None, PORTFOLIO_LEVEL_LINE)
+    ambiguous = _spec("forecasting_risk", "forecast Diageo", {"level": "vendor"})
+    level, vendor, line = resolve_level(ambiguous, vendors)
+    assert (level, vendor) == ("portfolio", None)
+    assert "NOT figures for any one vendor" in line
+
+
+@pytestmark_snapshot
+def test_inventory_for_a_named_vendor_uses_that_vendors_figures() -> None:
+    from copilot.data import store
+
+    con = store.connect()
+    cur = con.cursor()
+    vendors = [
+        r[0] for r in cur.execute("SELECT VendorName FROM vendor_revenue_summary").fetchall()
+    ]
+    cur.close()
+    spec = _spec("inventory_planning", "recommended reorder point for DIAGEO NORTH AMERICA INC")
+
+    forecast = forecast_result_for_inventory(spec, con=con, known_vendors=vendors)
+    result = run_inventory_planning(spec, forecast, known_vendors=vendors)
+
+    assert forecast.request.level == "vendor"
+    assert result.findings.startswith("Level: vendor DIAGEO NORTH AMERICA INC.")
+    assert "reorder point=696,261" in result.findings  # not the portfolio's 4,355,542
+    assert "Assumed, not from your data" in result.findings
+    assert "WARNING:" in result.findings
+    assert result.confidence == "low"
+    assert result.data_classes == ["internal"]
+
+
+@pytestmark_snapshot
+def test_specialists_share_one_connection_in_parallel_without_crashing() -> None:
+    """Before the cursor fix, 7 of 20 parallel forecasts on one shared connection failed with
+    "'NoneType' object has no attribute 'empty'" (reproduced 31 Oct 2026)."""
+    import threading
+
+    from copilot.data import store
+
+    con = store.connect()
+    failures: list[str] = []
+
+    def work(spec: TaskSpec) -> None:
+        try:
+            if spec.agent == "inventory_planning":
+                run_inventory_planning(spec, forecast_result_for_inventory(spec, con=con))
+            else:
+                run_forecasting_risk(spec, con=con)
+        except Exception as exc:  # noqa: BLE001 -- collect, then assert none happened
+            failures.append(f"{type(exc).__name__}: {exc}")
+
+    for _ in range(10):
+        specs = [
+            _spec("forecasting_risk", "forecast", {"level": "portfolio"}),
+            _spec(
+                "inventory_planning",
+                "reorder",
+                {"level": "vendor", "vendor_name": "DIAGEO NORTH AMERICA INC"},
+            ),
+        ]
+        threads = [threading.Thread(target=work, args=(s,)) for s in specs]
+        for t in threads:
+            t.start()
+        for t in threads:
+            t.join()
+
+    assert failures == []

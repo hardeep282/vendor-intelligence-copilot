@@ -46,9 +46,13 @@ from copilot.rag.permissions import PermissionedRetriever
 from copilot.sql.service import TextToSqlService
 
 
-def _inventory_executor(spec: TaskSpec, con: duckdb.DuckDBPyConnection | None) -> AgentResult:
-    forecast = forecast_result_for_inventory(spec, con=con)
-    return run_inventory_planning(spec, forecast)
+def _inventory_executor(
+    spec: TaskSpec,
+    con: duckdb.DuckDBPyConnection | None,
+    known_vendors: list[str] | None = None,
+) -> AgentResult:
+    forecast = forecast_result_for_inventory(spec, con=con, known_vendors=known_vendors)
+    return run_inventory_planning(spec, forecast, known_vendors=known_vendors)
 
 
 def _vendor_names_loader(
@@ -66,7 +70,13 @@ def _vendor_names_loader(
                 own = con is None
                 c = con or store.connect()
                 try:
-                    rows = c.execute("SELECT VendorName FROM vendor_revenue_summary").fetchall()
+                    cur = c.cursor()
+                    try:
+                        rows = cur.execute(
+                            "SELECT VendorName FROM vendor_revenue_summary"
+                        ).fetchall()
+                    finally:
+                        cur.close()
                 finally:
                     if own:
                         c.close()
@@ -93,8 +103,10 @@ def build_executors(
     vendor_names = _vendor_names_loader(con)
     return {
         "data_analyst": lambda spec: run_data_analyst(spec, sql_service, policy=policy),
-        "forecasting_risk": lambda spec: run_forecasting_risk(spec, con=con),
-        "inventory_planning": lambda spec: _inventory_executor(spec, con),
+        "forecasting_risk": lambda spec: run_forecasting_risk(
+            spec, con=con, known_vendors=vendor_names()
+        ),
+        "inventory_planning": lambda spec: _inventory_executor(spec, con, vendor_names()),
         "knowledge": lambda spec: run_knowledge(spec, rag_service, retriever),
         "action": lambda spec: run_action(spec, llm, known_vendors=vendor_names()),
     }

@@ -149,20 +149,34 @@ def _load_series(
     level: Level, vendor_name: str | None, con: duckdb.DuckDBPyConnection
 ) -> pd.DataFrame:
     """Monthly (year, month, value) for the portfolio or one vendor, ordered chronologically."""
+    # Own cursor (31 Oct 2026): forecasting and inventory planning run in parallel threads on one
+    # shared connection; interleaved calls made .df() return None ("'NoneType' object has no
+    # attribute 'empty'"), reproduced 7 times in 20 parallel runs before this change, 0 after.
+    cur = con.cursor()
+    try:
+        df = _query_series(cur, level, vendor_name)
+    finally:
+        cur.close()
+    if df is None or df.empty:
+        raise ValueError(f"no demand history for level={level!r} vendor_name={vendor_name!r}")
+    return df
+
+
+def _query_series(
+    cur: duckdb.DuckDBPyConnection, level: Level, vendor_name: str | None
+) -> pd.DataFrame:
     if level == "portfolio":
-        df = con.execute(
+        df = cur.execute(
             "SELECT SalesYear AS year, SalesMonth AS month, MonthlyDemand AS value "
             "FROM portfolio_monthly_demand ORDER BY SalesYear, SalesMonth"
         ).df()
     else:
-        df = con.execute(
+        df = cur.execute(
             "SELECT SalesYear AS year, SalesMonth AS month, SUM(MonthlyDemand) AS value "
             "FROM vendor_monthly_demand WHERE VendorName = ? "
             "GROUP BY SalesYear, SalesMonth ORDER BY SalesYear, SalesMonth",
             [vendor_name],
         ).df()
-    if df.empty:
-        raise ValueError(f"no demand history for level={level!r} vendor_name={vendor_name!r}")
     return df
 
 
