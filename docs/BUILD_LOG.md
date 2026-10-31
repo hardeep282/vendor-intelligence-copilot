@@ -2488,3 +2488,38 @@ real wrong and right answers). Full suite 531 passed; ruff and mypy strict clean
 wrong ranking and an invented definition. Verified meant 'consistent with the tools', not
 'correct', so I made the sort order visible to the checker and added the question to the golden
 set so it fails automatically next time."
+
+## 2026-10-31 · First real approval in the UI, and four fixes it surfaced
+
+**Covered:** the first end-to-end human approval through the real UI and server on the laptop.
+Analyst asked for a renegotiation email to DIAGEO NORTH AMERICA INC with no internal figures;
+the draft came back Verified and paused ("Awaiting approval"); an approver key resumed it and
+the decision was written to `data/audit/guardian_log.jsonl`. The draft itself was clean.
+Getting there surfaced four problems, all fixed here at the user's request:
+
+1. **Stale, wrong status text.** The Action agent's gap said the draft "has not yet passed
+   through the Guardian or an approver (Day 7)", and the drafter showed it to the user. By then
+   the Guardian *had* reviewed it, and "Day 7" is build-sprint jargon. Now
+   `ACTION_DRAFT_NOTE`: "Draft only: it needs an approver's sign-off and is never sent
+   automatically."
+2. **Vendor not recorded.** The planner left `vendor_name` out of the Action task, so evidence
+   and logs said "the vendor". Fixed twice over: `orchestrator_plan/v2.yaml` requires
+   `vendor_name` (and `draft_type`) on every action task, and `identify_vendor()` looks the name
+   up deterministically from the snapshot's vendor list when the planner forgets
+   (`build_executors` loads the list lazily). It never guesses: "Diageo" alone matches two
+   vendors in this data (Diageo North America, Diageo Chateau Estate Wines), so the draft is
+   recorded as "unidentified vendor" with a gap telling the approver to check.
+3. **Approval looked like nothing happened.** `sendApproval()` wrote "decision recorded:
+   approved" and then `renderResult()` immediately hid and cleared it. The badges now show the
+   decision: Approved, Approved with edits, Rejected, or Held back.
+4. **Double-click ran a question twice** (seen on 29 Oct: two planning runs, two charges). The
+   Ask button is disabled and reads "Working..." until the run finishes or fails.
+
+**Also during the session:** "API key is invalid or unknown" on approve. Invite codes and API
+keys are both 32-character `token_urlsafe` strings and easy to mix up; the fix was issuing a key
+directly with `issue_invite_code.py --role approver --api-key-directly`.
+
+**Verified:** UI fixes checked in a real browser against the real FastAPI app with `/ask` and
+`/ask/approve` mocked (three clicks sent one request; the Approved badge appears). Python: 3 new
+tests (vendor identification, missing-vendor fallback, ambiguity), the action test now pins the
+note. Full suite 534 passed; ruff and mypy strict clean.

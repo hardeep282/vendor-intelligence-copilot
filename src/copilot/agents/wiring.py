@@ -24,6 +24,8 @@ always implies planning `forecasting_risk` too, since the former needs the latte
 
 from __future__ import annotations
 
+from collections.abc import Callable
+
 import duckdb
 
 from copilot.agents.contracts import AgentName, AgentResult, TaskSpec
@@ -36,6 +38,7 @@ from copilot.agents.specialists import (
     run_inventory_planning,
     run_knowledge,
 )
+from copilot.data import store
 from copilot.guardrails.policy import DisclosurePolicy
 from copilot.llm.client import LLMClient
 from copilot.rag.corrective import CorrectiveRagService
@@ -46,6 +49,33 @@ from copilot.sql.service import TextToSqlService
 def _inventory_executor(spec: TaskSpec, con: duckdb.DuckDBPyConnection | None) -> AgentResult:
     forecast = forecast_result_for_inventory(spec, con=con)
     return run_inventory_planning(spec, forecast)
+
+
+def _vendor_names_loader(
+    con: duckdb.DuckDBPyConnection | None,
+) -> Callable[[], list[str] | None]:
+    """Reads the vendor list once, on first use, for `run_action`'s vendor lookup (31 Oct 2026).
+    Lazy so building executors never needs a snapshot; None if it can't be read, in which case
+    run_action simply records that the vendor couldn't be identified.
+    """
+    cache: dict[str, list[str] | None] = {}
+
+    def load() -> list[str] | None:
+        if "names" not in cache:
+            try:
+                own = con is None
+                c = con or store.connect()
+                try:
+                    rows = c.execute("SELECT VendorName FROM vendor_revenue_summary").fetchall()
+                finally:
+                    if own:
+                        c.close()
+                cache["names"] = [str(r[0]) for r in rows]
+            except Exception:  # noqa: BLE001 -- no snapshot (tests, CI): no lookup, never a crash
+                cache["names"] = None
+        return cache["names"]
+
+    return load
 
 
 def build_executors(
@@ -60,12 +90,13 @@ def build_executors(
     `run_forecasting_risk`/`forecast_result_for_inventory` fall back to their own default
     connection (`copilot.data.store.connect()`), same as calling them directly would.
     """
+    vendor_names = _vendor_names_loader(con)
     return {
         "data_analyst": lambda spec: run_data_analyst(spec, sql_service, policy=policy),
         "forecasting_risk": lambda spec: run_forecasting_risk(spec, con=con),
         "inventory_planning": lambda spec: _inventory_executor(spec, con),
         "knowledge": lambda spec: run_knowledge(spec, rag_service, retriever),
-        "action": lambda spec: run_action(spec, llm),
+        "action": lambda spec: run_action(spec, llm, known_vendors=vendor_names()),
     }
 
 

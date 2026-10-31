@@ -594,6 +594,8 @@ return.
 
 ## RAG / Knowledge layer — the Knowledge agent's retrieval stack (Day 4)
 
+**31 Oct 2026 (`app.js`):** decision badges (Approved, Approved with edits, Rejected, Held back) replace the "decision recorded" line that `renderResult()` used to clear; the Ask button is disabled while a run streams, so one click is one run.
+
 ### `knowledge/*.md`, `knowledge/contracts/*.md` *(day: 4)*
 The RAG source corpus, not code: 4 methodology-family docs (data dictionary, metric definitions,
 decision log, methodology — `public`/`internal`) + 10 synthetic vendor supply-agreement summaries
@@ -912,6 +914,8 @@ that marker into a final answer is what `Guardian._check_canary` catches.
 
 **30 Oct 2026:** `run_data_analyst` appends a "Units:" line from `copilot.data.units`; `run_forecasting_risk` states that demand is units sold, labels bias in units, passes every forecast warning through as a "WARNING:" line, and reports confidence "low" when there are warnings.
 
+**31 Oct 2026:** `run_action` uses `ACTION_DRAFT_NOTE` as its status gap and, when the plan has no `vendor_name`, calls `identify_vendor()` against the snapshot vendor list (full name, or a short name like "Jim Beam"; returns None rather than choosing between two matches).
+
 ### `prompts/action_draft/v1.yaml` *(day: 6, isNew: true)*
 The Action specialist's one prompt. System prompt states the vendor-facing audience rule
 (public facts + that vendor's own terms only, for a `renegotiation_email`; internal figures
@@ -1078,6 +1082,8 @@ already build them -- this module doesn't reconstruct that wiring, it just close
 policy`; `copilot.llm.client`; `copilot.rag.corrective`/`permissions`; `copilot.sql.service`.
 Only caller so far: `scripts/run_orchestrator_golden.py`.
 
+**31 Oct 2026:** `build_executors` passes the Action agent a lazily loaded vendor list (`_vendor_names_loader`) for its vendor lookup; no snapshot means no lookup, never a crash.
+
 ### `src/copilot/evals/orchestrator_golden.py`, `evals/datasets/orchestrator_golden_v1.jsonl` *(day: 6, isNew: true)*
 Day 6 step 7's 10 multi-hop golden questions -- distinct from `copilot.evals.golden`'s
 "multi_hop" category (gq-031..034), which is multi-step *SQL* answered by one specialist.
@@ -1121,6 +1127,8 @@ here.)*
 **30 Oct 2026: `orchestrator_draft/v2.yaml` and `orchestrator_verify/v2.yaml`.** Draft v2 must use units exactly as the findings state them and pass on every "WARNING:" line; verify v2 fails grounding for a wrong unit or a dropped warning. v1 files are unchanged (project rule: a changed rule is a new version).
 
 **30 Oct 2026, later: `orchestrator_draft/v3.yaml` and `orchestrator_verify/v3.yaml`.** Ranking questions must use the measure the question names (checked against the "Sorted by:" line), and a definition or reason no finding states fails grounding.
+
+**31 Oct 2026: `orchestrator_plan/v2.yaml`** requires `vendor_name` and `draft_type` on every action task.
 
 ### `src/copilot/sql/pair_generation.py` -- `generate_candidates()`/`verify_and_filter()` *(day: 9, isNew: true)*
 Builds the fine-tuning training set: question -> SQL pairs from a small family of templates,

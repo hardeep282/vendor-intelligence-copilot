@@ -121,6 +121,19 @@ function renderBadges(result) {
   if (result.pending_approval) {
     add("pending-approval", "Awaiting approval");
   }
+  // 31 Oct 2026: show the human decision itself. Before this, an approved draft looked the same
+  // as any other answer, because the "decision recorded" line lived in the approval panel that
+  // renderResult() hides and clears.
+  const DECISIONS = {
+    approved: ["verified", "Approved"],
+    edited: ["verified", "Approved with edits"],
+    rejected: ["blocked", "Rejected"],
+    withheld: ["escalated", "Held back: no approver available"],
+  };
+  if (result.approval_decision && DECISIONS[result.approval_decision]) {
+    const [cls, label] = DECISIONS[result.approval_decision];
+    add(cls, label);
+  }
 }
 
 function renderCitations(result) {
@@ -222,10 +235,25 @@ async function askQuestion(question) {
   }
 }
 
-el("ask-btn").addEventListener("click", () => {
+// 31 Oct 2026: one question at a time. A double-click used to start two full runs on the same
+// thread (and pay for both); the button now stays disabled until the run finishes or fails.
+let askInFlight = false;
+el("ask-btn").addEventListener("click", async () => {
   const question = el("question").value.trim();
-  if (!question) return;
-  askQuestion(question);
+  if (!question || askInFlight) return;
+  askInFlight = true;
+  const btn = el("ask-btn");
+  btn.disabled = true;
+  btn.textContent = "Working...";
+  try {
+    await askQuestion(question);
+  } catch (err) {
+    el("agent-status").textContent = `network error: ${err}`;
+  } finally {
+    askInFlight = false;
+    btn.disabled = false;
+    btn.textContent = "Ask";
+  }
 });
 
 // -- /ask/approve -----------------------------------------------------------------------------

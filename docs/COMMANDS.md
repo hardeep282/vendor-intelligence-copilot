@@ -238,7 +238,7 @@ the MCP server wraps `copilot.data.store`, `copilot.sql.service.TextToSqlService
 |---|---|
 | `uv run python scripts/build_snapshot.py "path/to/Vendor_Summary.xlsx"` | Rebuilds the aggregate-only Parquet snapshot from the analytics repo's workbook |
 | `uv run python -c "from copilot.data.store import build_database; print(build_database())"` | Builds `data/snapshot/snapshot.duckdb` from those Parquet files. Without it, 27 snapshot-dependent tests skip |
-| `uv run pytest -q` | Full suite: 511 passed with the snapshot built (512 from 29 Oct after the fail-closed approval fix; 515 after the PII fix and 524 after the units and forecast-warning fixes, 531 after the ranking check, all 30 Oct) |
+| `uv run pytest -q` | Full suite: 511 passed with the snapshot built (512 from 29 Oct after the fail-closed approval fix; 515 after the PII fix and 524 after the units and forecast-warning fixes, 531 after the ranking check (30 Oct), 534 after the approval-flow fixes (31 Oct)) |
 | `gitleaks git . --redact -v` | Scans every commit in history for secrets before the repo goes public (`--redact` hides any match in the output) |
 | `uv run python scripts/build_code_map_page.py` | Regenerates the Code Map page (`docs/code-map/index.html`) from `docs/CODE_MAP.md`; run after editing the markdown |
 | `uv lock --check --offline` | Confirms `uv.lock` still matches `pyproject.toml` after the version bump, without touching the network |

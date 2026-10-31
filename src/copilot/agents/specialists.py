@@ -38,7 +38,9 @@ something safe to send.
 
 from __future__ import annotations
 
+import re
 import time
+from collections.abc import Sequence
 from typing import Literal, cast
 
 import duckdb
@@ -333,6 +335,41 @@ def run_knowledge(
 
 # == 5. Action (drafts only) ===================================================================
 
+#: Plain, true status for every Action draft (31 Oct 2026). The old text said the draft "has not
+#: yet passed through the Guardian or an approver (Day 7)", which users saw verbatim even though
+#: the Guardian had already reviewed it, and "Day 7" was build-sprint jargon.
+ACTION_DRAFT_NOTE = "Draft only: it needs an approver's sign-off and is never sent automatically."
+
+
+def identify_vendor(text: str, known_vendors: Sequence[str]) -> str | None:
+    """The one known vendor `text` refers to, or None when there's no match or more than one.
+
+    Added 31 Oct 2026: the planner left `vendor_name` out of an Action task, so the draft was
+    recorded as being for "the vendor". Exact full names win; otherwise a vendor's first word
+    (or first two words when the first is short, e.g. "Jim Beam"), matched as a whole word. Never
+    guesses between two candidates: "Diageo" alone matches two vendors in this data, so it
+    returns None and the draft is flagged for the approver to check.
+    """
+    lowered = text.lower()
+    full = [v for v in known_vendors if v.lower() in lowered]
+    # a name that's part of a longer matched name isn't a second vendor
+    full = [v for v in full if not any(v != w and v.lower() in w.lower() for w in full)]
+    if len(full) == 1:
+        return full[0]
+    if len(full) > 1:
+        return None
+    by_short_name: list[str] = []
+    for vendor in known_vendors:
+        words = vendor.split()
+        if not words:
+            continue
+        # "Diageo" for DIAGEO NORTH AMERICA INC; "Jim Beam" when the first word is too short
+        short = words[0] if len(words[0]) >= 4 or len(words) == 1 else " ".join(words[:2])
+        if len(short) >= 4 and re.search(rf"\b{re.escape(short.lower())}\b", lowered):
+            by_short_name.append(vendor)
+    return by_short_name[0] if len(by_short_name) == 1 else None
+
+
 DraftType = Literal["renegotiation_email", "reorder_recommendation"]
 
 
@@ -343,7 +380,12 @@ class ActionDraft(BaseModel):
     body: str
 
 
-def run_action(spec: TaskSpec, llm: LLMClient, effort: Effort | None = None) -> AgentResult:
+def run_action(
+    spec: TaskSpec,
+    llm: LLMClient,
+    effort: Effort | None = None,
+    known_vendors: Sequence[str] | None = None,
+) -> AgentResult:
     """Draft a renegotiation email or reorder recommendation. Never sent, never approved here --
     master prompt C5's interrupt -> Guardian -> approver flow is Day 7. `spec.constraints`
     carries `draft_type` (default "renegotiation_email"), `vendor_name`, and `context` (the
@@ -353,8 +395,17 @@ def run_action(spec: TaskSpec, llm: LLMClient, effort: Effort | None = None) -> 
     says so explicitly rather than implying this draft is already safe to send.
     """
     draft_type = cast("DraftType", spec.constraints.get("draft_type", "renegotiation_email"))
-    vendor_name = spec.constraints.get("vendor_name", "the vendor")
     context = spec.constraints.get("context", spec.objective)
+    vendor_name = spec.constraints.get("vendor_name")
+    vendor_gaps: list[str] = []
+    if not vendor_name and known_vendors:
+        vendor_name = identify_vendor(f"{spec.objective} {context}", known_vendors)
+    if not vendor_name:
+        vendor_name = "unidentified vendor"
+        vendor_gaps.append(
+            "the vendor couldn't be identified from the request; check the draft names the "
+            "right one before approving"
+        )
 
     prompt = load_prompt("action_draft")
     system = prompt.render_system(draft_type=draft_type) + canary_line("action")
@@ -394,9 +445,7 @@ def run_action(spec: TaskSpec, llm: LLMClient, effort: Effort | None = None) -> 
         status="partial",  # never "ok": a draft is never done until the Guardian/approver sees it
         findings=f"Subject: {draft.subject}\n\n{draft.body}",
         evidence=[f"draft_type={draft_type}", f"vendor_name={vendor_name}"],
-        gaps=[
-            "not yet passed through the Guardian or an approver (Day 7) -- do not send",
-        ],
+        gaps=[ACTION_DRAFT_NOTE, *vendor_gaps],
         confidence="medium",
         data_classes=["confidential"],
         cost_usd=metrics.cost_usd,
@@ -406,6 +455,8 @@ def run_action(spec: TaskSpec, llm: LLMClient, effort: Effort | None = None) -> 
 
 
 __all__ = [
+    "ACTION_DRAFT_NOTE",
+    "identify_vendor",
     "ActionDraft",
     "DraftType",
     "forecast_result_for_inventory",

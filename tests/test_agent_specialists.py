@@ -17,8 +17,10 @@ import pytest
 
 from copilot.agents.contracts import TaskSpec
 from copilot.agents.specialists import (
+    ACTION_DRAFT_NOTE,
     _sql_data_classes,
     forecast_result_for_inventory,
+    identify_vendor,
     run_action,
     run_data_analyst,
     run_forecasting_risk,
@@ -300,9 +302,12 @@ def test_action_always_returns_partial_with_a_guardian_gap() -> None:
     result = run_action(spec, llm)
 
     assert result.status == "partial"
-    assert "Guardian" in result.gaps[0] or "approver" in result.gaps[0]
+    # 31 Oct 2026: plain, true wording; no "Day 7" sprint jargon reaching users
+    assert result.gaps == [ACTION_DRAFT_NOTE]
+    assert "Day 7" not in result.gaps[0]
     assert result.data_classes == ["confidential"]
     assert "Re: Q1 freight terms" in result.findings
+    assert "vendor_name=DIAGEO" in result.evidence
 
 
 def test_data_analyst_findings_carry_the_units_of_the_selected_columns() -> None:
@@ -360,3 +365,61 @@ def test_data_analyst_findings_say_how_the_rows_are_sorted() -> None:
 
     assert "Sorted by: TotalLeakageAmount (highest first)." in result.findings
     assert "The first 5 of 8 rows are shown above." in result.findings
+
+
+# -- vendor identification for Action drafts (31 Oct 2026) ----------------------------------
+# A real run planned an Action draft without vendor_name, so it was recorded as "the vendor".
+
+_VENDORS = [
+    "DIAGEO NORTH AMERICA INC",
+    "DIAGEO CHATEAU ESTATE WINES",
+    "JIM BEAM BRANDS COMPANY",
+    "BACARDI USA INC",
+    "MOET HENNESSY USA INC",
+]
+
+
+def test_identify_vendor_full_name_short_name_and_ambiguity() -> None:
+    assert identify_vendor("email DIAGEO NORTH AMERICA INC", _VENDORS) == "DIAGEO NORTH AMERICA INC"
+    assert identify_vendor("reorder note for Jim Beam", _VENDORS) == "JIM BEAM BRANDS COMPANY"
+    assert identify_vendor("email to Bacardi", _VENDORS) == "BACARDI USA INC"
+    # two Diageo vendors exist in the real data: never guess between them
+    assert identify_vendor("email to Diageo", _VENDORS) is None
+    assert identify_vendor("email to Bacardi and Jim Beam", _VENDORS) is None
+    assert identify_vendor("an email about freight", _VENDORS) is None
+
+
+def _action_llm() -> Mock:
+    from copilot.llm.types import CallMetrics
+
+    llm = Mock()
+    llm.structured.return_value = (
+        Mock(subject="Freight terms", body="Dear team, ..."),
+        CallMetrics(
+            model="claude-sonnet-5",
+            input_tokens=10,
+            output_tokens=10,
+            cost_usd=0.001,
+            ttft_s=0.1,
+            total_latency_s=0.5,
+        ),
+    )
+    return llm
+
+
+def test_action_finds_the_vendor_when_the_planner_left_it_out() -> None:
+    spec = _spec(
+        "action",
+        "Draft a short renegotiation email to DIAGEO NORTH AMERICA INC about freight terms",
+        {"draft_type": "renegotiation_email"},
+    )
+    result = run_action(spec, _action_llm(), known_vendors=_VENDORS)
+    assert "vendor_name=DIAGEO NORTH AMERICA INC" in result.evidence
+    assert result.gaps == [ACTION_DRAFT_NOTE]
+
+
+def test_action_flags_an_unidentified_vendor_instead_of_guessing() -> None:
+    spec = _spec("action", "Draft an email to Diageo about freight", {})
+    result = run_action(spec, _action_llm(), known_vendors=_VENDORS)
+    assert "vendor_name=unidentified vendor" in result.evidence
+    assert any("couldn't be identified" in g for g in result.gaps)
