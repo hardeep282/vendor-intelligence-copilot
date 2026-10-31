@@ -121,4 +121,42 @@ def describe_units(sql: str, dialect: str = "duckdb") -> list[str]:
     return lines
 
 
-__all__ = ["COLUMN_UNITS", "describe_units"]
+def describe_ordering(sql: str, dialect: str = "duckdb") -> str | None:
+    """The measure a query's rows are sorted by, in plain words, e.g.
+    ``Sorted by: TotalLeakageAmount (highest first)``. None when the query has no ORDER BY.
+
+    Added 30 Oct 2026: a real run asked for the most *controllable* leakage, the generated SQL
+    sorted by *total* leakage, and the drafter, which only sees the first rows, presented the
+    wrong top five as the answer. The Verifier couldn't notice, because nothing it reads said
+    how the rows were ordered. An alias in ORDER BY is mapped back to its source column.
+    """
+    try:
+        statement = sqlglot.parse_one(sql, read=dialect)
+    except Exception:  # noqa: BLE001
+        return None
+    select = statement if isinstance(statement, exp.Select) else statement.find(exp.Select)
+    if select is None:
+        return None
+    order = select.args.get("order")
+    if not isinstance(order, exp.Order) or not order.expressions:
+        return None
+    first = order.expressions[0]
+    target = first.this if isinstance(first, exp.Ordered) else first
+    descending = bool(first.args.get("desc")) if isinstance(first, exp.Ordered) else False
+
+    name = target.sql(dialect=dialect)
+    if isinstance(target, exp.Column):
+        # ORDER BY an alias -> report the column the alias was built from
+        for projection in select.expressions:
+            if isinstance(projection, exp.Alias) and projection.alias == target.name:
+                columns = list(projection.find_all(exp.Column))
+                if len(columns) == 1:
+                    name = columns[0].name
+                break
+        else:
+            name = target.name
+    direction = "highest first" if descending else "lowest first"
+    return f"Sorted by: {name} ({direction})"
+
+
+__all__ = ["COLUMN_UNITS", "describe_ordering", "describe_units"]

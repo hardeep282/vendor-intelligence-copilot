@@ -50,7 +50,7 @@ from pydantic import BaseModel
 from sqlglot import exp
 
 from copilot.agents.contracts import AgentResult, TaskSpec
-from copilot.data.units import describe_units
+from copilot.data.units import describe_ordering, describe_units
 from copilot.guardrails.canary import canary_line
 from copilot.guardrails.policy import DataClass, DisclosurePolicy, load_policy
 from copilot.llm.client import Effort, LLMClient
@@ -127,6 +127,12 @@ def run_data_analyst(
     units = describe_units(result.sql, dialect=DIALECT)
     if units:
         findings += "\nUnits: " + "; ".join(units)
+    # 30 Oct 2026: say how the rows are ordered, so a "top N" read off the preview can be
+    # checked against the measure the question actually asked about.
+    ordering = describe_ordering(result.sql, dialect=DIALECT)
+    if ordering:
+        shown = min(len(row_preview), len(result.rows))
+        findings += f"\n{ordering}. The first {shown} of {len(result.rows)} rows are shown above."
     gaps = list(result.assumptions)
     if result.truncated:
         gaps.append("result set was truncated to the row cap")

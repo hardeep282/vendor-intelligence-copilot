@@ -7,7 +7,7 @@ conservative rules for when NOT to label.
 
 from __future__ import annotations
 
-from copilot.data.units import COLUMN_UNITS, describe_units
+from copilot.data.units import COLUMN_UNITS, describe_ordering, describe_units
 
 
 def test_the_exact_query_from_the_first_ui_run_gets_both_units() -> None:
@@ -41,3 +41,28 @@ def test_counts_ratios_and_unknown_columns_get_no_label() -> None:
 
 def test_unparseable_sql_returns_no_labels() -> None:
     assert describe_units("this is not sql at all (") == []
+
+
+# -- describe_ordering (30 Oct 2026) ---------------------------------------------------------
+
+
+def test_ordering_of_the_wrongly_ranked_real_query_is_reported() -> None:
+    sql = (
+        "SELECT VendorName, ROUND(ControllableLeakage, 2) AS controllable_leakage, "
+        "ROUND(TotalLeakageAmount, 2) AS total_leakage_amount FROM vendor_profit_leakage "
+        "ORDER BY TotalLeakageAmount DESC, VendorName LIMIT 200"
+    )
+    assert describe_ordering(sql) == "Sorted by: TotalLeakageAmount (highest first)"
+
+
+def test_ordering_by_an_alias_reports_the_source_column() -> None:
+    sql = (
+        "SELECT VendorName, ROUND(ControllableLeakage, 2) AS cl "
+        "FROM vendor_profit_leakage ORDER BY cl DESC"
+    )
+    assert describe_ordering(sql) == "Sorted by: ControllableLeakage (highest first)"
+
+
+def test_no_order_by_means_no_ordering_line() -> None:
+    assert describe_ordering("SELECT COUNT(*) FROM vendor_pareto") is None
+    assert describe_ordering("not sql (") is None

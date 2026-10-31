@@ -2441,3 +2441,50 @@ median vendor sold 1,530, which is the "thousands" scale seen in the analytics p
 **Industry equivalent:** column descriptions and units in a semantic layer (dbt docs and
 `meta`, LookML `value_format` and descriptions, Cube measures), so every consumer, including an
 LLM, gets the meaning with the number.
+
+## 2026-10-30 · "Verified" isn't "correct": wrong ranking and an invented definition
+
+**Covered:** the third real UI run (same question, after the units fix) came back **Verified**.
+Units and both forecast warnings were now right, and every dollar figure matched the snapshot.
+Checking it against the question still found two errors the Verifier passed:
+- **Wrong ranking.** The question asked for the most *controllable* leakage. The generated SQL
+  sorted by `TotalLeakageAmount`, so the drafter, which only sees the first five rows, presented
+  Diageo, Jim Beam, Pernod Ricard, Martignetti and Bacardi. The real top five by
+  `ControllableLeakage` are Martignetti ($874,765), Ultra Beverage ($811,485), M S Walker
+  ($497,449), Perfecta Wines ($460,434) and Diageo ($369,867). Ultra Beverage, #2, was missing
+  entirely. The previous run of the same question had sorted correctly: the SQL is written by an
+  LLM and isn't the same every time.
+- **Invented definition.** The answer said controllable leakage is "price/discount/cost-overrun
+  related". `knowledge/metric_definitions.md` defines it as loss-making SKUs ($4.35M) plus
+  freight overcharges ($1.64M). No finding contained that sentence.
+
+**Root cause:** the Verifier checked that every number matched the findings, and they did. Nothing
+it read said how the rows were sorted, and it treated an explanation as prose rather than a
+claim to be grounded.
+
+**Fix:**
+- `describe_ordering(sql)` in `copilot/data/units.py`; Data Analyst findings now end with, for
+  example, "Sorted by: TotalLeakageAmount (highest first). The first 5 of 126 rows are shown above."
+- `orchestrator_draft/v3.yaml`: if the sort measure isn't the one the question asks about, say so
+  rather than presenting the list; no definitions or reasons a finding doesn't state.
+- `orchestrator_verify/v3.yaml`: an unstated explanation fails grounding; a ranking question whose
+  "Sorted by:" measure differs fails sufficiency, with feedback naming the right measure.
+- Golden set: `evals/datasets/orchestrator_golden_v2.jsonl` = v1 + **oq-011**, the user's exact
+  question, with `must_mention` [MARTIGNETTI, ULTRA BEVERAGE, WALKER, PERFECTA].
+  `missing_mentions()` scores it; `run_orchestrator_golden.py` prints it and `run_eval_gate.py`
+  reports `orchestrator.answer_mentions_rate` against `min_answer_mentions_rate: 1.0` in
+  `evals/thresholds.yaml`. v1 stays unchanged so earlier runs remain comparable.
+
+**Honest limit:** this makes a wrong ranking *visible* (Not verified, or a failed golden check),
+it doesn't make the SQL right. The drafter can't re-run the query. Feeding the Verifier's
+feedback back into the Data Analyst for a corrected query is the real fix, for the
+evaluation-depth block. The golden check runs where the real data and a key exist, i.e. on the
+laptop via `run_orchestrator_golden.py` or `run_eval_gate.py`, not in GitHub CI.
+
+**Tests:** 7 new (describe_ordering, the sorted-by findings line, oq-011, missing_mentions on the
+real wrong and right answers). Full suite 531 passed; ruff and mypy strict clean.
+
+**Interview line:** "The system said Verified. I checked it against the question and found a
+wrong ranking and an invented definition. Verified meant 'consistent with the tools', not
+'correct', so I made the sort order visible to the checker and added the question to the golden
+set so it fails automatically next time."

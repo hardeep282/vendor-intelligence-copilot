@@ -31,7 +31,9 @@ from copilot.agents.contracts import AgentName
 from copilot.guardrails.policy import Role
 from copilot.settings import REPO_ROOT
 
-ORCHESTRATOR_GOLDEN_PATH = REPO_ROOT / "evals" / "datasets" / "orchestrator_golden_v1.jsonl"
+# v2 (30 Oct 2026) = v1's ten questions + oq-011, the first question with an answer-content
+# check (`must_mention`). v1 stays on disk unchanged so earlier runs remain comparable.
+ORCHESTRATOR_GOLDEN_PATH = REPO_ROOT / "evals" / "datasets" / "orchestrator_golden_v2.jsonl"
 
 
 class OrchestratorGoldenQuestion(BaseModel):
@@ -39,6 +41,10 @@ class OrchestratorGoldenQuestion(BaseModel):
     question: str
     role: Role
     expected_agents: list[AgentName]
+    # Words the final answer must contain (case-insensitive). Optional: most questions only have
+    # the structural `expected_agents` check. Added 30 Oct 2026 for oq-011, where a wrong
+    # ranking still passed the Verifier.
+    must_mention: list[str] = []
     notes: str = ""
 
     @field_validator("expected_agents")
@@ -54,6 +60,12 @@ class OrchestratorGoldenQuestion(BaseModel):
         return v
 
 
+def missing_mentions(answer: str | None, must_mention: list[str]) -> list[str]:
+    """The required words the answer leaves out (case-insensitive); empty means it passes."""
+    text = (answer or "").lower()
+    return [word for word in must_mention if word.lower() not in text]
+
+
 def load_orchestrator_golden(
     path: Path = ORCHESTRATOR_GOLDEN_PATH,
 ) -> list[OrchestratorGoldenQuestion]:
@@ -61,4 +73,9 @@ def load_orchestrator_golden(
     return [OrchestratorGoldenQuestion.model_validate_json(line) for line in lines if line.strip()]
 
 
-__all__ = ["ORCHESTRATOR_GOLDEN_PATH", "OrchestratorGoldenQuestion", "load_orchestrator_golden"]
+__all__ = [
+    "ORCHESTRATOR_GOLDEN_PATH",
+    "OrchestratorGoldenQuestion",
+    "load_orchestrator_golden",
+    "missing_mentions",
+]

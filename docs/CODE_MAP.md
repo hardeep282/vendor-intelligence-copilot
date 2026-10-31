@@ -74,6 +74,9 @@ COUNTs and unknown columns get no label rather than a guessed one.
 **Gives out:** one plain-English units line per labelled output column.
 **Talks to:** `run_data_analyst` appends the lines to its findings as "Units: ...", which the
 v2 draft and verify prompts use.
+
+**Also (30 Oct):** `describe_ordering(sql)` names the measure the rows are sorted by (an ORDER BY alias is mapped back to its source column), so the Verifier can compare a ranking with the question.
+
 ### `scripts/build_snapshot.py` *(day: 1)*
 Turns the vendor project's Excel workbook into the aggregate-only Parquet tables the app is allowed
 to query. SKU-level sheets are only ever aggregated, never copied as-is.
@@ -1089,6 +1092,8 @@ test_orchestrator_golden.py` asserts this stays true of the dataset itself.
 **Gives out:** `OrchestratorGoldenQuestion`, `load_orchestrator_golden()`.
 **Talks to:** `copilot.agents.contracts` (`AgentName`); `copilot.guardrails.policy` (`Role`).
 
+**30 Oct 2026:** now loads `orchestrator_golden_v2.jsonl` (v1 + oq-011). Questions can carry `must_mention`, checked by `missing_mentions()`; the eval gate reports `orchestrator.answer_mentions_rate` (minimum 1.0).
+
 ### `prompts/orchestrator_plan/v1.yaml`, `prompts/orchestrator_draft/v1.yaml`, `prompts/orchestrator_verify/v1.yaml` *(day: 6, isNew: true)*
 `orchestrator_plan`: lists the five specialists with one-line purposes (`_roster_block()` in
 `orchestrator.py`), and states the one hard dependency the model must respect --
@@ -1114,6 +1119,8 @@ standing rule above; caught while preparing the end-of-sprint Code Map page and 
 here.)*
 
 **30 Oct 2026: `orchestrator_draft/v2.yaml` and `orchestrator_verify/v2.yaml`.** Draft v2 must use units exactly as the findings state them and pass on every "WARNING:" line; verify v2 fails grounding for a wrong unit or a dropped warning. v1 files are unchanged (project rule: a changed rule is a new version).
+
+**30 Oct 2026, later: `orchestrator_draft/v3.yaml` and `orchestrator_verify/v3.yaml`.** Ranking questions must use the measure the question names (checked against the "Sorted by:" line), and a definition or reason no finding states fails grounding.
 
 ### `src/copilot/sql/pair_generation.py` -- `generate_candidates()`/`verify_and_filter()` *(day: 9, isNew: true)*
 Builds the fine-tuning training set: question -> SQL pairs from a small family of templates,

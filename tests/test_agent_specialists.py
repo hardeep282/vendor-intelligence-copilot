@@ -334,3 +334,29 @@ def test_data_analyst_findings_carry_the_units_of_the_selected_columns() -> None
 
     assert "Units: controllable_leakage (ControllableLeakage): US dollars" in result.findings
     assert "percent of that vendor's total revenue" in result.findings
+
+
+def test_data_analyst_findings_say_how_the_rows_are_sorted() -> None:
+    """30 Oct 2026: a 'most controllable leakage' question got a query sorted by total leakage.
+    The findings now name the sort, so the Verifier can compare it with the question."""
+    sql_service = Mock()
+    sql = (
+        "SELECT VendorName, ROUND(TotalLeakageAmount, 2) AS total_leakage_amount "
+        "FROM vendor_profit_leakage ORDER BY TotalLeakageAmount DESC LIMIT 200"
+    )
+    rows = [{"VendorName": f"V{i}", "total_leakage_amount": 100.0 - i} for i in range(8)]
+    sql_service.answer.return_value = TextToSqlResult(
+        question="x",
+        role="analyst",
+        sql=sql,
+        rows=rows,
+        abstained=False,
+        total_cost_usd=0.01,
+        total_latency_s=1.0,
+        llm_calls=1,
+    )
+
+    result = run_data_analyst(_spec("data_analyst", "most controllable leakage"), sql_service)
+
+    assert "Sorted by: TotalLeakageAmount (highest first)." in result.findings
+    assert "The first 5 of 8 rows are shown above." in result.findings

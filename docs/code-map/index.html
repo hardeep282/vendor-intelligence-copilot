@@ -382,7 +382,7 @@ main { flex: 1; min-width: 0; overflow-y: auto; display: flex; flex-direction: c
       <div class="pane-scroll"><div class="pane" id="pane"></div></div>
       <div class="pane-foot">
         Generated from <code>docs/CODE_MAP.md</code> by <code>scripts/build_code_map_page.py</code>
-        (86 entries, built 2026-10-30). The markdown is the source of truth; whenever a file is added or changes
+        (86 entries, built 2026-10-31). The markdown is the source of truth; whenever a file is added or changes
         job, its entry there changes in the same commit and this page is regenerated.
       </div>
     </main>
@@ -492,7 +492,7 @@ const FILES = [
   "day": 10,
   "path": "src/copilot/data/units.py",
   "headline": "Added 30 Oct 2026, after the sprint.",
-  "does": "What each snapshot column measures: \"US dollars\", \"units sold, not dollars\", \"percent of that vendor's total revenue\", and so on. Every percentage label was checked by recomputing it from the snapshot. <code>describe_units(sql)<\/code> labels each selected column that reads exactly one known column (directly or via SUM/AVG/MIN/MAX/ROUND); ratios, COUNTs and unknown columns get no label rather than a guessed one.",
+  "does": "<p>What each snapshot column measures: \"US dollars\", \"units sold, not dollars\", \"percent of that vendor's total revenue\", and so on. Every percentage label was checked by recomputing it from the snapshot. <code>describe_units(sql)<\/code> labels each selected column that reads exactly one known column (directly or via SUM/AVG/MIN/MAX/ROUND); ratios, COUNTs and unknown columns get no label rather than a guessed one.<\/p><p><strong>Also (30 Oct):<\/strong> <code>describe_ordering(sql)<\/code> names the measure the rows are sorted by (an ORDER BY alias is mapped back to its source column), so the Verifier can compare a ranking with the question.<\/p>",
   "talksTo": [],
   "sym": "describe_units()",
   "takes": "the SQL a Data Analyst query ran.",
@@ -1734,7 +1734,7 @@ const FILES = [
   "day": 6,
   "path": "src/copilot/evals/orchestrator_golden.py, evals/datasets/orchestrator_golden_v1.jsonl",
   "headline": "Day 6 step 7's 10 multi-hop golden questions -- distinct from <code>copilot.evals.golden<\/code>'s \"multi_hop\" category (gq-031..034), which is multi-step <em>SQL<\/em> answered by one specialist.",
-  "does": "These are multi-<em>agent<\/em>-hop: each <code>OrchestratorGoldenQuestion<\/code> names <code>expected_agents<\/code> (&gt;=2, Pydantic-validated -- a single-agent question belongs in <code>golden<\/code>/<code>rag_golden<\/code> instead), checked structurally (did the plan actually involve every specialist this question needs), not by diffing against a fixed reference answer (no <code>expected_rows<\/code>/<code>reference_answer<\/code> field here -- see the module docstring for why grading multi-agent answer <em>content<\/em> is this step's stretch goal, not its floor). Every question that expects <code>inventory_planning<\/code> also expects <code>forecasting_risk<\/code>, per <code>orchestrator_plan<\/code>'s own planning rule -- <code>tests/ test_orchestrator_golden.py<\/code> asserts this stays true of the dataset itself.",
+  "does": "<p>These are multi-<em>agent<\/em>-hop: each <code>OrchestratorGoldenQuestion<\/code> names <code>expected_agents<\/code> (&gt;=2, Pydantic-validated -- a single-agent question belongs in <code>golden<\/code>/<code>rag_golden<\/code> instead), checked structurally (did the plan actually involve every specialist this question needs), not by diffing against a fixed reference answer (no <code>expected_rows<\/code>/<code>reference_answer<\/code> field here -- see the module docstring for why grading multi-agent answer <em>content<\/em> is this step's stretch goal, not its floor). Every question that expects <code>inventory_planning<\/code> also expects <code>forecasting_risk<\/code>, per <code>orchestrator_plan<\/code>'s own planning rule -- <code>tests/ test_orchestrator_golden.py<\/code> asserts this stays true of the dataset itself.<\/p><p><strong>30 Oct 2026:<\/strong> now loads <code>orchestrator_golden_v2.jsonl<\/code> (v1 + oq-011). Questions can carry <code>must_mention<\/code>, checked by <code>missing_mentions()<\/code>; the eval gate reports <code>orchestrator.answer_mentions_rate<\/code> (minimum 1.0).<\/p>",
   "talksTo": [
    {
     "id": "src-copilot-agents-contracts-py",

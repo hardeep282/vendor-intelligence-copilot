@@ -25,7 +25,7 @@ from copilot.agents.contracts import AgentBudget
 from copilot.agents.orchestrator import Orchestrator
 from copilot.agents.wiring import build_executors
 from copilot.data import store
-from copilot.evals.orchestrator_golden import load_orchestrator_golden
+from copilot.evals.orchestrator_golden import load_orchestrator_golden, missing_mentions
 from copilot.guardrails.policy import load_policy
 from copilot.llm.client import LLMClient
 from copilot.rag.chunking import chunk_corpus
@@ -104,6 +104,8 @@ def main() -> int:
 
     passed_coverage = 0
     passed_verification = 0
+    mention_checks = 0
+    passed_mentions = 0
     for q in questions:
         result = orch.answer(q.question, role=q.role, thread_id=q.id)
         actual_agents = {r.agent for r in result.results}
@@ -119,6 +121,11 @@ def main() -> int:
             f"  verified={result.verified} (attempts={result.verify_attempts}) "
             f"coverage={'ok' if coverage_ok else f'MISSING {sorted(missing_agents)}'}"
         )
+        if q.must_mention:
+            absent = missing_mentions(result.answer, q.must_mention)
+            mention_checks += 1
+            passed_mentions += not absent
+            print(f"  must_mention: {'ok' if not absent else f'MISSING {absent}'}")
         if result.conflicts_noted:
             print(f"  conflicts_noted: {result.conflicts_noted}")
         failed = [r.agent for r in result.results if r.status == "failed"]
@@ -131,7 +138,9 @@ def main() -> int:
 
     print(
         f"=== plan coverage: {passed_coverage}/{len(questions)}  "
-        f"verified: {passed_verification}/{len(questions)} ==="
+        f"verified: {passed_verification}/{len(questions)}"
+        + (f"  answer mentions: {passed_mentions}/{mention_checks}" if mention_checks else "")
+        + " ==="
     )
     print(f"(checkpoints at {CHECKPOINT_PATH}, thread_id = question id)")
     return 0

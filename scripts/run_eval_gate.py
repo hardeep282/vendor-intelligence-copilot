@@ -31,7 +31,7 @@ from copilot.evals.golden import GOLDEN_V2_PATH, load_golden
 from copilot.evals.model_selection_golden import load_model_selection_golden
 from copilot.evals.model_selection_metrics import task_type_correct
 from copilot.evals.model_selection_quality import reasoning_grounded
-from copilot.evals.orchestrator_golden import load_orchestrator_golden
+from copilot.evals.orchestrator_golden import load_orchestrator_golden, missing_mentions
 from copilot.evals.rag_golden import load_rag_golden
 from copilot.evals.rag_quality import context_recall, faithfulness
 from copilot.guardrails.policy import load_policy
@@ -301,11 +301,14 @@ def _run_orchestrator_suite(llm: Any, thresholds: dict[str, Any]) -> bool:
     questions = load_orchestrator_golden()
     coverage_scores: list[float] = []
     verified_scores: list[float] = []
+    mention_scores: list[float] = []
     for q in questions:
         result = orch.answer(q.question, role=q.role, thread_id=f"eval-gate-{q.id}")
         actual_agents = {r.agent for r in result.results}
         coverage_scores.append(1.0 if set(q.expected_agents) <= actual_agents else 0.0)
         verified_scores.append(1.0 if result.verified else 0.0)
+        if q.must_mention:
+            mention_scores.append(0.0 if missing_mentions(result.answer, q.must_mention) else 1.0)
     coverage_rate = sum(coverage_scores) / len(coverage_scores)
     verified_rate = sum(verified_scores) / len(verified_scores)
     ok_coverage = _report(
@@ -318,7 +321,15 @@ def _run_orchestrator_suite(llm: Any, thresholds: dict[str, Any]) -> bool:
         verified_rate >= thresholds["min_verified_rate"],
         f"{verified_rate:.3f} (min {thresholds['min_verified_rate']})",
     )
-    return ok_coverage and ok_verified
+    ok_mentions = True
+    if mention_scores:
+        mention_rate = sum(mention_scores) / len(mention_scores)
+        ok_mentions = _report(
+            "orchestrator.answer_mentions_rate",
+            mention_rate >= thresholds["min_answer_mentions_rate"],
+            f"{mention_rate:.3f} (min {thresholds['min_answer_mentions_rate']})",
+        )
+    return ok_coverage and ok_verified and ok_mentions
 
 
 def _run_llm_judged_evals(thresholds: dict[str, Any]) -> bool:
