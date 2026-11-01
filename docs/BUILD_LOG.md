@@ -2570,3 +2570,12 @@ clean.
 numbers. I recomputed it, found the default that caused it, and made the level explicit in the
 findings so the checker can see it. The same run exposed a race between two parallel agents on
 one database connection, which I reproduced 7 times in 20 before fixing."
+
+## 2026-11-01 · Correction: the EOQ formula is Harris (1913), not Wilson
+
+`copilot/ml/inventory.py` and `docs/CODE_MAP.md` credited the economic order quantity formula to
+"Wilson, 1913". It was published by Ford W. Harris in 1913; the consultant R. H. Wilson applied
+it widely later (his "A Scientific Routine for Stock Control", Harvard Business Review, 1934).
+Comments and docs only; no behaviour change. The Day 5 entry above keeps its original wording as
+a record of what was written then.
+

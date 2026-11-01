@@ -22,7 +22,7 @@ Production Planning and Scheduling*; Hyndman & Athanasopoulos FPP3 ch. on invent
       periods of lead time, so std dev scales with sqrt(L), not L.
   - Reorder point:  ROP = d_bar * L + SS
       Expected demand consumed during the lead time, plus the safety buffer above it.
-  - EOQ (Wilson, 1913):  EOQ = sqrt(2 * D * S / H)
+  - EOQ (Harris, 1913; later popularised by R. H. Wilson):  EOQ = sqrt(2 * D * S / H)
       D = demand over the same period H and S are costed in (annualised here, since holding
       cost is conventionally an annual rate); S = fixed cost per order; H = holding cost per
       unit per that period. Minimises ordering cost + holding cost at the point where they're
@@ -71,7 +71,7 @@ def reorder_point(mean_demand_per_period: float, lead_time_periods: float, ss: f
 def economic_order_quantity(
     annual_demand: float, ordering_cost_per_order: float, holding_cost_per_unit_per_year: float
 ) -> float:
-    """EOQ = sqrt(2 * D * S / H) (Wilson, 1913). See module docstring for the cost balance."""
+    """EOQ = sqrt(2 * D * S / H) (Harris, 1913). See module docstring for the cost balance."""
     return float(
         (2 * annual_demand * ordering_cost_per_order / holding_cost_per_unit_per_year) ** 0.5
     )

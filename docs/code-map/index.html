@@ -382,7 +382,7 @@ main { flex: 1; min-width: 0; overflow-y: auto; display: flex; flex-direction: c
       <div class="pane-scroll"><div class="pane" id="pane"></div></div>
       <div class="pane-foot">
         Generated from <code>docs/CODE_MAP.md</code> by <code>scripts/build_code_map_page.py</code>
-        (86 entries, built 2026-10-31). The markdown is the source of truth; whenever a file is added or changes
+        (86 entries, built 2026-11-01). The markdown is the source of truth; whenever a file is added or changes
         job, its entry there changes in the same commit and this page is regenerated.
       </div>
     </main>
@@ -1456,7 +1456,7 @@ const FILES = [
   "group": "ML tools",
   "day": 5,
   "path": "src/copilot/ml/inventory.py",
-  "headline": "Safety stock, reorder point, EOQ -- standard OR formulas (Silver/Pyke/Peterson; Wilson 1913 for EOQ), from a forecast's output.",
+  "headline": "Safety stock, reorder point, EOQ -- standard OR formulas (Silver/Pyke/Peterson; Harris 1913 for EOQ), from a forecast's output.",
   "does": "<code>demand_stats_from_backtest()<\/code> is the bridge from a <code>ForecastResult<\/code> to these formulas' (mean, std-dev) inputs -- deliberately uses historical month-over-month variability, not variance across the forecast points themselves, because a flat (naive) forecast has zero variance by construction and would otherwise silently hand back a zero safety stock.",
   "talksTo": [
    {

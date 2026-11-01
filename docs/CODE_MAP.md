@@ -774,7 +774,7 @@ short, noisy series) -- a real finding, not a bug, logged in `docs/BUILD_LOG.md`
 **31 Oct 2026:** `_load_series` queries on its own cursor; a shared connection used by parallel specialists returned None from `.df()`.
 
 ### `src/copilot/ml/inventory.py` — `compute_inventory_plan()` *(day: 5)*
-Safety stock, reorder point, EOQ -- standard OR formulas (Silver/Pyke/Peterson; Wilson 1913 for
+Safety stock, reorder point, EOQ -- standard OR formulas (Silver/Pyke/Peterson; Harris 1913 for
 EOQ), from a forecast's output. `demand_stats_from_backtest()` is the bridge from a
 `ForecastResult` to these formulas' (mean, std-dev) inputs -- deliberately uses historical
 month-over-month variability, not variance across the forecast points themselves, because a
