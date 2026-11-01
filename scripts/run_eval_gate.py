@@ -25,6 +25,7 @@ from copilot.agents.contracts import AgentBudget
 from copilot.agents.model_selection import ModelSelectionAgent
 from copilot.agents.orchestrator import Orchestrator
 from copilot.agents.wiring import build_executors
+from copilot.cli import use_utf8_output
 from copilot.data import store
 from copilot.evals.evaluators import execution_accuracy, leakage_free
 from copilot.evals.golden import GOLDEN_V2_PATH, load_golden
@@ -348,6 +349,7 @@ def _run_llm_judged_evals(thresholds: dict[str, Any]) -> bool:
 
 
 def main() -> int:
+    use_utf8_output()
     thresholds = yaml.safe_load(THRESHOLDS_PATH.read_text(encoding="utf-8"))
 
     if thresholds["deterministic"]["pytest_must_all_pass"] and not _run_deterministic_checks():

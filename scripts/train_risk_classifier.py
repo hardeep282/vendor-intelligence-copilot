@@ -24,6 +24,7 @@ from pathlib import Path
 
 import pandas as pd
 
+from copilot.cli import use_utf8_output
 from copilot.ml.risk_classifier import (
     AT_RISK_STATUSES,
     CATEGORICAL_FEATURES,
@@ -41,6 +42,7 @@ def _load(path: Path, sheet: str | None) -> pd.DataFrame:
 
 
 def main() -> int:
+    use_utf8_output()
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("data_file", type=Path)
     parser.add_argument("--sheet", default=None, help="Excel sheet name, if data_file is .xlsx")

@@ -28,6 +28,9 @@ class MinAggregation(BaseModel):
 class VendorFacing(BaseModel):
     allowed_classes: list[DataClass]
     allow_own_contract_terms: bool
+    # 2 Nov 2026 (ADR-006 amendment): Action draft types read only inside the company. Anything
+    # not listed, including an unknown type, is treated as vendor-facing.
+    internal_draft_types: list[str] = []
 
 
 class TableTag(BaseModel):

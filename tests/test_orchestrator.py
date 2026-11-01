@@ -21,6 +21,8 @@ from copilot.agents.orchestrator import (
     MAX_VERIFICATION_LOOPS,
     WITHHELD_ACTION_MESSAGE,
     Orchestrator,
+    PlannedTask,
+    ensure_inventory_tasks,
 )
 from copilot.guardrails.input_gate import InputGate
 from copilot.llm.client import LLMClient
@@ -1019,3 +1021,90 @@ def test_verifier_reply_limit_fits_the_v4_checklist() -> None:
     from copilot.llm.prompts import load_prompt
 
     assert load_prompt("orchestrator_verify").max_tokens >= 1500
+
+
+def test_draft_reply_limit_fits_a_multi_specialist_answer() -> None:
+    """2 Nov 2026: two drafts in the full golden run hit 1200 tokens mid-JSON."""
+    from copilot.llm.prompts import load_prompt
+
+    assert load_prompt("orchestrator_draft").max_tokens >= 2000
+
+
+# -- 2 Nov 2026: inventory questions always reach the inventory calculator ---------------------
+
+
+def test_a_safety_stock_question_gets_inventory_and_forecast_tasks_the_planner_left_out() -> None:
+    """The real oq-010 miss: the planner sent a safety-stock question to no inventory
+    specialist, so nothing computed the safety stock."""
+    question = "Compute the safety stock needed for DIAGEO CHATEAU ESTATE WINES at 95%."
+    planned = [PlannedTask(agent="knowledge", objective="what does service level control")]
+
+    tasks = ensure_inventory_tasks(question, planned)
+
+    assert [t.agent for t in tasks] == ["knowledge", "forecasting_risk", "inventory_planning"]
+    assert tasks[1].objective == question
+    assert tasks[2].objective == question
+
+
+def test_added_inventory_task_copies_the_level_of_a_related_task() -> None:
+    planned = [
+        PlannedTask(
+            agent="forecasting_risk",
+            objective="forecast",
+            constraints={"level": "vendor", "vendor_name": "DIAGEO NORTH AMERICA INC", "x": "1"},
+        )
+    ]
+
+    tasks = ensure_inventory_tasks("What is Diageo's reorder point?", planned)
+
+    assert [t.agent for t in tasks] == ["forecasting_risk", "inventory_planning"]
+    assert tasks[1].constraints == {"level": "vendor", "vendor_name": "DIAGEO NORTH AMERICA INC"}
+
+
+@pytest.mark.parametrize(
+    "question",
+    [
+        "What's the reorder point for Diageo?",
+        "economic order quantity for our top vendor",
+        "Give me the EOQ",
+        "How much safety-stock do we need?",
+    ],
+)
+def test_inventory_words_are_recognised(question: str) -> None:
+    tasks = ensure_inventory_tasks(question, [])
+    assert {t.agent for t in tasks} == {"forecasting_risk", "inventory_planning"}
+
+
+def test_a_complete_or_unrelated_plan_is_left_alone() -> None:
+    complete = [
+        PlannedTask(agent="forecasting_risk", objective="f"),
+        PlannedTask(agent="inventory_planning", objective="i"),
+    ]
+    assert ensure_inventory_tasks("What is the reorder point?", complete) == complete
+    unrelated = [PlannedTask(agent="data_analyst", objective="freight")]
+    assert ensure_inventory_tasks("What is total freight?", unrelated) == unrelated
+    # "order" alone (e.g. "in order of revenue") is not an inventory question
+    assert ensure_inventory_tasks("List vendors in order of revenue", []) == []
+
+
+def test_the_plan_node_applies_the_inventory_rule_end_to_end() -> None:
+    llm = _llm_with(
+        [
+            structured_response({"tasks": []}),
+            structured_response({"answer": "a", "cited_tasks": ["t0", "t1"]}),
+            _PASSING_VERDICT,
+        ]
+    )
+    orch = Orchestrator(
+        llm,
+        executors={
+            "forecasting_risk": _ok("forecasting_risk", "forecast"),
+            "inventory_planning": _ok("inventory_planning", "safety stock=1"),
+        },
+    )
+
+    result = orch.answer("What safety stock does DIAGEO need?", role="analyst")
+
+    assert [t.agent for t in result.plan] == ["forecasting_risk", "inventory_planning"]
+    assert [t.task_id for t in result.plan] == ["t0", "t1"]
+    assert {r.agent for r in result.results} == {"forecasting_risk", "inventory_planning"}

@@ -18,6 +18,7 @@ import argparse
 import sys
 
 from copilot.agents.model_selection import ModelSelectionAgent
+from copilot.cli import use_utf8_output
 from copilot.evals.model_selection_golden import load_model_selection_golden
 from copilot.evals.model_selection_metrics import model_family_acceptable, task_type_correct
 from copilot.evals.model_selection_quality import reasoning_grounded
@@ -25,6 +26,7 @@ from copilot.llm.client import LLMClient
 
 
 def main() -> int:
+    use_utf8_output()
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument(
         "--questions", default=None, help="comma-separated golden question ids (default: all 8)"

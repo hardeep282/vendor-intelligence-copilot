@@ -2620,3 +2620,83 @@ approval isn't handled specially; the UI's "New thread" avoids it.
 phones still caught, NHS/SSN removed, serializer round-trip with no warnings, verify limit) and
 the Postgres checkpointer test now checks the serializer is passed. Full suite 545 passed, also
 in strict mode; ruff and mypy strict clean.
+
+## 2026-11-02 · First full 11-question real-key run: seven fixes
+
+**Covered:** the whole orchestrator golden set (oq-001 to oq-011) against the real API: $0.53
+total, about 5 cents a question. Every number the answers checked was correct. The scorecard was:
+- plan coverage 10/11;
+- verified 10/11;
+- answer mentions 0/1 (oq-011 failed it).
+
+The run surfaced seven separate problems. All seven were fixed after the user approved them.
+
+1. **False "may be incomplete" caveats (oq-003, oq-007).** `TextToSqlResult.truncated` means
+   the SQL validator *added* a LIMIT, not that rows were cut off. A one-row total therefore
+   carried "result set was truncated" into the answer. A result is now marked cut off only when
+   it actually reaches the 200-row limit (`MAX_LIMIT`).
+2. **Drafts hit the 1,200-token limit.** Two answers stopped mid-JSON and needed a repair call.
+   `orchestrator_draft/v4.yaml` max_tokens is now 2000. This changes a limit, not a rule, so
+   the prompt is edited in place.
+3. **A safety-stock question never reached the inventory calculator (oq-010).** The planner
+   sent it to no inventory specialist, so nothing computed the figure and the answer was
+   escalated. `ensure_inventory_tasks` now runs after every plan. If the question names
+   safety stock, a reorder point, EOQ or an order quantity, it adds `inventory_planning` and
+   `forecasting_risk` when they're missing. The added tasks copy a related task's level and
+   vendor. This is a rule in code, not a prompt request, because the choice isn't a
+   judgement call.
+4. **Ranked by the wrong measure again (oq-011).** "Leaking the most controllable margin" was
+   sorted by total leakage a second time. The answer honestly declined to rank, but the right
+   query was one retry away. `expected_ranking` maps a ranking question to the columns that
+   answer it; `ordering_column` reads what the SQL actually sorted by. On a mismatch, the
+   Data Analyst asks once more with the measure spelled out. It keeps the retry only if the
+   sort is now right; otherwise it keeps the original and adds a gap saying so. Both attempts'
+   cost and calls are counted.
+5. **An internal reorder note was blocked as if it were a vendor email (oq-008).** The user
+   decided the vendor-audience check applies only to drafts a vendor will read.
+   - `policies/disclosure.yaml` is now version 2, with
+     `vendor_facing_audience.internal_draft_types: [reorder_recommendation]`.
+   - Unknown or missing draft types still count as vendor-facing.
+   - Recorded as an amendment to ADR-006, including the limit: the check trusts the recorded
+     draft type, and the approval gate is the control for a mislabelled draft.
+6. **The knowledge base couldn't answer three definition questions (oq-006, oq-009, oq-010).**
+   `knowledge/methodology.md` (now version 2) gains three sections:
+   - WAPE, MASE and bias, citing Hyndman & Koehler 2006 and FPP3;
+   - service level, safety stock, reorder point and EOQ, with the assumed inputs and why $0.50
+     holding cost is probably low;
+   - a plain-English "who can see what" section built from the disclosure policy: the class
+     and role tables, the k=5 rule, and which common figures are public or internal.
+
+   The section deliberately names no restricted source table, because the Guardian would block
+   any answer that quoted one. The user needs to rebuild the RAG index
+   (`scripts/build_rag_index.py`) to pick this up.
+7. **Windows crash on "≈" (oq-002 onward, first attempt).** Piped console output used cp1252.
+   `copilot.cli.use_utf8_output()` now runs at the start of every script's `main()`. Output is
+   UTF-8, and anything unencodable is replaced, not crashed on. The PowerShell window may still
+   need `[Console]::OutputEncoding = [System.Text.Encoding]::UTF8` to *display* symbols
+   correctly. Also, `embeddings.py` now calls `get_embedding_dimension` when sentence-transformers
+   offers it, which silences the FutureWarning.
+
+**Not fixed, and why:**
+- **oq-008's "top vendor" isn't known when the plan runs.** All the specialists start in
+  parallel, so the inventory step can't use the vendor the Data Analyst finds. The drafter
+  flagged this honestly. A real fix needs a second planning round, which is a bigger change for
+  a later step.
+- **oq-007 asks for risk-tier definitions.** The knowledge base doesn't define the tiers, and
+  inventing them would be worse than saying so.
+- **oq-010's "explain the service level" half still depends on the planner choosing the
+  Knowledge agent.** Fix 3 only guarantees the calculation.
+- **Pre-existing:** the methodology's "Medallion architecture" section names source views that
+  are on the restricted list. If the Knowledge agent ever quotes that section, the Guardian
+  will block the answer. This should be reworded or the section removed; that's for the user
+  to decide.
+
+**Tests:** 26 new:
+- truncation: 2;
+- inventory planning rule and draft limit: 9;
+- ranking retry and helpers: 10;
+- draft-type audience check: 4;
+- UTF-8 output: 2.
+
+The policy-version assertion moves from 1 to 2. Full suite 571 passed, also with
+`LANGGRAPH_STRICT_MSGPACK=true`; ruff and mypy strict clean.

@@ -15,6 +15,7 @@ from collections import Counter
 from collections.abc import Callable
 from typing import Any
 
+from copilot.cli import use_utf8_output
 from copilot.data.store import connect
 from copilot.evals.golden import GOLDEN_PATH, GoldenQuestion, dataset_hash, run_rows
 
@@ -495,6 +496,7 @@ def split_of(n: int) -> str:
 
 
 def main() -> None:
+    use_utf8_output()
     con = connect()
     out: list[GoldenQuestion] = []
     for n, cat, diff, question, sql, ref, tools in SQL_QUESTIONS:

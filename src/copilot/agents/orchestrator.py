@@ -91,6 +91,7 @@ this request's own cost exists yet.
 
 from __future__ import annotations
 
+import re
 import sqlite3
 import time
 import uuid
@@ -150,6 +151,52 @@ class OrchestratorPlan(BaseModel):
     """Forced structured output for the orchestrator_plan prompt."""
 
     tasks: list[PlannedTask]
+
+
+#: Words that mean "this question needs the inventory calculator". Matched as whole words or
+#: phrases, case-insensitive.
+INVENTORY_QUESTION = re.compile(
+    r"\b(safety[\s-]+stock|re-?order[\s-]+points?|economic\s+order\s+quantity|EOQ|"
+    r"order\s+quantity|how\s+much\s+to\s+order)\b",
+    re.IGNORECASE,
+)
+
+#: Constraints worth copying onto an added task, so it runs at the same level as its siblings.
+_LEVEL_KEYS = ("level", "vendor_name")
+
+
+def ensure_inventory_tasks(question: str, tasks: list[PlannedTask]) -> list[PlannedTask]:
+    """Make sure an inventory question reaches the inventory calculator.
+
+    Added 2 Nov 2026. In the full golden run the planner sent "Compute the safety stock for
+    DIAGEO CHATEAU ESTATE WINES at a 95% service level" to no inventory specialist at all, so
+    no safety stock was ever computed and the answer was escalated as unverified. Choosing the
+    right specialist for a safety-stock question is not a judgement call, so it shouldn't
+    depend on the model remembering: if the question names safety stock, a reorder point or an
+    order quantity, `inventory_planning` is added when missing, and `forecasting_risk` too
+    (the plan prompt pairs them, and the forecast's warnings are what tell the reader how much
+    to trust the inventory numbers).
+
+    Added tasks take the question itself as their objective and copy the level/vendor
+    constraints of a related task already in the plan, if there is one; otherwise
+    `resolve_level` finds the vendor in the question, as it does for any task.
+    """
+    if not INVENTORY_QUESTION.search(question):
+        return tasks
+    present = {t.agent for t in tasks}
+    related = next(
+        (t for t in tasks if t.agent in ("inventory_planning", "forecasting_risk", "action")),
+        None,
+    )
+    constraints = (
+        {k: v for k, v in related.constraints.items() if k in _LEVEL_KEYS} if related else {}
+    )
+    added = [
+        PlannedTask(agent=agent, objective=question, constraints=dict(constraints))
+        for agent in ("forecasting_risk", "inventory_planning")
+        if agent not in present
+    ]
+    return [*tasks, *added]
 
 
 class DraftAnswer(BaseModel):
@@ -608,7 +655,9 @@ class Orchestrator:
                 role=state["role"],
                 budget=self._default_budget,
             )
-            for i, t in enumerate(planned.tasks)
+            # 2 Nov 2026: inventory questions always reach the inventory calculator, whatever
+            # the planner chose (see `ensure_inventory_tasks`).
+            for i, t in enumerate(ensure_inventory_tasks(state["question"], planned.tasks))
         ]
         return {
             "plan": tasks,

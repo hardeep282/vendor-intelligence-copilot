@@ -55,7 +55,13 @@ class SentenceTransformerEmbedder:
             from sentence_transformers import SentenceTransformer  # local import, see docstring
 
             self._model = SentenceTransformer(self.model_name)
-            loaded_dim = self._model.get_sentence_embedding_dimension()
+            # 2 Nov 2026: newer sentence-transformers renamed this method and warn
+            # (FutureWarning) on the old name; use the new one when it exists.
+            model = self._model
+            get_dim = getattr(model, "get_embedding_dimension", None) or (
+                model.get_sentence_embedding_dimension
+            )
+            loaded_dim = get_dim()
             if loaded_dim != self.dimension:
                 raise ValueError(
                     f"{self.model_name} embeds at dimension {loaded_dim}, "

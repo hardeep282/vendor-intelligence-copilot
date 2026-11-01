@@ -1,7 +1,7 @@
 # Disclosure policy: the single source of truth for who may see what.
 # Enforced in three places: data layer (views + k-threshold), tool layer (role checks), Guardian (output).
 # Changing this file changes behaviour; it is versioned and covered by tests/test_policy.py.
-version: 1
+version: 2  # v2 (2 Nov 2026): vendor_facing_audience.internal_draft_types added (ADR-006 amendment)
 
 classes:
   - public        # methodology, metric definitions, portfolio-level KPIs on the landing page
@@ -26,6 +26,11 @@ min_aggregation:
 vendor_facing_audience:
   allowed_classes: [public]
   allow_own_contract_terms: true
+  # Draft types whose reader is internal (the procurement/inventory team), so the rule above
+  # doesn't apply to them; the role rules still do. Any draft type NOT listed here, including an
+  # unknown or missing one, is treated as vendor-facing (fail closed). Added 2 Nov 2026, see the
+  # ADR-006 amendment.
+  internal_draft_types: [reorder_recommendation]
 
 # Catalogue: every snapshot table must be tagged. Column overrides win over the table default.
 tables:

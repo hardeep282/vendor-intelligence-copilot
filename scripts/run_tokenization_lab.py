@@ -26,6 +26,7 @@ import sys
 
 import anthropic
 
+from copilot.cli import use_utf8_output
 from copilot.data import store
 from copilot.evals.golden import GOLDEN_V2_PATH, load_golden
 from copilot.evals.tokenization_lab import (
@@ -113,6 +114,7 @@ def _vendor_insight_sample() -> PromptSample | None:
 
 
 def main() -> int:
+    use_utf8_output()
     samples = _text_to_sql_samples()
     extra = _vendor_insight_sample()
     if extra is not None:

@@ -7,6 +7,8 @@ conservative rules for when NOT to label.
 
 from __future__ import annotations
 
+import pytest
+
 from copilot.data.units import COLUMN_UNITS, describe_ordering, describe_units
 
 
@@ -66,3 +68,47 @@ def test_ordering_by_an_alias_reports_the_source_column() -> None:
 def test_no_order_by_means_no_ordering_line() -> None:
     assert describe_ordering("SELECT COUNT(*) FROM vendor_pareto") is None
     assert describe_ordering("not sql (") is None
+
+
+# -- ordering_column / expected_ranking (2 Nov 2026) -----------------------------------------
+
+
+def test_ordering_column_sees_through_aliases_and_single_column_aggregates() -> None:
+    from copilot.data.units import ordering_column
+
+    assert ordering_column(
+        "SELECT VendorName, ControllableLeakage AS c FROM vendor_leakage ORDER BY c DESC"
+    ) == ("ControllableLeakage", True)
+    assert ordering_column(
+        "SELECT VendorName, SUM(TotalRevenue) FROM v GROUP BY 1 ORDER BY SUM(TotalRevenue) DESC"
+    ) == ("TotalRevenue", True)
+    assert ordering_column("SELECT a FROM t ORDER BY a") == ("a", False)
+    assert ordering_column("SELECT a FROM t") is None
+    assert ordering_column("not sql (") is None
+
+
+@pytest.mark.parametrize(
+    ("question", "measure"),
+    [
+        ("Which vendors are leaking the most controllable margin?", "controllable leakage"),
+        ("Top 5 vendors by total leakage", "total leakage"),
+        ("Which vendor has the highest freight cost as a share of revenue?", "freight"),
+        ("Our top vendor by revenue", "revenue"),
+        ("Lowest blended margin vendors", "blended margin"),
+    ],
+)
+def test_expected_ranking_names_the_measure_a_ranking_question_asks_about(
+    question: str, measure: str
+) -> None:
+    from copilot.data.units import expected_ranking
+
+    found = expected_ranking(question)
+    assert found is not None
+    assert found[0] == measure
+
+
+def test_expected_ranking_ignores_non_ranking_or_unknown_measures() -> None:
+    from copilot.data.units import expected_ranking
+
+    assert expected_ranking("What is total freight cost?") is None  # no ranking word
+    assert expected_ranking("Which vendors have the most SKUs?") is None  # measure not listed

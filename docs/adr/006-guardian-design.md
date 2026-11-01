@@ -40,3 +40,23 @@ Guardian's severity ordering (BLOCK > ESCALATE > REDACT > ALLOW) and its vendor-
 ## Implementation note (Day 8)
 
 Implemented in `copilot.api.main` (`/ask`'s SSE stream emits a `pending_review` event instead of withholding) and `copilot.agents.orchestrator` (`OrchestratorResult` gains a `pending_review: PendingReview | None` field carrying the Guardian reason code and audit-log entry id, set instead of raising/withholding when the Guardian outcome is ESCALATE). See `docs/CODE_MAP.md` for the exact surface.
+
+## Amendment (2 Nov 2026): the audience check applies only to drafts a vendor will read
+
+**What happened.** In the first full 11-question real-key golden run, oq-008 asked for "the reorder point for our top vendor by revenue, and a reorder recommendation reflecting it". The Guardian blocked the answer with `vendor_audience_violation`. Question 3's scope fired on any Action draft, and this draft was built on our own internal forecast. A reorder recommendation, though, goes to our own procurement/inventory team, not to the vendor. The `action_draft` prompt already said so ("the reader is internal ... internal figures are fine to include"). So the block protected nobody and stopped a legitimate internal answer.
+
+**Decision (the user's, 2 Nov 2026).** The vendor-audience check now applies only to Action drafts a vendor will read.
+- `policies/disclosure.yaml` (now version 2) lists the internal draft types under `vendor_facing_audience.internal_draft_types`. Today that list is `[reorder_recommendation]`.
+- A draft whose type is on that list is not held to the vendor-audience rule.
+- Every other draft type is held to it. That includes `renegotiation_email`, any type added later, and a draft with no recorded type. The default fails closed.
+- The draft type is read from the Action result's own evidence (`draft_type=...`), which `run_action` writes.
+
+**What does not change.**
+- The role rules still apply to internal drafts: a viewer still can't receive confidential figures through one.
+- Every other Guardian check still runs: canary, restricted names, raw rows, secrets, PII, grounding.
+- The human approval gate still applies to every Action draft, internal or not.
+- A renegotiation email built alongside internal data is still blocked. That's oq-005 in the golden set and cases 9 and 10 in the privacy leakage suite.
+
+**Limit, stated honestly.** The check still trusts the draft type the Action specialist recorded. If a draft labelled `reorder_recommendation` were later sent to a vendor, this check would not catch it. The approval gate is the control for that. An approver should treat any draft leaving the company as vendor-facing, whatever its label. This amendment narrows question 3's scope; it doesn't change the severity ordering or questions 1, 2 and 4.
+
+Tests: `tests/test_guardian.py`, the four `draft_type` tests added 2 Nov 2026.

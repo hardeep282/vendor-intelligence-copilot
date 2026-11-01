@@ -37,6 +37,7 @@ from copilot.rag.chunking import Chunk
 from copilot.rag.corrective import CorrectiveRagResult
 from copilot.settings import get_settings
 from copilot.sql.service import TextToSqlResult
+from copilot.sql.validator import MAX_LIMIT
 
 pytestmark_snapshot = pytest.mark.skipif(
     not (get_settings().snapshot_dir / DB_NAME).exists(), reason="snapshot not built"
@@ -110,13 +111,15 @@ def test_data_analyst_reports_failed_on_abstain() -> None:
     assert "no coverage for 2025" in result.gaps
 
 
-def test_data_analyst_marks_partial_when_truncated() -> None:
+def test_data_analyst_marks_partial_only_when_the_row_cap_is_reached() -> None:
+    """2 Nov 2026: `truncated` means a LIMIT was added, not that rows were lost. Only a result
+    that actually reached the cap can be missing rows."""
     sql_service = Mock()
     sql_service.answer.return_value = TextToSqlResult(
         question="x",
         role="analyst",
         sql="SELECT * FROM vendor_pareto",
-        rows=[{"a": 1}],
+        rows=[{"a": i} for i in range(MAX_LIMIT)],
         abstained=False,
         truncated=True,
     )
@@ -124,7 +127,95 @@ def test_data_analyst_marks_partial_when_truncated() -> None:
     result = run_data_analyst(_spec("data_analyst"), sql_service)
 
     assert result.status == "partial"
-    assert any("truncated" in g for g in result.gaps)
+    assert any("row limit" in g for g in result.gaps)
+    assert f"cut off at the {MAX_LIMIT}-row limit" in result.findings
+
+
+def test_a_one_row_total_with_an_added_limit_is_not_flagged_incomplete() -> None:
+    """The real false alarm from the full golden run: SUM(TotalRevenue) returns one row, the
+    validator added LIMIT 200 (truncated=True), and the answer said the total "may be
+    incomplete"."""
+    sql_service = Mock()
+    sql_service.answer.return_value = TextToSqlResult(
+        question="x",
+        role="analyst",
+        sql="SELECT SUM(TotalRevenue) AS total FROM vendor_revenue_summary LIMIT 200",
+        rows=[{"total": 451620183.69}],
+        abstained=False,
+        truncated=True,
+    )
+
+    result = run_data_analyst(_spec("data_analyst"), sql_service)
+
+    assert result.status == "ok"
+    assert result.gaps == []
+    assert "cut off" not in result.findings
+
+
+# -- ranking re-query (2 Nov 2026) ----------------------------------------------------------
+
+_RANK_Q = "Which vendors are leaking the most controllable margin?"
+
+
+def _sql_result(sql: str, cost: float = 0.01) -> TextToSqlResult:
+    return TextToSqlResult(
+        question="x",
+        role="analyst",
+        sql=sql,
+        rows=[{"VendorName": "A", "v": 1.0}],
+        abstained=False,
+        total_cost_usd=cost,
+        total_latency_s=1.0,
+        llm_calls=1,
+    )
+
+
+_WRONG_SORT = (
+    "SELECT VendorName, ControllableLeakage FROM vendor_leakage ORDER BY TotalLeakageAmount DESC"
+)
+_RIGHT_SORT = (
+    "SELECT VendorName, ControllableLeakage FROM vendor_leakage ORDER BY ControllableLeakage DESC"
+)
+
+
+def test_a_ranking_sorted_by_the_wrong_measure_is_re_asked_and_the_fix_is_kept() -> None:
+    sql_service = Mock()
+    sql_service.answer.side_effect = [_sql_result(_WRONG_SORT), _sql_result(_RIGHT_SORT)]
+
+    result = run_data_analyst(_spec("data_analyst", _RANK_Q), sql_service)
+
+    assert sql_service.answer.call_count == 2
+    retry_question = sql_service.answer.call_args_list[1].args[0]
+    assert "ControllableLeakage" in retry_question
+    assert result.evidence == [_RIGHT_SORT]
+    assert "Sorted by: ControllableLeakage" in result.findings
+    assert result.status == "ok"
+    assert result.llm_calls == 2  # both attempts counted
+    assert result.cost_usd == pytest.approx(0.02)
+
+
+def test_a_retry_that_still_sorts_wrong_keeps_the_original_and_says_so() -> None:
+    sql_service = Mock()
+    sql_service.answer.side_effect = [_sql_result(_WRONG_SORT), _sql_result(_WRONG_SORT)]
+
+    result = run_data_analyst(_spec("data_analyst", _RANK_Q), sql_service)
+
+    assert sql_service.answer.call_count == 2
+    assert result.status == "partial"
+    assert any("ranks by controllable leakage" in g for g in result.gaps)
+    assert result.llm_calls == 2
+
+
+def test_a_correctly_sorted_or_non_ranking_query_is_not_re_asked() -> None:
+    sql_service = Mock()
+    sql_service.answer.return_value = _sql_result(_RIGHT_SORT)
+    run_data_analyst(_spec("data_analyst", _RANK_Q), sql_service)
+    assert sql_service.answer.call_count == 1
+
+    sql_service = Mock()
+    sql_service.answer.return_value = _sql_result(_WRONG_SORT)
+    run_data_analyst(_spec("data_analyst", "Show controllable leakage by vendor"), sql_service)
+    assert sql_service.answer.call_count == 1
 
 
 # -- Forecasting & Risk (real snapshot) --------------------------------------------------------

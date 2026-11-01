@@ -90,6 +90,15 @@ class Finding(BaseModel):
     detail: str
 
 
+def _draft_type(result: AgentResult) -> str | None:
+    """The Action draft's type, read from its evidence ("draft_type=reorder_recommendation"), or
+    None when it isn't recorded."""
+    for item in result.evidence:
+        if item.startswith("draft_type="):
+            return item.removeprefix("draft_type=").strip()
+    return None
+
+
 class GuardianVerdict(BaseModel):
     outcome: GuardianOutcome
     reason_codes: list[str] = Field(default_factory=list)
@@ -217,7 +226,16 @@ class Guardian:
         internal/confidential context has no business reaching an outbound draft's answer in the
         first place, borderline cases included.
         """
-        has_action = any(r.agent == "action" for r in result.results)
+        # 2 Nov 2026 (ADR-006 amendment, the user's decision): only drafts a VENDOR will read
+        # are held to this rule. A reorder recommendation is read by our own procurement team,
+        # so internal figures belong in it (the role rules above still apply). In the full
+        # golden run this check blocked exactly that: an internal reorder note built on our
+        # own forecast. The draft type comes from the Action result's evidence
+        # ("draft_type=..."); a missing or unknown type counts as vendor-facing.
+        internal_types = set(self._policy.vendor_facing_audience.internal_draft_types)
+        has_action = any(
+            _draft_type(r) not in internal_types for r in result.results if r.agent == "action"
+        )
         if not has_action:
             return []
         allowed = set(self._policy.vendor_facing_audience.allowed_classes)

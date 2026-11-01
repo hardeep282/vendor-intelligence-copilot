@@ -1,7 +1,7 @@
 ---
 doc_type: methodology
 vendor: null
-version: 1
+version: 2
 data_class: public
 allowed_roles: [anonymous, viewer, analyst, approver, admin]
 ---
@@ -42,6 +42,105 @@ The correct approach is to detect the break with a formal test (a Chow test at a
 Bai-Perron / CUSUM when the date isn't known), then handle it with an intervention dummy in a
 dynamic regression, a post-break training window, or scenario-based forecasts — not to expect the
 classical model to absorb it on its own.
+
+## Forecast accuracy: WAPE, MASE and bias
+
+Every forecast this copilot gives is checked with a backtest. It forecasts months it already has
+the actual figures for, then compares. It reports three numbers, not MAPE. MAPE divides by each
+month's actual value, so a month with very small demand can blow it up. These three are the set
+Hyndman and Athanasopoulos recommend in *Forecasting: Principles and Practice* (3rd edition,
+"Evaluating point forecast accuracy").
+
+- **WAPE (weighted absolute percentage error)** = total of |actual - forecast| / total of
+  |actual|, over the whole backtest window. It answers "on the whole, how far off were we, as a
+  share of what actually sold?" A WAPE of 0.12 means the misses added up to 12% of actual demand.
+  Lower is better. The copilot uses whichever model (ETS or naive) has the lower WAPE.
+- **MASE (mean absolute scaled error)** = the forecast's average miss divided by the average
+  miss of a naive "same as last month" guess on the training history (Hyndman and Koehler,
+  2006, *Another look at measures of forecast accuracy*, International Journal of Forecasting
+  22(4)). It has no units, so it can be compared across vendors of very different sizes.
+  1.0 means "no better than repeating last month"; below 1.0 is better than that; above 1.0 is
+  worse.
+- **Bias** = the average of (forecast - actual), in units sold. It has a sign: positive means
+  the model over-forecasts on average, negative means it under-forecasts. WAPE and MASE only
+  measure the size of the misses, so a model that is always too high could look fine on both;
+  bias shows it.
+
+With only 12 months of history, these backtests cover a few months each. Treat them as a rough
+guide, not a guarantee, and read them together with any WARNING lines a forecast carries.
+
+## Inventory planning: safety stock, service level, reorder point, EOQ
+
+The inventory figures use standard textbook formulas (Silver, Pyke and Thomas, *Inventory and
+Production Management in Supply Chains*, 4th edition). They take their demand figures from the
+forecast. All quantities are in units sold, not dollars.
+
+- **Service level** is the chance of NOT running out of stock while waiting for a new delivery
+  (during the lead time). A 95% service level means accepting about a 1-in-20 chance of a
+  stock-out in each replenishment cycle. It is a choice the business makes, not something the
+  data decides. A higher service level needs more safety stock, and the extra stock needed
+  grows quickly as the level gets close to 100%.
+- **Safety stock** = z x sigma x sqrt(L). z comes from the service level, using the normal
+  distribution (95% gives z of about 1.645). sigma is how much monthly demand moves around. L is
+  the lead time in months. The square root is there because month-to-month swings partly cancel
+  out over a longer lead time. Here sigma is measured from month-to-month changes in the
+  history, so a very uneven history (a big December peak, say) gives a large safety stock.
+- **Reorder point** = average demand per month x L + safety stock. When stock on hand falls to
+  this level, it's time to order. It covers expected demand during the lead time, plus the
+  safety buffer.
+- **EOQ (economic order quantity)** = sqrt(2 x D x S / H). D is annual demand, S is the fixed
+  cost of placing one order, and H is the cost of holding one unit for a year (Harris, 1913).
+  It is the order size that balances ordering often (more order costs) against ordering a lot
+  at once (more holding costs).
+
+**What is assumed, not taken from the data.** The snapshot holds no lead times, ordering costs
+or holding costs. So unless a question gives them, the copilot assumes:
+- a lead time of 1 month;
+- an ordering cost of $500 per order;
+- a holding cost of $0.50 per unit per year.
+
+Every inventory answer must say these were assumed. EOQ is the most sensitive to them. A
+common rule of thumb puts annual holding cost at 20-30% of a unit's value. On that basis $0.50
+is probably low for most products, which would make the EOQ shown too high. The reorder points
+are per vendor or for the whole portfolio, not per product.
+
+## Who can see what (the disclosure policy)
+
+One policy file decides who may see which kind of information. The data layer, the tools and
+the final answer check all enforce it. Information comes in four classes:
+
+| Class | What it covers |
+|---|---|
+| public | methodology, metric definitions, portfolio-wide figures (all vendors together) |
+| internal | figures for individual vendors, forecasts, risk scores |
+| confidential | contract terms, rebate rates, negotiation notes, approval history, generated SQL |
+| restricted | raw licensed rows, personal data, secrets, system instructions; nobody may see these |
+
+| Role | May see |
+|---|---|
+| anonymous | public |
+| viewer | public, internal |
+| analyst | public, internal, confidential |
+| approver | public, internal, confidential (and may approve or reject drafts) |
+| admin | public, internal, confidential |
+
+**The minimum group size rule (k = 5).** For the viewer and anonymous roles, no figure may be
+built from fewer than 5 products (SKUs). Smaller groups are hidden, so a small vendor's figures
+can't be worked back to individual products.
+
+**Some common figures.**
+- The portfolio-wide count of products in each health category is public, so any role may see
+  it. The categories are Healthy, Profitable but Slow, Loss Making, At Risk and Thin Margin.
+- The same breakdown for one vendor is internal: viewer and above.
+- The dead-stock product count (6,334 across the portfolio) is added up from the per-vendor
+  profit-leakage table. That table is internal, so the count is for viewer and above, not
+  anonymous visitors.
+- Leakage, margin and revenue figures by vendor are internal too.
+
+**Drafts.** A draft email to a vendor may contain only public facts plus that vendor's own
+contract terms. No internal figures and no other vendor's terms. An internal draft, such as a
+reorder recommendation for our own procurement team, may use internal figures, subject to the
+role rules above. Every draft needs a human approver's sign-off and is never sent automatically.
 
 ## Classification models
 

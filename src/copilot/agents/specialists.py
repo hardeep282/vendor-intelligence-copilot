@@ -52,7 +52,12 @@ from pydantic import BaseModel
 from sqlglot import exp
 
 from copilot.agents.contracts import AgentResult, TaskSpec
-from copilot.data.units import describe_ordering, describe_units
+from copilot.data.units import (
+    describe_ordering,
+    describe_units,
+    expected_ranking,
+    ordering_column,
+)
 from copilot.guardrails.canary import canary_line
 from copilot.guardrails.policy import DataClass, DisclosurePolicy, load_policy
 from copilot.llm.client import Effort, LLMClient
@@ -68,6 +73,7 @@ from copilot.ml.risk_classifier import ClassifierResult, compare_models, make_sy
 from copilot.rag.corrective import CorrectiveRagService
 from copilot.rag.permissions import PermissionedRetriever
 from copilot.sql.service import TextToSqlResult, TextToSqlService
+from copilot.sql.validator import MAX_LIMIT
 
 DIALECT = "duckdb"  # matches copilot.sql.validator -- same engine, same dialect
 
@@ -93,6 +99,57 @@ def _sql_data_classes(sql: str, policy: DisclosurePolicy) -> list[DataClass]:
 # == 1. Data Analyst ===========================================================================
 
 
+def _check_ranking(
+    spec: TaskSpec,
+    result: TextToSqlResult,
+    sql_service: TextToSqlService,
+    effort: Effort | None,
+) -> tuple[TextToSqlResult, str | None]:
+    """Re-ask once when a ranking question's rows are sorted by the wrong measure.
+
+    Added 2 Nov 2026. "Which vendors are leaking the most controllable margin" was answered
+    twice with rows sorted by TOTAL leakage, which puts a different five vendors on top. The
+    "Sorted by:" line (30 Oct) let the answer admit it couldn't rank, but the right query was
+    one retry away. So: if the question ranks by a measure `expected_ranking` knows and the
+    query's ORDER BY uses a different one, the same question is asked again with the measure
+    spelled out. The retry is kept only if its ordering now matches; otherwise the original
+    result is kept and a gap says the ranking may not answer the question. At most one extra
+    call; cost, latency and calls from both attempts are counted.
+
+    Returns (result to use, gap to add or None).
+    """
+    expected = expected_ranking(spec.objective)
+    if expected is None or result.abstained or result.sql is None or result.rows is None:
+        return result, None
+    measure, columns = expected
+    found = ordering_column(result.sql, dialect=DIALECT)
+    if found is None or found[0] in columns:
+        return result, None
+
+    hint = (
+        f"{spec.objective}\n(Rank the results by {measure}, using the {columns[0]} column, "
+        f"not {found[0]}.)"
+    )
+    retry = sql_service.answer(hint, role=spec.role, effort=effort)
+    spent = {
+        "total_cost_usd": result.total_cost_usd + retry.total_cost_usd,
+        "total_latency_s": result.total_latency_s + retry.total_latency_s,
+        "llm_calls": result.llm_calls + retry.llm_calls,
+    }
+    retry_order = (
+        ordering_column(retry.sql, dialect=DIALECT)
+        if not retry.abstained and retry.sql is not None and retry.rows is not None
+        else None
+    )
+    if retry_order is not None and retry_order[0] in columns:
+        return retry.model_copy(update={**spent, "question": spec.objective}), None
+    gap = (
+        f"the question ranks by {measure}, but the rows are sorted by {found[0]}; "
+        "a retry did not fix it, so this ranking may not answer the question"
+    )
+    return result.model_copy(update=spent), gap
+
+
 def run_data_analyst(
     spec: TaskSpec,
     sql_service: TextToSqlService,
@@ -104,6 +161,7 @@ def run_data_analyst(
     """
     policy = policy or load_policy()
     result: TextToSqlResult = sql_service.answer(spec.objective, role=spec.role, effort=effort)
+    result, ranking_gap = _check_ranking(spec, result, sql_service, effort)
 
     if result.abstained or result.sql is None or result.rows is None:
         return AgentResult(
@@ -120,9 +178,14 @@ def run_data_analyst(
 
     data_classes = _sql_data_classes(result.sql, policy)
     row_preview = result.rows[:5]
+    # 2 Nov 2026: `result.truncated` means the validator ADDED or lowered a LIMIT, not that rows
+    # were cut off. Treating it as "cut off" put a false "may be incomplete" caveat on one-row
+    # totals (total revenue, total freight) in the full golden run. Rows can only be missing if
+    # the result actually reached the row cap.
+    cut_off = result.truncated and len(result.rows) >= MAX_LIMIT
     findings = (
         f"Query returned {len(result.rows)} row(s)"
-        f"{' (truncated)' if result.truncated else ''}: {row_preview}"
+        f"{f' (cut off at the {MAX_LIMIT}-row limit)' if cut_off else ''}: {row_preview}"
     )
     # 30 Oct 2026: units travel with the numbers, so the drafter can't guess "$" for a unit
     # count and the Verifier has something to check units against (copilot.data.units).
@@ -136,8 +199,10 @@ def run_data_analyst(
         shown = min(len(row_preview), len(result.rows))
         findings += f"\n{ordering}. The first {shown} of {len(result.rows)} rows are shown above."
     gaps = list(result.assumptions)
-    if result.truncated:
-        gaps.append("result set was truncated to the row cap")
+    if ranking_gap:
+        gaps.append(ranking_gap)
+    if cut_off:
+        gaps.append(f"result reached the {MAX_LIMIT}-row limit; more rows may exist")
 
     return AgentResult(
         task_id=spec.task_id,

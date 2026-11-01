@@ -23,6 +23,7 @@ from __future__ import annotations
 import argparse
 import sys
 
+from copilot.cli import use_utf8_output
 from copilot.data import store
 from copilot.evals.effort_lab import EFFORT_LEVELS, run_effort_lab
 from copilot.evals.golden import GOLDEN_V2_PATH, load_golden
@@ -37,6 +38,7 @@ DEFAULT_QUESTION_IDS = ["gq-001", "gq-045", "gq-042"]
 
 
 def main() -> int:
+    use_utf8_output()
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument(
         "--repeats",

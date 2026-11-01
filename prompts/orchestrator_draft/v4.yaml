@@ -34,7 +34,7 @@
 name: orchestrator_draft
 version: 4
 model: claude-sonnet-5
-max_tokens: 1200
+max_tokens: 2000 # raised from 1200 on 2 Nov 2026: in the full golden run two drafts hit the limit mid-JSON and needed a repair call
 effort: medium
 cache_system: false
 

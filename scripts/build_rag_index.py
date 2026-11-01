@@ -15,6 +15,7 @@ from __future__ import annotations
 
 import time
 
+from copilot.cli import use_utf8_output
 from copilot.rag.chunking import chunk_corpus
 from copilot.rag.corpus import check_corpus_against_policy, load_corpus
 from copilot.rag.embeddings import SentenceTransformerEmbedder
@@ -22,6 +23,7 @@ from copilot.rag.store import ChunkStore, get_chroma_client
 
 
 def main() -> None:
+    use_utf8_output()
     print("Loading knowledge corpus from knowledge/ ...")
     docs = load_corpus()
     check_corpus_against_policy(docs)  # fails loudly if a doc's roles have drifted from policy

@@ -16,6 +16,7 @@ from pathlib import Path
 
 import pandas as pd
 
+from copilot.cli import use_utf8_output
 from copilot.data.guard import check_table
 from copilot.settings import get_settings
 
@@ -99,6 +100,7 @@ def build(workbook: Path, out_dir: Path, k: int) -> dict[str, object]:
 
 
 def main() -> None:
+    use_utf8_output()
     if len(sys.argv) != 2:
         sys.exit("usage: build_snapshot.py <path to Vendor_Summary.xlsx>")
     s = get_settings()

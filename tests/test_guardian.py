@@ -118,6 +118,65 @@ def test_action_alone_with_public_only_does_not_trip_audience_check() -> None:
     assert "vendor_audience_violation" not in verdict.reason_codes
 
 
+def _action(draft_type: str | None) -> AgentResult:
+    evidence = [f"draft_type={draft_type}"] if draft_type else []
+    return AgentResult(
+        task_id="t9",
+        agent="action",
+        status="partial",
+        findings="Subject: x",
+        evidence=[*evidence, "vendor_name=DIAGEO NORTH AMERICA INC"],
+        data_classes=["confidential"],
+    )
+
+
+def test_internal_reorder_recommendation_may_use_internal_figures() -> None:
+    """2 Nov 2026, ADR-006 amendment: a reorder recommendation is read by our own procurement
+    team, so internal forecast figures belong in it. The full golden run blocked one (oq-008)."""
+    verdict = Guardian().review(
+        _result(
+            role="analyst",
+            results=[_ar("forecasting_risk", ["internal"]), _action("reorder_recommendation")],
+        )
+    )
+    assert "vendor_audience_violation" not in verdict.reason_codes
+
+
+def test_vendor_email_with_internal_figures_is_still_blocked() -> None:
+    verdict = Guardian().review(
+        _result(
+            role="analyst",
+            results=[_ar("data_analyst", ["internal"]), _action("renegotiation_email")],
+        )
+    )
+    assert verdict.outcome == "block"
+    assert "vendor_audience_violation" in verdict.reason_codes
+
+
+def test_unknown_or_missing_draft_type_counts_as_vendor_facing() -> None:
+    for draft_type in ("purchase_order", None):
+        verdict = Guardian().review(
+            _result(
+                role="analyst", results=[_ar("data_analyst", ["internal"]), _action(draft_type)]
+            )
+        )
+        assert "vendor_audience_violation" in verdict.reason_codes, draft_type
+
+
+def test_one_vendor_email_among_drafts_still_trips_the_check() -> None:
+    verdict = Guardian().review(
+        _result(
+            role="analyst",
+            results=[
+                _ar("forecasting_risk", ["internal"]),
+                _action("reorder_recommendation"),
+                _action("renegotiation_email"),
+            ],
+        )
+    )
+    assert "vendor_audience_violation" in verdict.reason_codes
+
+
 def test_no_action_agent_never_trips_audience_check() -> None:
     verdict = Guardian().review(
         _result(role="analyst", results=[_ar("data_analyst", ["confidential"])])
@@ -163,4 +222,4 @@ def test_safe_answer_never_echoes_reason_for_block_or_escalate_message_only_code
 
 def test_policy_version_recorded() -> None:
     verdict = Guardian().review(_result())
-    assert verdict.policy_version == 1
+    assert verdict.policy_version == 2  # v2 (2 Nov 2026): internal_draft_types

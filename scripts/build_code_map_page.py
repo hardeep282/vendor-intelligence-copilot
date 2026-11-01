@@ -21,6 +21,8 @@ from dataclasses import dataclass, field
 from datetime import date
 from pathlib import Path
 
+from copilot.cli import use_utf8_output
+
 ROOT = Path(__file__).resolve().parents[1]
 SOURCE = ROOT / "docs" / "CODE_MAP.md"
 TEMPLATE = ROOT / "docs" / "code-map" / "template.html"
@@ -253,6 +255,7 @@ def to_files(entries: list[Entry]) -> list[dict[str, object]]:
 
 
 def main() -> int:
+    use_utf8_output()
     entries = parse(SOURCE.read_text(encoding="utf-8"))
     files = to_files(entries)
     template = TEMPLATE.read_text(encoding="utf-8")

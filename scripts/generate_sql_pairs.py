@@ -24,6 +24,7 @@ import random
 from pathlib import Path
 from typing import Any
 
+from copilot.cli import use_utf8_output
 from copilot.settings import REPO_ROOT, get_settings
 from copilot.sql.pair_generation import (
     Pair,
@@ -74,6 +75,7 @@ def write_dataset(pairs: list[Pair], out_path: Path = OUT_PATH) -> dict[str, Any
 
 
 def main() -> None:
+    use_utf8_output()
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--target", type=int, default=400, help="pairs to keep (300-500 per spec)")
     parser.add_argument("--seed", type=int, default=42)

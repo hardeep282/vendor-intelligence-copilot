@@ -19,12 +19,14 @@ import sys
 from typing import get_args
 
 from copilot.api.auth import AuthStore
+from copilot.cli import use_utf8_output
 from copilot.guardrails.policy import Role
 
 _ROLES = get_args(Role)
 
 
 def main() -> int:
+    use_utf8_output()
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--role", required=True, choices=_ROLES)
     parser.add_argument("--label", required=True, help="who/what this is for (free text)")

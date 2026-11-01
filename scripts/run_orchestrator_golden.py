@@ -24,6 +24,7 @@ import sys
 from copilot.agents.contracts import AgentBudget
 from copilot.agents.orchestrator import Orchestrator
 from copilot.agents.wiring import build_executors
+from copilot.cli import use_utf8_output
 from copilot.data import store
 from copilot.evals.orchestrator_golden import load_orchestrator_golden, missing_mentions
 from copilot.guardrails.policy import load_policy
@@ -42,6 +43,7 @@ CHECKPOINT_PATH = str(REPO_ROOT / "data" / "orchestrator_checkpoints.sqlite")
 
 
 def main() -> int:
+    use_utf8_output()
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument(
         "--questions", default=None, help="comma-separated golden question ids (default: all 10)"

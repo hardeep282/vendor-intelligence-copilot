@@ -77,6 +77,14 @@ v2 draft and verify prompts use.
 
 **Also (30 Oct):** `describe_ordering(sql)` names the measure the rows are sorted by (an ORDER BY alias is mapped back to its source column), so the Verifier can compare a ranking with the question.
 
+**Also (2 Nov):** `ordering_column(sql)` returns the column a query is sorted by (through an alias or a one-column aggregate), and `expected_ranking(question)` returns the columns a ranking question needs ("most controllable" -> ControllableLeakage). `run_data_analyst` uses the pair to re-ask once when they don't match.
+
+### `src/copilot/cli.py` -- `use_utf8_output()` *(day: 10, isNew: true)*
+Added 2 Nov 2026, after a Windows run crashed with `UnicodeEncodeError` on "≈". Every script in `scripts/` calls it first: stdout and stderr switch to UTF-8, and anything unencodable is replaced instead of crashing.
+**Takes in:** nothing.
+**Gives out:** nothing; it reconfigures the two output streams.
+**Talks to:** the `main()` of every script in `scripts/`.
+
 ### `scripts/build_snapshot.py` *(day: 1)*
 Turns the vendor project's Excel workbook into the aggregate-only Parquet tables the app is allowed
 to query. SKU-level sheets are only ever aggregated, never copied as-is.
@@ -122,6 +130,8 @@ generic messages (naming the reason codes, nothing else) on BLOCK/ESCALATE.
 and `END` (step 4's topology test, `tests/test_orchestrator.py::
 test_every_path_to_end_passes_through_guardian`), and the re-review every approver `edit` gets
 (step 5) before its text is accepted.
+
+**2 Nov 2026 (ADR-006 amendment):** the vendor-audience check only applies to Action drafts a vendor will read. Draft types listed in `policies/disclosure.yaml` `internal_draft_types` (today: `reorder_recommendation`) are exempt; unknown or missing types are still checked.
 
 ### `src/copilot/guardrails/pii.py` -- `find_pii()` *(day: 7, isNew: true)*
 PII detection for `Guardian._check_pii`/`_apply_redactions`. Presidio (`AnalyzerEngine` + the
@@ -926,6 +936,8 @@ that marker into a final answer is what `Guardian._check_canary` catches.
 
 **31 Oct 2026, later:** `resolve_level()` decides portfolio vs vendor for forecasting and inventory planning and returns the "Level:" line both now lead their findings with; inventory findings also state units, assumed inputs and the forecast's warnings.
 
+**2 Nov 2026:** `run_data_analyst` only calls a result cut off when it actually reaches the 200-row limit (an added LIMIT alone no longer counts), and it re-asks once when a ranking question's rows are sorted by the wrong measure (`_check_ranking`).
+
 ### `prompts/action_draft/v1.yaml` *(day: 6, isNew: true)*
 The Action specialist's one prompt. System prompt states the vendor-facing audience rule
 (public facts + that vendor's own terms only, for a `renegotiation_email`; internal figures
@@ -1077,6 +1089,8 @@ real caller is `copilot.agents.wiring` (Day 6 step 7) via `scripts/run_orchestra
 **29 Oct 2026: human approval fails closed.** `withhold_action` is a third hop between `guardian` and `END`: an Action draft the Guardian allowed, in an `Orchestrator` built without a checkpointer (so no approver could ever resume it), is held back instead of returned. The answer becomes `WITHHELD_ACTION_MESSAGE`, `approval_decision="withheld"`, and the hold is audit-logged. Before this, that case skipped approval silently.
 
 **1 Nov 2026:** `results` uses `_add_or_reset`; each question starts from `FRESH_RESULTS`, so a reused thread no longer carries old findings. `checkpoint_serde()` registers `CHECKPOINT_TYPES` with the checkpoint serializer (used here and in `api/dependencies.py`).
+
+**2 Nov 2026:** `ensure_inventory_tasks()` runs after every plan: a question naming safety stock, a reorder point, EOQ or an order quantity always gets `inventory_planning` and `forecasting_risk`, whatever the planner chose. The draft prompt v4 max_tokens is 2000.
 
 ### `src/copilot/agents/wiring.py` -- `build_executors()` *(day: 6, isNew: true)*
 The one piece of glue nothing else needed: turns the five already-tested `run_*` functions

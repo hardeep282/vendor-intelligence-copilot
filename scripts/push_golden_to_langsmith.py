@@ -12,12 +12,14 @@ import sys
 
 from langsmith import Client
 
+from copilot.cli import use_utf8_output
 from copilot.evals.golden import GOLDEN_V2_PATH, load_golden
 from copilot.evals.langsmith_sync import sync_golden_dataset
 from copilot.settings import get_settings
 
 
 def main() -> int:
+    use_utf8_output()
     settings = get_settings()
     if not settings.langsmith_api_key:
         print(

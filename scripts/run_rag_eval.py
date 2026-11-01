@@ -17,6 +17,7 @@ from __future__ import annotations
 import argparse
 import sys
 
+from copilot.cli import use_utf8_output
 from copilot.evals.rag_golden import load_rag_golden, relevant_chunk_ids
 from copilot.evals.rag_metrics import mean_recall_at_k, mean_reciprocal_rank, score_retrieval
 from copilot.evals.rag_quality import context_recall, faithfulness
@@ -31,6 +32,7 @@ from copilot.rag.store import ChunkStore, get_chroma_client
 
 
 def main() -> int:
+    use_utf8_output()
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--n-results", type=int, default=5, help="k for recall@k (default: 5)")
     parser.add_argument(

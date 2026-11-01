@@ -12,12 +12,14 @@ from __future__ import annotations
 import argparse
 import sys
 
+from copilot.cli import use_utf8_output
 from copilot.data import store
 from copilot.guardrails.policy import load_policy
 from copilot.insights.service import VendorNotFoundError, gather_vendor_data
 
 
 def main() -> int:
+    use_utf8_output()
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("vendor_name")
     parser.add_argument("--role", default="viewer")
