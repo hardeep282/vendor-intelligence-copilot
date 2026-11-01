@@ -491,6 +491,28 @@ def resolve_level(
 DraftType = Literal["renegotiation_email", "reorder_recommendation"]
 
 
+_DRAFT_TYPES: tuple[str, ...] = ("renegotiation_email", "reorder_recommendation")
+_REORDER_WORDS = re.compile(r"\bre-?order", re.IGNORECASE)
+_VENDOR_EMAIL_WORDS = re.compile(r"\b(renegotiat\w*|email|e-mail|letter)\b", re.IGNORECASE)
+
+
+def infer_draft_type(given: str | None, *texts: str) -> DraftType:
+    """The draft type to write: the plan's own value when it's a known type; otherwise read
+    from the request's wording. Added 2 Nov 2026 as a back-up to the plan fix: a reorder
+    request whose type never arrived was drafted as a vendor email (and correctly blocked).
+
+    Only a clear reorder request with no mention of an email, letter or renegotiation becomes a
+    reorder recommendation. Anything else stays a vendor email, the stricter of the two, which
+    the Guardian holds to the vendor-audience rule.
+    """
+    if given in _DRAFT_TYPES:
+        return cast("DraftType", given)
+    text = " ".join(texts)
+    if _REORDER_WORDS.search(text) and not _VENDOR_EMAIL_WORDS.search(text):
+        return "reorder_recommendation"
+    return "renegotiation_email"
+
+
 class ActionDraft(BaseModel):
     """Forced structured output for the action_draft prompt."""
 
@@ -512,10 +534,15 @@ def run_action(
     vendor's own terms -- enforced for real by the Guardian, not by this function; `gaps`
     says so explicitly rather than implying this draft is already safe to send.
     """
-    draft_type = cast("DraftType", spec.constraints.get("draft_type", "renegotiation_email"))
     context = spec.constraints.get("context", spec.objective)
     vendor_name = spec.constraints.get("vendor_name")
     vendor_gaps: list[str] = []
+    draft_type = infer_draft_type(spec.constraints.get("draft_type"), spec.objective, context)
+    if spec.constraints.get("draft_type") not in _DRAFT_TYPES:
+        vendor_gaps.append(
+            f"the plan gave no draft type, so it was taken as {draft_type} from the wording of "
+            "the request"
+        )
     if not vendor_name and known_vendors:
         vendor_name = identify_vendor(f"{spec.objective} {context}", known_vendors)
     if not vendor_name:
@@ -573,6 +600,7 @@ def run_action(
 
 
 __all__ = [
+    "infer_draft_type",
     "ACTION_DRAFT_NOTE",
     "PORTFOLIO_LEVEL_LINE",
     "resolve_level",

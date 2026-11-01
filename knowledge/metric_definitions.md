@@ -1,7 +1,7 @@
 ---
 doc_type: metric_definitions
 vendor: null
-version: 1
+version: 2
 data_class: public
 allowed_roles: [anonymous, viewer, analyst, approver, admin]
 ---
@@ -43,6 +43,16 @@ FreightCost is recorded once per vendor, not once per SKU. A query that joins ve
 freight to SKU-level rows and then sums freight will multiply it by the SKU count (a "fan-out"
 join) — this is a documented failure mode (see Data Dictionary: vendor_logistics_cost). Always
 aggregate FreightCost with MAX() per vendor, never SUM().
+
+### Freight in this copilot's data: SUM across vendors is correct
+
+The MAX rule is about the source project's
+SKU-level `FreightCost` column. That column is not in this copilot's data at all. Here freight
+is `TotalFreight`, already rolled up to exactly one row per vendor (126 rows for 126 vendors).
+It appears in both `vendor_logistics_cost` and `vendor_full_cost`, with identical values. Because
+each vendor appears once, there is no fan-out: `SUM(TotalFreight)` across vendors is the correct
+portfolio total, **$1,640,474.69**, the same $1.64M the MAX rule protects. Never apply MAX across
+vendors; that would return only the single largest vendor's freight.
 
 ## Health classification: three independent dimensions
 

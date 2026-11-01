@@ -17,7 +17,7 @@ Written: Tue 27 Oct 2026. Previous version (end of chat 7, Day 9 → Day 10) is 
 > `v0.1.1` pushed from my machine, or not yet -- check `git ls-remote --tags origin`). Attach
 > it with push access, clone, rebuild the snapshot (`scripts/build_snapshot.py` on the public
 > analytics repo's `Excel Analysis/Vendor_Summary.xlsx`, then
-> `copilot.data.store.build_database()`), run `uv run pytest -q` (expect 571 passed),
+> `copilot.data.store.build_database()`), run `uv run pytest -q` (expect 596 passed),
 > `uv run ruff check .`, `uv run mypy`, confirm state in five lines, then take the results I
 > paste from the real-key scripts and fill the README's pending latency/cost rows.
 > Don't re-derive decisions in `docs/adr/` (000-007) or re-explain what `docs/BUILD_LOG.md`
@@ -29,7 +29,7 @@ Written: Tue 27 Oct 2026. Previous version (end of chat 7, Day 9 → Day 10) is 
 |---|---|
 | Repo | `hardeep282/vendor-intelligence-copilot`, public since 28 Oct (history scanned clean 27 Oct) |
 | Version | 0.1.1 in `pyproject.toml` and `uv.lock`; tag `v0.1.1` pushed 28 Oct (points at 584d79f) |
-| Checks | 571 passed / 0 failed / 0 skipped with the snapshot built; ruff, mypy strict clean |
+| Checks | 596 passed / 0 failed / 0 skipped with the snapshot built; ruff, mypy strict clean |
 | Deployed | No. Target `https://api.vendor.<domain>/health` |
 | Shared pages | Case study, Code Map (v9, Days 1-10), Progress Tracker -- links in `docs/PROJECT_PROGRESS.md` "Live URLs" |
 | Next ADR | 008 (questions in `docs/SPRINT_REPORT.md`; you write it, per A1 §2.1) |
@@ -41,7 +41,7 @@ Written: Tue 27 Oct 2026. Previous version (end of chat 7, Day 9 → Day 10) is 
 3. Share the case-study page with "anyone with the link".
 4. Record the demo (`docs/DEMO_SCRIPT.md`).
 5. Run on your machine and paste results: `scripts/run_orchestrator_golden.py` (first full
-   run 2 Nov: 10/11 planned, 10/11 verified, $0.53; seven fixes followed, rerun pending),
+   run 2 Nov: 10/11 planned, 10/11 verified, $0.53; seven fixes followed; rerun 11/11 planned, 10/11 verified, $0.48; then the plan-constraints fix),
    `scripts/run_eval_gate.py` (`llm_judged` layer), `scripts/run_model_selection_eval.py`,
    `scripts/run_rag_eval.py --quality`.
 6. Deploy (Day 2 guide). R8: AWS Free plan ends about 25 Dec 2026.

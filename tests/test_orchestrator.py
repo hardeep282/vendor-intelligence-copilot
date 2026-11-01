@@ -21,6 +21,7 @@ from copilot.agents.orchestrator import (
     MAX_VERIFICATION_LOOPS,
     WITHHELD_ACTION_MESSAGE,
     Orchestrator,
+    PlanConstraints,
     PlannedTask,
     ensure_inventory_tasks,
 )
@@ -1051,14 +1052,19 @@ def test_added_inventory_task_copies_the_level_of_a_related_task() -> None:
         PlannedTask(
             agent="forecasting_risk",
             objective="forecast",
-            constraints={"level": "vendor", "vendor_name": "DIAGEO NORTH AMERICA INC", "x": "1"},
+            constraints=PlanConstraints(
+                level="vendor", vendor_name="DIAGEO NORTH AMERICA INC", horizon_months=2
+            ),
         )
     ]
 
     tasks = ensure_inventory_tasks("What is Diageo's reorder point?", planned)
 
     assert [t.agent for t in tasks] == ["forecasting_risk", "inventory_planning"]
-    assert tasks[1].constraints == {"level": "vendor", "vendor_name": "DIAGEO NORTH AMERICA INC"}
+    assert tasks[1].constraints.as_dict() == {
+        "level": "vendor",
+        "vendor_name": "DIAGEO NORTH AMERICA INC",
+    }
 
 
 @pytest.mark.parametrize(
@@ -1108,3 +1114,55 @@ def test_the_plan_node_applies_the_inventory_rule_end_to_end() -> None:
     assert [t.agent for t in result.plan] == ["forecasting_risk", "inventory_planning"]
     assert [t.task_id for t in result.plan] == ["t0", "t1"]
     assert {r.agent for r in result.results} == {"forecasting_risk", "inventory_planning"}
+
+
+# -- 2 Nov 2026: plan constraints actually reach the specialists ---------------------------
+
+
+def test_plan_constraints_arrive_in_the_task_spec_as_strings() -> None:
+    llm = _llm_with(
+        [
+            structured_response(
+                {
+                    "tasks": [
+                        {
+                            "agent": "forecasting_risk",
+                            "objective": "forecast Diageo",
+                            "constraints": {
+                                "level": "vendor",
+                                "vendor_name": "DIAGEO NORTH AMERICA INC",
+                                "horizon_months": 2,
+                                "service_level": 0.95,
+                                "run_risk_classifier": False,
+                                "draft_type": None,
+                            },
+                        }
+                    ]
+                }
+            ),
+            structured_response({"answer": "a", "cited_tasks": ["t0"]}),
+            _PASSING_VERDICT,
+        ]
+    )
+    orch = Orchestrator(llm, executors={"forecasting_risk": _ok("forecasting_risk", "f")})
+
+    result = orch.answer("Forecast Diageo for 2 months", role="analyst")
+
+    assert result.plan[0].constraints == {
+        "level": "vendor",
+        "vendor_name": "DIAGEO NORTH AMERICA INC",
+        "horizon_months": "2",
+        "service_level": "0.95",
+        "run_risk_classifier": "false",
+    }
+
+
+def test_plan_constraints_reject_values_the_specialists_cannot_use() -> None:
+    from pydantic import ValidationError
+
+    with pytest.raises(ValidationError):
+        PlanConstraints(draft_type="purchase_order")  # type: ignore[arg-type]
+    with pytest.raises(ValidationError):
+        PlanConstraints(horizon_months=0)
+    with pytest.raises(ValidationError):
+        PlanConstraints(service_level=95)

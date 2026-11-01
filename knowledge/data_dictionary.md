@@ -1,7 +1,7 @@
 ---
 doc_type: data_dictionary
 vendor: null
-version: 1
+version: 2
 data_class: public
 allowed_roles: [anonymous, viewer, analyst, approver, admin]
 ---
@@ -60,10 +60,17 @@ one** — when aggregating across a vendor's SKUs, use MAX(FreightCost), never S
 produces a fan-out inflation (observed: $1.64M becomes $19.68M when freight is summed across a
 join that repeats vendor rows per SKU).
 
+In this snapshot the freight column is `TotalFreight`, one row per vendor (126 rows, 126
+vendors), so summing it across vendors is correct and gives the $1,640,474.69 portfolio total.
+The SKU-level `FreightCost` column the warning above refers to is never included in the
+snapshot.
+
 ### vendor_full_cost
 
 Combined view of purchase cost, freight and excise tax per vendor, used for full-cost margin
 questions.
+Its `TotalFreight` is the same per-vendor figure as in `vendor_logistics_cost` (identical on
+every vendor), so either table gives the same freight total.
 
 ## Demand tables
 

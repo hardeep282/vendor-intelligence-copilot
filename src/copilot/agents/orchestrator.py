@@ -107,7 +107,7 @@ from langgraph.checkpoint.sqlite import SqliteSaver
 from langgraph.graph import END, StateGraph
 from langgraph.types import Command, Send, interrupt
 from langsmith.run_helpers import LangSmithExtra
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, ConfigDict, Field
 
 from copilot.agents.contracts import AgentBudget, AgentName, AgentResult, TaskSpec
 from copilot.guardrails.audit_log import log_approval, log_decision
@@ -137,6 +137,42 @@ def _roster_block() -> str:
     return "\n".join(f"- {name}: {desc}" for name, desc in _ROSTER.items())
 
 
+# Fixed 2 Nov 2026. Until then `PlannedTask.constraints` was an open `dict[str, str]`. The
+# Anthropic SDK turns an `output_format` model into a strict JSON schema, and a strict schema
+# can't hold an open object, so `anthropic.transform_schema` quietly rewrote it as an object with
+# NO properties and `additionalProperties: false`: the only value the model could produce was
+# `{}`. Every real plan since Day 6 arrived with empty constraints, and the plan prompt's rules
+# asking for vendor_name, level and draft_type never reached the code. Found by reading the saved
+# checkpoints of the 2 Nov golden run (oq-008: no draft_type, so the default vendor email was
+# drafted and correctly blocked; oq-006: no horizon_months, so 3 months instead of 2). The tests
+# missed it because the fake LLM skips the SDK's schema step;
+# `test_no_structured_output_schema_has_a_closed_empty_object` now runs every output model
+# through that same step. NOTE: a model's docstring and field descriptions are sent to the LLM
+# as part of the schema, so keep them short and written for the model.
+class PlanConstraints(BaseModel):
+    """Optional settings for one task. Fill only the fields the planning rules ask for."""
+
+    model_config = ConfigDict(extra="ignore")
+
+    vendor_name: str | None = None
+    level: Literal["vendor", "portfolio"] | None = None
+    draft_type: Literal["renegotiation_email", "reorder_recommendation"] | None = None
+    horizon_months: int | None = Field(default=None, ge=1, le=12)
+    service_level: float | None = Field(default=None, gt=0, lt=1)
+    lead_time_periods: float | None = Field(default=None, gt=0)
+    ordering_cost_per_order: float | None = Field(default=None, gt=0)
+    holding_cost_per_unit_per_year: float | None = Field(default=None, gt=0)
+    run_risk_classifier: bool | None = None
+    context: str | None = None
+
+    def as_dict(self) -> dict[str, str]:
+        """The flat string map `TaskSpec.constraints` carries; unset fields are left out."""
+        out: dict[str, str] = {}
+        for key, value in self.model_dump(exclude_none=True).items():
+            out[key] = str(value).lower() if isinstance(value, bool) else str(value)
+        return out
+
+
 class PlannedTask(BaseModel):
     """One task in the Orchestrator's plan -- becomes a `TaskSpec` once a role/budget are
     attached (the plan itself doesn't carry those; they're the Orchestrator's to set).
@@ -144,7 +180,7 @@ class PlannedTask(BaseModel):
 
     agent: AgentName
     objective: str
-    constraints: dict[str, str] = Field(default_factory=dict)
+    constraints: PlanConstraints = Field(default_factory=PlanConstraints)
 
 
 class OrchestratorPlan(BaseModel):
@@ -188,11 +224,13 @@ def ensure_inventory_tasks(question: str, tasks: list[PlannedTask]) -> list[Plan
         (t for t in tasks if t.agent in ("inventory_planning", "forecasting_risk", "action")),
         None,
     )
-    constraints = (
-        {k: v for k, v in related.constraints.items() if k in _LEVEL_KEYS} if related else {}
+    level_only = (
+        PlanConstraints(**related.constraints.model_dump(include=set(_LEVEL_KEYS)))
+        if related
+        else PlanConstraints()
     )
     added = [
-        PlannedTask(agent=agent, objective=question, constraints=dict(constraints))
+        PlannedTask(agent=agent, objective=question, constraints=level_only.model_copy())
         for agent in ("forecasting_risk", "inventory_planning")
         if agent not in present
     ]
@@ -651,7 +689,7 @@ class Orchestrator:
                 task_id=f"t{i}",
                 agent=t.agent,
                 objective=t.objective,
-                constraints=t.constraints,
+                constraints=t.constraints.as_dict(),
                 role=state["role"],
                 budget=self._default_budget,
             )
@@ -1111,6 +1149,7 @@ __all__ = [
     "Orchestrator",
     "OrchestratorPlan",
     "OrchestratorResult",
+    "PlanConstraints",
     "PlannedTask",
     "SpecialistExecutor",
     "VerifierVerdict",

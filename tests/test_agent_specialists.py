@@ -22,6 +22,7 @@ from copilot.agents.specialists import (
     _sql_data_classes,
     forecast_result_for_inventory,
     identify_vendor,
+    infer_draft_type,
     resolve_level,
     run_action,
     run_data_analyst,
@@ -600,3 +601,33 @@ def test_specialists_share_one_connection_in_parallel_without_crashing() -> None
             t.join()
 
     assert failures == []
+
+
+# -- draft type back-up (2 Nov 2026) ---------------------------------------------------------
+
+
+@pytest.mark.parametrize(
+    ("given", "text", "expected"),
+    [
+        ("reorder_recommendation", "draft an email", "reorder_recommendation"),  # plan wins
+        (None, "Draft a reorder recommendation for the top vendor", "reorder_recommendation"),
+        (None, "Re-order note for procurement", "reorder_recommendation"),
+        (None, "Draft a reorder email to the vendor", "renegotiation_email"),  # email -> vendor
+        (None, "Draft a renegotiation email", "renegotiation_email"),
+        (None, "Write something for Diageo", "renegotiation_email"),  # unclear -> stricter
+        ("purchase_order", "reorder recommendation", "reorder_recommendation"),  # unknown value
+    ],
+)
+def test_infer_draft_type(given: str | None, text: str, expected: str) -> None:
+    assert infer_draft_type(given, text) == expected
+
+
+def test_action_says_when_it_inferred_the_draft_type() -> None:
+    spec = _spec(
+        "action",
+        "Draft a reorder recommendation for DIAGEO NORTH AMERICA INC",
+        {"vendor_name": "DIAGEO NORTH AMERICA INC"},
+    )
+    result = run_action(spec, _action_llm(), known_vendors=_VENDORS)
+    assert "draft_type=reorder_recommendation" in result.evidence
+    assert any("no draft type" in g for g in result.gaps)

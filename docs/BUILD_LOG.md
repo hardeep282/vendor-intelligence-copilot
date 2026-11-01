@@ -2700,3 +2700,66 @@ The run surfaced seven separate problems. All seven were fixed after the user ap
 
 The policy-version assertion moves from 1 to 2. Full suite 571 passed, also with
 `LANGGRAPH_STRICT_MSGPACK=true`; ruff and mypy strict clean.
+
+## 2026-11-02 · The planner could never send its settings: an empty-box bug since Day 6
+
+**Covered:** reading the saved checkpoints of the full golden rerun (plan coverage 11/11,
+verified 10/11, answer mentions 1/1, $0.48). Two answers failed.
+
+1. **oq-008 blocked again, and every plan's constraints were `{}`.** The checkpoints showed
+   empty constraints on every task of every question. Cause: `PlannedTask.constraints` was an
+   open `dict[str, str]`. The Anthropic SDK's `transform_schema`, which `output_format=` runs to
+   make a strict JSON schema, can't express an open object. So it rewrote it as an object with
+   no properties and `additionalProperties: false`, and the model could only send `{}`.
+   - The plan prompt's rules for vendor_name, level and draft_type (v2 and v3) never reached
+     the code. Earlier notes in this log describe those rules as if they took effect; they
+     didn't. What worked came from the fallbacks: `identify_vendor` reading the question text,
+     and default values.
+   - In oq-008 no draft_type arrived, so the default `renegotiation_email` was drafted, as an
+     email to the vendor, and the Guardian correctly blocked it.
+   - In oq-006 no horizon_months arrived, so the forecast was for 3 months instead of the 2
+     asked for.
+   - The tests missed all this because the fake LLM never runs the SDK's schema step.
+
+   **Fix:** `PlanConstraints` has named optional fields:
+   - vendor_name and level;
+   - draft_type, limited to the two known types;
+   - horizon_months (1-12) and service_level (between 0 and 1);
+   - lead_time_periods and the two EOQ costs;
+   - run_risk_classifier and context.
+
+   These are exactly the keys the specialists already read. `as_dict()` turns them into the
+   flat strings `TaskSpec` carries. `orchestrator_plan/v4.yaml` lists the fields and adds one
+   rule: a vendor that is described but not named ("our top vendor") must not be guessed.
+   `tests/test_structured_output_schemas.py` runs all 14 structured-output models through the
+   real `transform_schema` and fails on any object that has been closed shut. Only the plan had
+   the problem.
+2. **A back-up for the draft type.** `infer_draft_type`: when the plan gives no known type, a
+   clear reorder request with no mention of an email, letter or renegotiation becomes
+   `reorder_recommendation`. Anything else stays a vendor email, the stricter type. The result
+   carries a gap saying the type was inferred.
+3. **oq-003 (freight) escalated: the Verifier was right.** The Knowledge chunks warn "aggregate
+   FreightCost with MAX(), never SUM". The query summed `TotalFreight`. The draft claimed the
+   two were "consistent", with nothing to support it, and the Verifier rejected that twice.
+   Checked against the snapshot:
+   - there is no `FreightCost` column at all;
+   - `TotalFreight` has one row per vendor (126 rows, 126 vendors) in both freight tables,
+     with identical values;
+   - so `SUM(TotalFreight)` across vendors, $1,640,474.69, is correct.
+
+   `docs/specs/text_to_sql_safety.md` already said this, but the documents the Knowledge agent
+   reads didn't. `metric_definitions.md` (v2) gains a separate section, "Freight in this
+   copilot's data", and `data_dictionary.md` (v2) says the same under both tables. The
+   separate section keeps the RAG golden q12 answer in exactly one chunk.
+
+**Still open:** oq-008's "top vendor" can't be known at plan time, because the specialists run
+in parallel. With v4, the inventory step should now report plainly that no single vendor was
+identified, rather than showing portfolio figures; the real fix is a second planning round.
+
+**Tests:** 25 new:
+- schema scan: 15;
+- constraints reach the TaskSpec, and bad values are rejected: 2;
+- draft-type inference: 8.
+
+Full suite 596 passed, also with `LANGGRAPH_STRICT_MSGPACK=true`; ruff and mypy strict clean.
+The user needs to rebuild the RAG index.

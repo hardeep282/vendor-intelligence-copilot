@@ -1090,6 +1090,8 @@ real caller is `copilot.agents.wiring` (Day 6 step 7) via `scripts/run_orchestra
 
 **1 Nov 2026:** `results` uses `_add_or_reset`; each question starts from `FRESH_RESULTS`, so a reused thread no longer carries old findings. `checkpoint_serde()` registers `CHECKPOINT_TYPES` with the checkpoint serializer (used here and in `api/dependencies.py`).
 
+**2 Nov 2026, later:** `PlannedTask.constraints` is now `PlanConstraints` (named optional fields). The old open dict was turned by the SDK's strict-schema step into an object that only accepts `{}`, so no plan ever passed a vendor, level or draft type. `tests/test_structured_output_schemas.py` now checks every output model.
+
 **2 Nov 2026:** `ensure_inventory_tasks()` runs after every plan: a question naming safety stock, a reorder point, EOQ or an order quantity always gets `inventory_planning` and `forecasting_risk`, whatever the planner chose. The draft prompt v4 max_tokens is 2000.
 
 ### `src/copilot/agents/wiring.py` -- `build_executors()` *(day: 6, isNew: true)*
