@@ -2763,3 +2763,47 @@ identified, rather than showing portfolio figures; the real fix is a second plan
 
 Full suite 596 passed, also with `LANGGRAPH_STRICT_MSGPACK=true`; ruff and mypy strict clean.
 The user needs to rebuild the RAG index.
+
+## 2026-11-02 · Real-key runs finished; version 0.2.0 frozen
+
+**Covered:** the last measurement runs, on the user's machine with a real API key. The fixing
+loop was closed deliberately after the 3-question check below: these are recorded as measured,
+not tuned.
+
+- **Orchestrator, the 3 questions touched by the plan-constraints fix:** 3/3 planned and
+  verified, $0.14.
+  - oq-003 (freight): now explains why SUM is right in this data.
+  - oq-006: forecasts the 2 months asked for.
+  - oq-008: produces an internal reorder note. It says plainly that the reorder figures are
+    for the whole portfolio, not Diageo's.
+- **Model Selection Agent (`--quality`):** task type 8/8, model family 8/8, reasoning
+  grounded 0.875 (msq06 not grounded).
+- **RAG (`--quality`):**
+  - recall@5 0.800 and MRR 0.662, unchanged by today's doc edits;
+  - context recall 1.000;
+  - faithfulness 0.875 over the 16 answered questions.
+
+  The 4 abstentions (q01, q04, q05, q10) and the 2 answers judged unfaithful (q02, q03) are
+  all lookups in the 10 synthetic vendor contracts. Every methodology and definition question
+  scored 1.0. Recorded as a known limit; not investigated further.
+- **Eval gate:**
+  - deterministic layer PASS (596);
+  - text-to-SQL execution accuracy 0.913 and leakage-free 1.000;
+  - RAG faithfulness 0.889 and context recall 0.889;
+  - model selection 1.000, with reasoning grounded **0.750, exactly on its 0.75 minimum**.
+
+  The same agent scored 0.875 an hour earlier, which is the LLM judge's own run-to-run spread:
+  a threshold set this close to it will flake. The orchestrator layer then failed with HTTP 400
+  "credit balance is too low". That was not a code fault. The user chose not to top up; the
+  separate 11-question run already beats the orchestrator thresholds (planned 100% vs 80%,
+  verified 91% vs 70%, mentions 100% vs 100%).
+
+**Answer flaws noted, not fixed:**
+- oq-003 described its data result as "marked partial ... not fully verified". A result is
+  "partial" whenever the SQL step lists any assumption, so this overstates the doubt.
+- The oq-008 reorder draft said stock was "nearing the reorder point", although no
+  stock-on-hand data exists. This is what the approval gate is for.
+
+**Version:** 0.2.0 in `pyproject.toml` and `uv.lock`. The tag is pushed from the user's machine.
+README, CASE_STUDY, HANDOFF, COMMANDS and the tracker now carry the real numbers in place of
+"pending".

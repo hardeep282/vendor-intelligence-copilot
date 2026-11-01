@@ -244,3 +244,5 @@ the MCP server wraps `copilot.data.store`, `copilot.sql.service.TextToSqlService
 | `uv lock --check --offline` | Confirms `uv.lock` still matches `pyproject.toml` after the version bump, without touching the network |
 | `git tag -a v0.1.1 -m "Day 10: end of sprint"` | Creates an annotated release tag on the current commit (run on your machine after `git pull`) |
 | `git push origin v0.1.1` | Pushes that one tag to GitHub (this session's credentials get HTTP 403 on tag pushes) |
+| `git tag -a v0.2.0 -m "Real-key runs done, fixes frozen"` | 2 Nov 2026: the release tag after the real-key runs and their fixes (run on your machine after `git pull`) |
+| `git push origin v0.2.0` | Pushes the v0.2.0 tag |

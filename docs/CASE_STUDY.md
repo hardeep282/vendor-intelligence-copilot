@@ -41,7 +41,7 @@ I built a multi-agent system where the architecture itself is the guardrail, not
 ## The results
 
 Nothing below is a projection — it's a real number from a real run, or explicitly marked as
-still pending a credential or a local run I haven't done yet:
+explicitly marked as not done:
 
 - **596 automated tests passing, 0 failing.**
 - **23/23 on a privacy red team** — 15 data-leakage attack patterns plus 8 SQL-injection
@@ -50,6 +50,10 @@ still pending a credential or a local run I haven't done yet:
 - **A 6-layer SQL safety validator** catches semantically-wrong-but-syntactically-valid SQL
   (averaging a margin percentage instead of weighting it, a join that silently fans out and
   inflates a total) before it ever reaches a user — 0 false positives across 33 real queries.
+- **The whole multi-agent system, run for real:** on 11 multi-hop questions it planned the right
+  specialists 11/11 and passed its own Verifier 10/11, for $0.48 in total (median 17 s a
+  question). The one escalation was the system working: the Verifier refused an answer that
+  joined two facts the documents didn't connect.
 - **Real retrieval quality:** recall@5 = 0.800, MRR = 0.662 on a hybrid BM25 + vector search
   with reciprocal rank fusion, measured against a labelled question set, not assumed.
 - **A SKU risk classifier validated on 10,495 real SKUs** after finding and fixing a genuine
@@ -65,8 +69,9 @@ still pending a credential or a local run I haven't done yet:
 
 Validate the fine-tune against question phrasings outside its training template before
 considering it for production; finish deployment (AWS, domain, live demo link); run the
-real-key evaluation suite end to end (currently built, tested, and ready, pending credentials
-and local GPU/browser sessions I run outside this build environment); then deepen retrieval
+combined eval gate once more with API credit (every layer except the orchestrator already passed
+for real); add a second planning round so "our top vendor" questions get vendor-specific
+inventory figures; then deepen retrieval, starting with the synthetic contract lookups that miss
 (reranking, GraphRAG experiment), harden the Postgres checkpointer against a live database, and
 build out the Model Selection Agent's real evaluation numbers.
 

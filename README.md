@@ -92,13 +92,13 @@ privacy-leakage cases (23/23 passing, `tests/test_privacy_leakage_suite.py`).
 
 A sixth agent, a **Model Selection Agent** (propose → critique → revise data-science model
 choices with a critic checking assumptions per model family), was added beyond the base sprint
-scope (Addendum A1 to the build brief) and is built and unit-tested; its real per-scenario eval
-numbers are one of the real-key runs still pending (see below).
+scope (Addendum A1 to the build brief). Real run, 2 Nov 2026: right task type on 8/8 scenarios,
+an acceptable model family on 8/8, and reasoning judged grounded on 7/8 by a second model.
 
 ## Results
 
-All figures are either real runs in this environment or explicitly marked as still pending a
-real API key/your machine — nothing below is invented. Full detail: `docs/PROJECT_PROGRESS.md`.
+All figures are either real runs (in this environment, or with a real API key on my machine) or
+explicitly marked as not done — nothing below is invented. Full detail: `docs/PROJECT_PROGRESS.md`.
 
 | Area | Result |
 |---|---|
@@ -116,17 +116,20 @@ real API key/your machine — nothing below is invented. Full detail: `docs/PROJ
 | Effort lab (`effort` sweep, this model generation has no `temperature` param — see `docs/adr/005`) | 2 real runs, $0.114 / $0.119, exec_acc 0.67 both times; found and fixed a real scoring bug (column-alias mismatch), not a model problem |
 | QLoRA fine-tune, text-to-SQL (**benchmarked, not deployed**) | n=60 held-out: QLoRA 1.0 execution accuracy / 1.0 executable rate vs. base zero-shot 0.017/0.25 and base few-shot 0.1/0.333; mean latency 4.42s, between zero-shot (6.76s) and few-shot (3.83s), single-example and unbatched — see Limitations for the scope of this claim |
 | MCP server | Vendor Analytics tools exposed read-only via MCP, exercised against the real snapshot (sprint's "never cut" item) |
-| CI eval gate | deterministic layer PASS in every environment; `llm_judged` layer correctly SKIPs without a key rather than fabricating a pass; verified to also fail (exit 1) on an injected regression |
+| Multi-agent orchestrator, 11 multi-hop questions (real API, 2 Nov 2026) | planned the right specialists 11/11, Verifier passed 10/11, ranking question named the right top vendors 1/1; **$0.48 total** (1.6-7.8 cents per question), median 17 s per question (10-52 s). The one escalation (freight) was correct: the answer invented a link the docs didn't support, and the fix was in the docs. A follow-up run of the 3 questions touched by the last fix: 3/3 verified, $0.14 |
+| Model Selection Agent (real API, 8 scenarios) | task type 8/8, model family 8/8, reasoning grounded 0.875 (and 0.750 in the gate run an hour later: the LLM judge's own run-to-run spread) |
+| RAG answer quality (real API, 20 questions) | context recall 1.000; faithfulness 0.875 over the 16 answered. All 4 abstentions and both unfaithful answers are lookups in the 10 **synthetic** vendor contracts; methodology and definition questions scored 1.0 |
+| CI eval gate | deterministic layer PASS in every environment (596 tests); `llm_judged` layer correctly SKIPs without a key rather than fabricating a pass; verified to also fail (exit 1) on an injected regression. Real run on my machine, 2 Nov 2026: text-to-SQL execution accuracy 0.913 (min 0.85), leakage-free 1.000, RAG faithfulness 0.889 / context recall 0.889, model selection 1.000 / 0.750 (min 0.75: on the line). The orchestrator layer didn't run: the API account ran out of credit mid-gate, so its numbers come from the separate run above |
 
 **Cost per query:** one real end-to-end `InsightService` call cost **$0.01127** (7.31s, 1
 attempt). The fine-tuning benchmark's 180 held-out generations cost under $1 total. Every
 deterministic layer (Guardian, input gate, SQL validator, trace masking, the 596-test suite)
-costs $0 — no LLM call in any of it. Full multi-agent per-question cost (Orchestrator +
-specialists + Verifier, real numbers) is one of the real-key runs still pending.
+costs $0 — no LLM call in any of it. A full multi-agent question (Orchestrator + specialists +
+Verifier) cost 1.6-7.8 cents in the real 11-question run, $0.48 for all 11.
 
-**Latency:** p50/p95 per LangGraph node are instrumented (TTFT, total latency, tokens, cost
-logged on every `LLMClient` call) but the end-to-end multi-agent p50/p95 table needs a real-key
-run of `scripts/run_orchestrator_golden.py` — not yet executed for real, see below.
+**Latency:** end to end, the 11 real multi-agent questions took a median of 17 s (10-52 s; the
+slow ones needed a Verifier redraft). Per-node TTFT, latency, tokens and cost are logged on every
+`LLMClient` call; a per-node p50/p95 table has not been compiled from them yet.
 
 ## Decisions (ADR index)
 
@@ -158,12 +161,14 @@ at minimum-viable depth. What's explicitly not done yet, by design (nothing here
 - **Postgres checkpointer is unit-tested, not proven live.** No Docker daemon was available in
   the build environment; the branch-selection logic and a two-SQLite-file priority test pass,
   but a real round-trip against a live Postgres hasn't happened yet.
-- **Several real-key runs are built and tested but not yet executed for real numbers:**
-  `scripts/run_orchestrator_golden.py` (10 multi-hop questions end to end), the CI eval gate's
-  `llm_judged` layer, `scripts/run_model_selection_eval.py`, and a full multi-agent p50/p95
-  latency table. All of them run against real services with real tests behind them — they just
-  need an `ANTHROPIC_API_KEY` and, for some, a GPU/browser session I run locally rather than in
-  this build environment.
+- **Real-key runs: done, with three honest gaps.** The orchestrator golden set, model selection
+  and RAG quality evals ran for real on 2 Nov 2026 (numbers above). Gaps: the combined eval-gate
+  run stopped at its orchestrator layer when API credit ran out; no per-node p50/p95 table yet;
+  and retrieval is weak on the synthetic vendor-contract lookups (4 of 20 questions miss).
+- **Known answer flaws the human gate is there for:** a reorder draft once claimed stock was
+  "nearing the reorder point" although the system holds no stock-on-hand data; "top vendor"
+  questions can't get vendor-specific inventory figures yet, because specialists run in parallel
+  and the vendor is only known after the data step (the answer says so rather than guessing).
 - **Guardian's semantic layer is deterministic only** — the injection *classifier* named in the
   sprint plan was cut-first; least-privilege tools and the deterministic heuristic checks are
   the real backstop today.

@@ -13,8 +13,8 @@ Written: Tue 27 Oct 2026. Previous version (end of chat 7, Day 9 → Day 10) is 
 
 > DEPTH TRACK, block 1 (close-out), continuing from this handoff. The 10-day sprint is closed:
 > `docs/SPRINT_REPORT.md` has the final report, the ADR-008 questions and the depth-track
-> schedule. Repo `hardeep282/vendor-intelligence-copilot`, branch `main`, version 0.1.1 (tag
-> `v0.1.1` pushed from my machine, or not yet -- check `git ls-remote --tags origin`). Attach
+> schedule. Repo `hardeep282/vendor-intelligence-copilot`, branch `main`, version 0.2.0 (tag
+> `v0.2.0` pushed from my machine, or not yet -- check `git ls-remote --tags origin`). Attach
 > it with push access, clone, rebuild the snapshot (`scripts/build_snapshot.py` on the public
 > analytics repo's `Excel Analysis/Vendor_Summary.xlsx`, then
 > `copilot.data.store.build_database()`), run `uv run pytest -q` (expect 596 passed),
@@ -28,7 +28,7 @@ Written: Tue 27 Oct 2026. Previous version (end of chat 7, Day 9 → Day 10) is 
 | Item | Value |
 |---|---|
 | Repo | `hardeep282/vendor-intelligence-copilot`, public since 28 Oct (history scanned clean 27 Oct) |
-| Version | 0.1.1 in `pyproject.toml` and `uv.lock`; tag `v0.1.1` pushed 28 Oct (points at 584d79f) |
+| Version | 0.2.0 in `pyproject.toml` and `uv.lock` (2 Nov, after the real-key runs); tag `v0.2.0` to be pushed from your machine. `v0.1.1` pushed 28 Oct (points at 584d79f) |
 | Checks | 596 passed / 0 failed / 0 skipped with the snapshot built; ruff, mypy strict clean |
 | Deployed | No. Target `https://api.vendor.<domain>/health` |
 | Shared pages | Case study, Code Map (v9, Days 1-10), Progress Tracker -- links in `docs/PROJECT_PROGRESS.md` "Live URLs" |
@@ -40,10 +40,10 @@ Written: Tue 27 Oct 2026. Previous version (end of chat 7, Day 9 → Day 10) is 
 2. ~~Make the repo public~~ done 28 Oct. Still: decide R1/R7 in writing (ADR-008), add the About text and topics, pin the repo.
 3. Share the case-study page with "anyone with the link".
 4. Record the demo (`docs/DEMO_SCRIPT.md`).
-5. Run on your machine and paste results: `scripts/run_orchestrator_golden.py` (first full
-   run 2 Nov: 10/11 planned, 10/11 verified, $0.53; seven fixes followed; rerun 11/11 planned, 10/11 verified, $0.48; then the plan-constraints fix),
-   `scripts/run_eval_gate.py` (`llm_judged` layer), `scripts/run_model_selection_eval.py`,
-   `scripts/run_rag_eval.py --quality`.
+5. ~~Real-key runs~~ done 2 Nov: orchestrator golden (11/11 planned, 10/11 verified, $0.48; then
+   3/3 after the last fix), model selection (8/8, reasoning 0.875), RAG quality (faithfulness
+   0.875, recall 1.000), eval gate (every layer passed up to the orchestrator layer, where API
+   credit ran out). Optional: rerun `scripts/run_eval_gate.py` once with credit.
 6. Deploy (Day 2 guide). R8: AWS Free plan ends about 25 Dec 2026.
 7. Verify the Postgres checkpointer against a live Postgres (`infra/local/compose.yaml`).
 
