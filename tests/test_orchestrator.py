@@ -13,6 +13,7 @@ import sqlite3
 import time
 from pathlib import Path
 
+import pytest
 from langgraph.checkpoint.sqlite import SqliteSaver
 
 from copilot.agents.contracts import AgentBudget, AgentResult, TaskSpec
@@ -949,3 +950,72 @@ def test_checkpointer_param_takes_priority_over_checkpoint_path(tmp_path: Path) 
     row = used_conn.execute("SELECT count(*) FROM checkpoints").fetchone()
     assert row[0] > 0
     assert not Path(unused_path).exists()
+
+
+# -- 1 Nov 2026: every question starts with fresh findings ------------------------------------
+# A real rerun of oq-001 reused its saved thread; `results` used an append reducer, so the first
+# run's wrong portfolio figures and its crash were mixed into the second run's answer.
+
+
+def test_a_second_question_on_the_same_thread_starts_with_fresh_findings(tmp_path: Path) -> None:
+    responses: list[object] = []
+    for answer in ("first answer", "second answer"):
+        responses += [
+            structured_response(
+                {"tasks": [{"agent": "data_analyst", "objective": "x", "constraints": {}}]}
+            ),
+            structured_response({"answer": answer, "cited_tasks": ["t0"], "conflicts_noted": []}),
+            _PASSING_VERDICT,
+        ]
+    findings = iter(["finding from question one", "finding from question two"])
+
+    def run(spec: TaskSpec) -> AgentResult:
+        return AgentResult(
+            task_id=spec.task_id,
+            agent="data_analyst",
+            status="ok",
+            findings=next(findings),
+            data_classes=["public"],
+            cost_usd=0.001,
+            latency_s=0.1,
+            llm_calls=1,
+        )
+
+    orch = Orchestrator(
+        _llm_with(responses),
+        executors={"data_analyst": run},
+        checkpoint_path=str(tmp_path / "checkpoints.sqlite"),
+    )
+    orch.answer("question one?", role="analyst", thread_id="same-thread")
+    second = orch.answer("question two?", role="analyst", thread_id="same-thread")
+
+    assert [r.findings for r in second.results] == ["finding from question two"]
+    assert second.answer == "second answer"
+
+
+def test_checkpoint_types_load_without_unregistered_type_warnings(
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    """1 Nov 2026: loading a saved thread (including resuming an approval) warned that these
+    types would be "blocked in a future version". They're now registered with the serializer."""
+    import logging
+
+    from copilot.agents.contracts import TaskSpec
+    from copilot.agents.orchestrator import FRESH_RESULTS, OrchestratorResult, checkpoint_serde
+
+    serde = checkpoint_serde()
+    values: list[object] = [
+        TaskSpec(task_id="t0", agent="data_analyst", objective="x", role="analyst"),
+        OrchestratorResult(question="q", role="analyst", answer="a", verified=True),
+        FRESH_RESULTS,
+    ]
+    with caplog.at_level(logging.WARNING):
+        for value in values:
+            assert serde.loads_typed(serde.dumps_typed(value)) == value
+    assert not [r for r in caplog.records if "unregistered type" in r.getMessage()]
+
+
+def test_verifier_reply_limit_fits_the_v4_checklist() -> None:
+    from copilot.llm.prompts import load_prompt
+
+    assert load_prompt("orchestrator_verify").max_tokens >= 1500

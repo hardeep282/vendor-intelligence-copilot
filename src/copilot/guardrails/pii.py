@@ -50,14 +50,35 @@ class PiiEntity:
 #: value 3758005. The data here is vendor-level aggregates with no people in it (ADR-002), so
 #: the check is narrowed to identifiers that are personal by construction. PERSON is left out
 #: on purpose: vendor names such as "JIM BEAM BRANDS" read as personal names to an NER model.
+#: 1 Nov 2026: US_SSN and UK_NHS removed. This business has neither, and a real run showed UK_NHS
+#: matching a 10-digit run inside a long decimal ("0153262435" passes the NHS check digit).
 PRESIDIO_ENTITIES = [
     "EMAIL_ADDRESS",
     "PHONE_NUMBER",
     "CREDIT_CARD",
     "IBAN_CODE",
-    "US_SSN",
-    "UK_NHS",
 ]
+
+#: A phone number needs at least this many digits to count (1 Nov 2026). A real run's answer had
+#: "MASE=1.680" redacted as a phone number: Presidio's phone recogniser accepted "1.680".
+MIN_PHONE_DIGITS = 8
+_DECIMAL_NUMBER = re.compile(r"^[+-]?\d+[.,]\d+$")
+
+
+def _is_plausible_phone(full_text: str, start: int, end: int) -> bool:
+    """Reject the analytics-shaped numbers Presidio mistook for phones: short ones, plain decimals
+    such as 1.680, and digit runs that are really part of a longer decimal (Presidio matched
+    "0153262435" inside "1.0153262435"). Real phone numbers have 8+ digits and stand alone."""
+    span = full_text[start:end]
+    digits = sum(ch.isdigit() for ch in span)
+    if digits < MIN_PHONE_DIGITS or _DECIMAL_NUMBER.match(span.strip()):
+        return False
+    before = full_text[max(0, start - 2) : start]
+    after = full_text[end : end + 2]
+    inside_decimal_before = len(before) == 2 and before[1] in ".," and before[0].isdigit()
+    inside_decimal_after = len(after) == 2 and after[0] in ".," and after[1].isdigit()
+    return not (inside_decimal_before or inside_decimal_after)
+
 
 #: Presidio's own confidence floor. 0.4 keeps its phone recognizer (which scores 0.4) and
 #: every checksum-validated hit (cards, IBANs, NHS numbers score 1.0), while dropping the
@@ -111,6 +132,7 @@ def _presidio_entities(text: str) -> list[PiiEntity] | None:
     return [
         PiiEntity(entity_type=r.entity_type, text=text[r.start : r.end], source="presidio")
         for r in results
+        if r.entity_type != "PHONE_NUMBER" or _is_plausible_phone(text, r.start, r.end)
     ]
 
 
@@ -118,6 +140,8 @@ def _regex_entities(text: str) -> list[PiiEntity]:
     entities: list[PiiEntity] = []
     for entity_type, pattern in _REGEX_PATTERNS.items():
         for m in pattern.finditer(text):
+            if entity_type == "PHONE_NUMBER" and not _is_plausible_phone(text, m.start(), m.end()):
+                continue  # same decimal filter as the Presidio path (1 Nov 2026)
             entities.append(
                 PiiEntity(entity_type=entity_type, text=m.group(0), source="regex_fallback")
             )
@@ -134,4 +158,10 @@ def find_pii(text: str) -> list[PiiEntity]:
     return _regex_entities(text)
 
 
-__all__ = ["PRESIDIO_ENTITIES", "PRESIDIO_SCORE_THRESHOLD", "PiiEntity", "find_pii"]
+__all__ = [
+    "MIN_PHONE_DIGITS",
+    "PRESIDIO_ENTITIES",
+    "PRESIDIO_SCORE_THRESHOLD",
+    "PiiEntity",
+    "find_pii",
+]

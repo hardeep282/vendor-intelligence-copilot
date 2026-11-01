@@ -91,7 +91,6 @@ this request's own cost exists yet.
 
 from __future__ import annotations
 
-import operator
 import sqlite3
 import time
 import uuid
@@ -102,6 +101,7 @@ from typing import Annotated, Any, Literal, TypedDict, cast
 
 from anthropic.types import MessageParam
 from langgraph.checkpoint.base import BaseCheckpointSaver
+from langgraph.checkpoint.serde.jsonplus import JsonPlusSerializer
 from langgraph.checkpoint.sqlite import SqliteSaver
 from langgraph.graph import END, StateGraph
 from langgraph.types import Command, Send, interrupt
@@ -256,12 +256,58 @@ class StreamEvent(BaseModel):
     result: OrchestratorResult | None = None
 
 
+class _FreshResults(list):  # type: ignore[type-arg]
+    """Marker list: "start this question's findings from empty". Only ever used as the initial
+    `results` value passed in by `stream_answer`; `_add_or_reset` turns it into a plain [].
+    """
+
+
+#: Passed as the initial `results` of every new question (1 Nov 2026). With a plain
+#: `operator.add` reducer, an input of [] appends nothing, so a question asked on a thread that
+#: already had a finished run kept the old run's findings. A real rerun of oq-001 mixed the first
+#: run's wrong portfolio figures and its crash into the second answer this way.
+FRESH_RESULTS: list[AgentResult] = _FreshResults()
+
+
+def _add_or_reset(left: list[AgentResult], right: list[AgentResult]) -> list[AgentResult]:
+    """Reducer for `results`: parallel specialists' outputs are appended (the "join"), but the
+    FRESH_RESULTS marker at the start of a question resets the list to empty."""
+    if isinstance(right, _FreshResults):
+        return []
+    return left + right
+
+
+#: Every project type the orchestrator's state can hold, registered with the checkpoint serializer
+#: (1 Nov 2026). LangGraph warned "Deserializing unregistered type ... This will be blocked in a
+#: future version" whenever a saved thread was loaded, which includes resuming a paused approval.
+#: Registering them keeps approvals working once LangGraph enforces the allow-list.
+CHECKPOINT_TYPES: list[tuple[str, str]] = [
+    ("copilot.agents.contracts", "AgentBudget"),
+    ("copilot.agents.contracts", "TaskSpec"),
+    ("copilot.agents.contracts", "AgentResult"),
+    ("copilot.agents.orchestrator", "DraftAnswer"),
+    ("copilot.agents.orchestrator", "PendingReview"),
+    ("copilot.agents.orchestrator", "VerifierVerdict"),
+    ("copilot.agents.orchestrator", "OrchestratorResult"),
+    ("copilot.agents.orchestrator", "_FreshResults"),
+    ("copilot.guardrails.guardian", "Finding"),
+    ("copilot.guardrails.guardian", "GuardianVerdict"),
+    ("copilot.guardrails.input_gate", "Finding"),
+    ("copilot.guardrails.input_gate", "GateVerdict"),
+]
+
+
+def checkpoint_serde() -> JsonPlusSerializer:
+    """The serializer every checkpointer in this project should use (SQLite and Postgres)."""
+    return JsonPlusSerializer(allowed_msgpack_modules=CHECKPOINT_TYPES)
+
+
 class _State(TypedDict):
     question: str
     role: Role
     plan: list[TaskSpec]
     current_task: TaskSpec | None
-    results: Annotated[list[AgentResult], operator.add]
+    results: Annotated[list[AgentResult], _add_or_reset]
     draft: DraftAnswer | None
     verify_attempt: int
     verify_feedback: str
@@ -313,7 +359,10 @@ class Orchestrator:
         self._effort = effort
         self._default_budget = default_budget or AgentBudget()
         self._checkpointer = checkpointer or (
-            SqliteSaver(sqlite3.connect(checkpoint_path, check_same_thread=False))
+            SqliteSaver(
+                sqlite3.connect(checkpoint_path, check_same_thread=False),
+                serde=checkpoint_serde(),
+            )
             if checkpoint_path is not None
             else None
         )
@@ -381,7 +430,7 @@ class Orchestrator:
             "role": role,
             "plan": [],
             "current_task": None,
-            "results": [],
+            "results": FRESH_RESULTS,
             "draft": None,
             "verify_attempt": 0,
             "verify_feedback": "",

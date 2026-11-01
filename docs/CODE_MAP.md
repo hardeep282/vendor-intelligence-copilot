@@ -142,6 +142,8 @@ itself, whichever backend fires.
 
 **30 Oct 2026:** Presidio now runs only `PRESIDIO_ENTITIES` (email, phone, card, IBAN, US SSN, UK NHS) above `PRESIDIO_SCORE_THRESHOLD` 0.4. With every recognizer on, a real forecast answer was flagged as DATE_TIME, URL and US_DRIVER_LICENSE. PERSON is excluded because vendor names look like personal names.
 
+**1 Nov 2026:** phone matches must have 8+ digits and not be (or sit inside) a decimal, on both the Presidio and regex paths; `US_SSN` and `UK_NHS` removed from `PRESIDIO_ENTITIES`.
+
 ### `src/copilot/guardrails/canary.py` -- `canary_token()`/`canary_line()` *(day: 7, isNew: true)*
 Fixed per-agent markers planted in every system prompt this project builds, so any appearance of
 one in a *final answer* is unambiguous proof of a system-prompt/instruction leak, not a guess.
@@ -1073,6 +1075,8 @@ Does not import `copilot.agents.specialists` directly -- tests inject fake execu
 real caller is `copilot.agents.wiring` (Day 6 step 7) via `scripts/run_orchestrator_golden.py`.
 
 **29 Oct 2026: human approval fails closed.** `withhold_action` is a third hop between `guardian` and `END`: an Action draft the Guardian allowed, in an `Orchestrator` built without a checkpointer (so no approver could ever resume it), is held back instead of returned. The answer becomes `WITHHELD_ACTION_MESSAGE`, `approval_decision="withheld"`, and the hold is audit-logged. Before this, that case skipped approval silently.
+
+**1 Nov 2026:** `results` uses `_add_or_reset`; each question starts from `FRESH_RESULTS`, so a reused thread no longer carries old findings. `checkpoint_serde()` registers `CHECKPOINT_TYPES` with the checkpoint serializer (used here and in `api/dependencies.py`).
 
 ### `src/copilot/agents/wiring.py` -- `build_executors()` *(day: 6, isNew: true)*
 The one piece of glue nothing else needed: turns the five already-tested `run_*` functions

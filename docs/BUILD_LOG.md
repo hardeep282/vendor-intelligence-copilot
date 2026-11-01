@@ -2579,3 +2579,44 @@ it widely later (his "A Scientific Routine for Stock Control", Harvard Business 
 Comments and docs only; no behaviour change. The Day 5 entry above keeps its original wording as
 a record of what was written then.
 
+## 2026-11-01 · Smoke-test rerun: old findings leaked into a new answer
+
+**Covered:** rerunning `run_orchestrator_golden.py --questions oq-001` after the vendor-level fix.
+The Diageo figures were right (reorder point 696,261, safety stock 89,170, EOQ 120,707, with the
+level, assumptions and both warnings), but the answer also reported a "conflict" with 4,355,542,
+a forecasting crash that didn't happen, and the Knowledge agent three times. Cost $0.1181, 20 LLM
+calls (vs $0.0345 and 8 the first time).
+
+1. **Findings carried over between questions (the cause).** The runner uses a fixed thread id
+   per golden question and the checkpoint store keeps it. `_State.results` used an
+   `operator.add` reducer, so a new question's input `results: []` appended nothing and the first
+   run's findings (its wrong portfolio figures and its crash) stayed in the list. The web app has
+   the same behaviour for a second question asked without "New thread". Reproduced with a test
+   (two questions on one thread; the second saw both findings), then fixed with
+   `_add_or_reset`: parallel specialists still append, but every new question starts from the
+   `FRESH_RESULTS` marker, which resets the list. The drafter had handled the mix honestly,
+   flagging 4,355,542 as an unexplained conflict and not using it.
+2. **"MASE=[REDACTED:PHONE_NUMBER]".** Presidio's phone recogniser accepted "1.680" and "1.686"
+   (Diageo's backtest MASE), and both PHONE_NUMBER and UK_NHS matched a 10-digit run inside a long
+   decimal. Fix: a phone match needs 8+ digits, mustn't be a decimal, and mustn't be part of a
+   longer decimal; the same filter now applies to the regex fallback. US_SSN and UK_NHS were
+   removed from `PRESIDIO_ENTITIES` (this business has neither). The fallback regex still doesn't
+   match "+44 20 7946 0958" style numbers; that was true before and Presidio does catch them.
+3. **Verifier cut off.** `stop_reason=max_tokens` at 700; v4's longer checklist needs more room
+   and the repair retry cost an extra call. `orchestrator_verify/v4.yaml` max_tokens is now 1500
+   (edited in place: a limit, not a rule).
+4. **"Deserializing unregistered type ... will be blocked in a future version".** Loading a saved
+   thread, which includes resuming a paused approval, deserialised project types LangGraph
+   doesn't yet trust. `checkpoint_serde()` registers them (`CHECKPOINT_TYPES`) for both the
+   SQLite and Postgres checkpointers. With `LANGGRAPH_STRICT_MSGPACK=true` (the future default)
+   the full suite passes.
+
+Not fixed: statsforecast's "divide by zero" RuntimeWarning while fitting ETS on 7-11 points; it's
+harmless, and it leaks through because `warnings.catch_warnings` isn't thread-safe when
+specialists run in parallel. Open edge: asking a new question on a thread that is paused for
+approval isn't handled specially; the UI's "New thread" avoids it.
+
+**Tests:** 6 new (fresh findings per question, decimals vs phones on both detector layers, real
+phones still caught, NHS/SSN removed, serializer round-trip with no warnings, verify limit) and
+the Postgres checkpointer test now checks the serializer is passed. Full suite 545 passed, also
+in strict mode; ruff and mypy strict clean.

@@ -81,3 +81,35 @@ def test_presidio_is_called_with_the_entity_allowlist_and_threshold(monkeypatch)
     assert "US_DRIVER_LICENSE" not in pii.PRESIDIO_ENTITIES
     assert "DATE_TIME" not in pii.PRESIDIO_ENTITIES
     assert "PERSON" not in pii.PRESIDIO_ENTITIES
+
+
+# -- 1 Nov 2026: decimals are not phone numbers; NHS/SSN removed ------------------------------
+# A real answer had "MASE=1.680" redacted as a phone number, and a digit run inside a long decimal
+# matched both PHONE_NUMBER and UK_NHS.
+
+
+def test_forecast_accuracy_decimals_are_not_phone_numbers() -> None:
+    from copilot.guardrails.pii import _regex_entities, find_pii
+
+    for text in (
+        "ETS WAPE=0.1043, MASE=1.680; naive WAPE=0.1046, MASE=1.686",
+        "MASE=1.0153262435",
+        "bias=-63673.25 units",
+    ):
+        assert find_pii(text) == [], text
+        assert _regex_entities(text) == [], text
+
+
+def test_a_real_phone_number_is_still_caught_by_both_layers() -> None:
+    from copilot.guardrails.pii import _regex_entities, find_pii
+
+    text = "call 020 7946 0958 about the order"
+    assert "PHONE_NUMBER" in {e.entity_type for e in find_pii(text)}
+    assert "PHONE_NUMBER" in {e.entity_type for e in _regex_entities(text)}
+
+
+def test_nhs_and_ssn_are_no_longer_checked() -> None:
+    from copilot.guardrails import pii
+
+    assert "UK_NHS" not in pii.PRESIDIO_ENTITIES
+    assert "US_SSN" not in pii.PRESIDIO_ENTITIES

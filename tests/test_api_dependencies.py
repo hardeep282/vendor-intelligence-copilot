@@ -65,8 +65,9 @@ def test_build_checkpointer_builds_postgres_saver_when_database_url_is_set(
             calls["kwargs"] = kwargs
 
     class _FakePostgresSaver:
-        def __init__(self, pool: object) -> None:
+        def __init__(self, pool: object, serde: object = None) -> None:
             calls["pool"] = pool
+            calls["serde"] = serde
 
         def setup(self) -> None:
             calls["setup_called"] = True
@@ -80,3 +81,7 @@ def test_build_checkpointer_builds_postgres_saver_when_database_url_is_set(
     assert isinstance(checkpointer, _FakePostgresSaver)
     assert calls["conninfo"] == "postgresql://user:pass@localhost:5432/copilot"
     assert calls["setup_called"] is True
+    # 1 Nov 2026: Postgres gets the same registered-types serializer as SQLite
+    from langgraph.checkpoint.serde.jsonplus import JsonPlusSerializer
+
+    assert isinstance(calls["serde"], JsonPlusSerializer)

@@ -26,7 +26,7 @@
 name: orchestrator_verify
 version: 4
 model: claude-sonnet-5
-max_tokens: 700
+max_tokens: 1500 # raised from 700 on 1 Nov 2026: v4's longer checklist hit the limit (stop_reason=max_tokens) and needed a repair call
 effort: medium
 cache_system: false
 

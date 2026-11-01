@@ -36,7 +36,7 @@ from psycopg.rows import dict_row
 from psycopg_pool import ConnectionPool
 
 from copilot.agents.contracts import AgentBudget
-from copilot.agents.orchestrator import Orchestrator
+from copilot.agents.orchestrator import Orchestrator, checkpoint_serde
 from copilot.agents.wiring import build_executors
 from copilot.api.auth import AuthStore, InvalidCredential, Principal
 from copilot.api.rate_limit import DailyBudgetTracker, RequestRateLimiter
@@ -79,10 +79,12 @@ def _build_checkpointer() -> BaseCheckpointSaver[str]:
                 open=True,
             ),
         )
-        pg_checkpointer = PostgresSaver(pool)
+        pg_checkpointer = PostgresSaver(pool, serde=checkpoint_serde())
         pg_checkpointer.setup()
         return pg_checkpointer
-    return SqliteSaver(sqlite3.connect(CHECKPOINT_PATH, check_same_thread=False))
+    return SqliteSaver(
+        sqlite3.connect(CHECKPOINT_PATH, check_same_thread=False), serde=checkpoint_serde()
+    )
 
 
 @lru_cache
