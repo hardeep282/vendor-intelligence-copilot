@@ -1,6 +1,6 @@
 # ADR-002: Licence-safe snapshot, vendor-level only, never committed
 
-Date: 2026-10-10 · Status: Accepted (revisit when R1 is resolved)
+Date: 2026-10-10 · Status: Accepted (revisited 6 Nov 2026 in ADR-008: R1 closed; the rule stands, now for size and least-privilege reasons)
 
 ## Context
 The raw dataset was purchased (Topmate) and must not be redistributed. The app must answer vendor questions publicly.

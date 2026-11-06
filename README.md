@@ -143,6 +143,7 @@ slow ones needed a Verifier redraft). Per-node TTFT, latency, tokens and cost ar
 | [005](docs/adr/005-llm-provider.md) | Direct Anthropic API, not Bedrock (for now) — and why this model generation has no `temperature` param |
 | [006](docs/adr/006-guardian-design.md) | Guardian design: outcome severity ordering, escalation behaviour, audience scope, detection posture |
 | [007](docs/adr/007-finetuning-outcome.md) | Fine-tuning outcome: **adopt, conditionally** — validate against a broader question set before replacing the frontier-API call in production |
+| [008](docs/adr/008-publish-before-deploy.md) | Publish the repo and case study **before** deploying; data question (R1, R7) closed; every public claim must be explainable in my own words |
 
 Full trade-off log (every change re-measured against the golden set, before/after): `docs/TRADEOFF_LOG.md`.
 

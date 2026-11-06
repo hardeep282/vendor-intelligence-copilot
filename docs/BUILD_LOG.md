@@ -2807,3 +2807,20 @@ not tuned.
 **Version:** 0.2.0 in `pyproject.toml` and `uv.lock`. The tag is pushed from the user's machine.
 README, CASE_STUDY, HANDOFF, COMMANDS and the tracker now carry the real numbers in place of
 "pending".
+
+## 2026-11-06 · ADR-008 written: publish before deploying
+
+**Covered:** the last build item from Day 10. ADR-008 was written from the user's own answers to
+the four Day 10 questions, and records a decision already acted on (the repo went public on
+28 Oct).
+- Publishing first lets recruiters read the code, tests and build log now.
+- The user confirmed the dataset may be used, so **R1 and R7 are closed**. The raw data stays
+  out of the repo because of its size. ADR-002's aggregate-only rule is unchanged, and its
+  status line now points to ADR-008.
+- The case study stays on its shared link until a domain and website exist.
+- Every claim an interviewer may probe is written in its defensible form.
+- A consequence the user set: understanding every layer is a release requirement before the
+  demo or any interview, because the system was built with an AI pair programmer under his
+  direction.
+- Left open on purpose: how the live link gets HTTPS before a domain exists. That's decided in
+  the deploy session.
