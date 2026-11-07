@@ -2824,3 +2824,20 @@ the four Day 10 questions, and records a decision already acted on (the repo wen
   direction.
 - Left open on purpose: how the live link gets HTTPS before a domain exists. That's decided in
   the deploy session.
+
+## 2026-11-07 · .gitignore gap: SQLite helper files and the eval-gate checkpoint DB
+
+**Covered:** a screenshot of the user's VS Code explorer showed three files in `data/` marked green
+"U" (untracked, not ignored):
+- `eval_gate_checkpoints.sqlite`, created by `scripts/run_eval_gate.py`;
+- `orchestrator_checkpoints.sqlite-shm` and `-wal`, SQLite's write-ahead-log helper files.
+
+`.gitignore` listed only the exact name `data/orchestrator_checkpoints.sqlite`, so all three slipped
+through. They hold saved runs with internal figures. Nothing was ever committed: `git ls-files
+data` shows only `snapshot/MANIFEST.json`. But a `git add .` would have pushed them.
+
+**Fix:** one rule, `data/*.sqlite*`, covers every SQLite file in `data/` and its helpers.
+Checked with `git check-ignore -v` on all four names; `MANIFEST.json` stays tracked.
+
+**Lesson:** list ignore rules by pattern, not by exact file name. A tool that writes files can
+create siblings you never named.

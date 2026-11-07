@@ -32,6 +32,10 @@ data/auth/*.json
 # Local SQLite checkpoint DB (Day 6 step 6 / Day 8 step 7's fallback when no
 # CHECKPOINT_DATABASE_URL is set): local runtime state, same rule.
 data/orchestrator_checkpoints.sqlite
+# 7 Nov 2026: the exact name above missed SQLite's helper files (-shm, -wal) and the eval
+# gate's own checkpoint DB (scripts/run_eval_gate.py), all holding saved runs with internal
+# figures. This covers every SQLite file in data/ and its helpers.
+data/*.sqlite*
 
 # Tooling
 .ipynb_checkpoints/
