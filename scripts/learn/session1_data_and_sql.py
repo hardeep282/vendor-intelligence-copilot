@@ -131,8 +131,12 @@ def step_7_the_k_rule(
     """The same question from a viewer and an analyst (the k = 5 filter added 8 Nov 2026)."""
     heading(7, "Same question, two roles: the k = 5 privacy rule")
     sql = "SELECT ROUND(SUM(TotalRevenue), 2) AS total FROM vendor_revenue_summary"
-    for role in ("analyst", "viewer"):
+    roles: tuple[Role, ...] = ("analyst", "viewer")
+    for role in roles:
         result = validate(sql, role, policy, rules)
+        if not result.ok:  # never run a query the validator refused, exactly as the copilot does
+            print(f"  {role:<8} BLOCKED: {result.violations[0].code}")
+            continue
         (total,) = con.execute(result.sql).fetchone() or (0.0,)
         added = (
             f"  (filter added: {', '.join(result.applied_filters)})"
