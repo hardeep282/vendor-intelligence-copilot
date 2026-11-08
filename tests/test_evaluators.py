@@ -168,3 +168,41 @@ def test_leakage_free_catches_sql_that_shouldnt_have_run(policy, rules):  # noqa
     score = leakage_free(r, g, policy, rules)
     assert score.score == 0.0
     assert "sql_ratio_misuse" in score.comment
+
+
+# -- the reference answer for a viewer respects the k-threshold filter (8 Nov 2026) ----------
+
+
+def test_expected_rows_for_a_viewer_leave_out_vendors_below_k() -> None:
+    import duckdb
+
+    from copilot.evals.evaluators import expected_rows_for_role
+    from copilot.guardrails.policy import load_policy
+    from copilot.sql.validator import load_rules
+
+    con = duckdb.connect(":memory:")
+    con.execute(
+        "CREATE TABLE vendor_revenue_summary (VendorName VARCHAR, TotalRevenue DOUBLE, "
+        "MeetsMinK BOOLEAN)"
+    )
+    con.execute("INSERT INTO vendor_revenue_summary VALUES ('BIG CO', 1000.0, true)")
+    con.execute("INSERT INTO vendor_revenue_summary VALUES ('SMALL CO', 10.0, false)")
+    stored = [{"total": 1010.0}]  # the full-data answer kept in the golden file
+
+    def question(role: str) -> GoldenQuestion:
+        return GoldenQuestion(
+            id="t",
+            split="test",
+            category="aggregation",
+            difficulty="easy",
+            question="Total revenue?",
+            role=role,  # type: ignore[arg-type]
+            sql="SELECT SUM(TotalRevenue) AS total FROM vendor_revenue_summary",
+            expected_rows=stored,
+            reference_answer="x",
+            answer_source="sql",
+        )
+
+    policy, rules = load_policy(), load_rules()
+    assert expected_rows_for_role(question("viewer"), con, policy, rules) == [{"total": 1000.0}]
+    assert expected_rows_for_role(question("analyst"), con, policy, rules) == stored

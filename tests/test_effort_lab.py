@@ -21,8 +21,11 @@ from tests.fakes.anthropic_fakes import FakeMessagesResource, structured_respons
 @pytest.fixture
 def con() -> duckdb.DuckDBPyConnection:
     c = duckdb.connect(":memory:")
-    c.execute("CREATE TABLE vendor_tiering (VendorName VARCHAR, TotalRevenue DOUBLE)")
-    c.execute("INSERT INTO vendor_tiering VALUES ('BIG CO', 1000000.0)")
+    # MeetsMinK mirrors the real snapshot table (8 Nov 2026: viewer queries now filter on it).
+    c.execute(
+        "CREATE TABLE vendor_tiering (VendorName VARCHAR, TotalRevenue DOUBLE, MeetsMinK BOOLEAN)"
+    )
+    c.execute("INSERT INTO vendor_tiering VALUES ('BIG CO', 1000000.0, true)")
     return c
 
 

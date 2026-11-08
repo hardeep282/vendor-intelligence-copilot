@@ -77,6 +77,8 @@ v2 draft and verify prompts use.
 
 **Also (30 Oct):** `describe_ordering(sql)` names the measure the rows are sorted by (an ORDER BY alias is mapped back to its source column), so the Verifier can compare a ranking with the question.
 
+**Also (8 Nov), in `sql/validator.py`:** `_apply_min_k_filter` adds the k = 5 filter (`MeetsMinK`) to viewer and anonymous queries, and `ValidationResult.applied_filters` records it; `evals/evaluators.expected_rows_for_role` scores viewer answers against what a viewer may see.
+
 **Also (2 Nov):** `ordering_column(sql)` returns the column a query is sorted by (through an alias or a one-column aggregate), and `expected_ranking(question)` returns the columns a ranking question needs ("most controllable" -> ControllableLeakage). `run_data_analyst` uses the pair to re-ask once when they don't match.
 
 ### `src/copilot/cli.py` -- `use_utf8_output()` *(day: 10, isNew: true)*

@@ -45,6 +45,16 @@ _BLOCKED_STATEMENT_TYPES = (
 )
 
 
+class MinKFilter(BaseModel):
+    """How the k-threshold rule is applied to generated SQL (see policies/sql_rules.yaml)."""
+
+    flag_column: str
+    flagged_tables: list[str]
+    vendor_keyed_tables: list[str] = []
+    reference_table: str
+    vendor_column: str = "VendorName"
+
+
 class SqlRules(BaseModel):
     version: int
     ratio_columns: list[str]
@@ -52,6 +62,7 @@ class SqlRules(BaseModel):
     per_vendor_total_columns: list[str]
     non_additive_count_groups: list[list[str]]
     data_coverage: dict[str, list[int]]
+    min_k_filter: MinKFilter | None = None
 
 
 def load_rules(path: Path = DEFAULT_RULES_PATH) -> SqlRules:
@@ -69,6 +80,9 @@ class ValidationResult(BaseModel):
     sql: str  # the (possibly LIMIT-capped) SQL to run when ok, or the original input otherwise
     violations: list[Violation] = []
     truncated: bool = False  # True if a LIMIT was added/lowered to respect MAX_LIMIT
+    # 8 Nov 2026: one entry per table the k-threshold filter was added to, e.g.
+    # "MeetsMinK on vendor_revenue_summary". Empty when the asker's role isn't covered.
+    applied_filters: list[str] = []
 
 
 def _cte_names(statement: exp.Expression) -> set[str]:
@@ -283,6 +297,65 @@ def _check_coverage(statement: exp.Expression, rules: SqlRules) -> list[Violatio
     return violations
 
 
+def _already_filtered(select: exp.Select, flag: str, qualifier: str) -> bool:
+    where = select.args.get("where")
+    if where is None:
+        return False
+    return any(c.name == flag and c.table in ("", qualifier) for c in where.find_all(exp.Column))
+
+
+def _apply_min_k_filter(
+    statement: exp.Expression, role: Role, policy: DisclosurePolicy, rules: SqlRules
+) -> list[str]:
+    """Hide the rows of vendors below the k threshold from roles the rule covers.
+
+    Added 8 Nov 2026. policies/disclosure.yaml says no figure shown to a viewer or an
+    anonymous caller may be built from fewer than k products, and that rows with
+    MeetsMinK = false are hidden. The insight service and the MCP tools did this; the
+    text-to-SQL path the copilot uses did not, so a viewer asking about a vendor with two
+    products got its figures. Now, for every table in the query that carries the flag, the
+    validator adds `<alias>.MeetsMinK` to the WHERE clause of the SELECT that reads it; for
+    vendor-keyed tables without the flag, it adds `VendorName IN (SELECT VendorName FROM
+    <reference table> WHERE MeetsMinK)`. This rewrites the query rather than rejecting it,
+    so the person still gets an answer, and the service tells them which vendors were left
+    out. It mutates `statement` in place and returns one note per filtered table.
+    """
+    cfg = rules.min_k_filter
+    if cfg is None or not policy.k_applies(role):
+        return []
+    ctes = _cte_names(statement)
+    flagged = {t.lower() for t in cfg.flagged_tables}
+    keyed = {t.lower() for t in cfg.vendor_keyed_tables}
+
+    targets: list[tuple[exp.Select, exp.Table, str]] = []
+    for table in list(statement.find_all(exp.Table)):
+        name = table.name.lower()
+        if name in ctes or (name not in flagged and name not in keyed):
+            continue
+        select = table.find_ancestor(exp.Select)
+        if isinstance(select, exp.Select):
+            targets.append((select, table, name))
+
+    applied: list[str] = []
+    for select, table, name in targets:
+        qualifier = table.alias_or_name
+        if _already_filtered(select, cfg.flag_column, qualifier):
+            continue
+        condition: exp.Expression
+        if name in flagged:
+            condition = exp.column(cfg.flag_column, table=qualifier)
+        else:
+            vendors_meeting_k = (
+                exp.select(exp.column(cfg.vendor_column))
+                .from_(exp.to_table(cfg.reference_table))
+                .where(exp.column(cfg.flag_column))
+            )
+            condition = exp.column(cfg.vendor_column, table=qualifier).isin(query=vendors_meeting_k)
+        select.where(condition, copy=False)
+        applied.append(f"{cfg.flag_column} on {table.name}")
+    return applied
+
+
 def _apply_limit(statement: exp.Expression) -> tuple[exp.Expression, bool]:
     """Cap (or inject) LIMIT at MAX_LIMIT. Returns the possibly-modified statement and whether
     the cap actually changed anything, so the caller can tell the person their result was capped."""
@@ -361,5 +434,11 @@ def validate(
     if violations:
         return ValidationResult(ok=False, sql=sql, violations=violations)
 
+    applied_filters = _apply_min_k_filter(statement, role, policy, rules)
     capped_statement, truncated = _apply_limit(statement)
-    return ValidationResult(ok=True, sql=capped_statement.sql(dialect=DIALECT), truncated=truncated)
+    return ValidationResult(
+        ok=True,
+        sql=capped_statement.sql(dialect=DIALECT),
+        truncated=truncated,
+        applied_filters=applied_filters,
+    )

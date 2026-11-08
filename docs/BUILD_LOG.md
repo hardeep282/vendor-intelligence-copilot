@@ -2841,3 +2841,47 @@ Checked with `git check-ignore -v` on all four names; `MANIFEST.json` stays trac
 
 **Lesson:** list ignore rules by pattern, not by exact file name. A tool that writes files can
 create siblings you never named.
+
+## 2026-11-08 · The k = 5 rule now applies to the copilot's own SQL
+
+**Covered:** a gap found while preparing learning session 1. The disclosure policy says no
+figure shown to a viewer or an anonymous caller may be built from fewer than k = 5 products,
+and that those vendors' rows are hidden. 34 of the 126 vendors fall below 5 (`MeetsMinK =
+false`). InsightService and the MCP tools respected this. The text-to-SQL path the copilot
+actually uses did not: a viewer asking about MANGO BOTTLING INC got its revenue.
+
+Why it went unnoticed:
+- `docs/specs/text_to_sql_safety.md` listed the rule under layer 1b as if it were enforced.
+- Privacy case 22 asserted only that the validator *allowed* the query, with a comment that
+  masking "happens downstream". On this path, nothing downstream did it.
+
+**Fix:**
+- `validator._apply_min_k_filter` runs after the coverage layer for k-gated roles. It adds
+  `<alias>.MeetsMinK` to the WHERE clause of each SELECT that reads a flagged table, and
+  `VendorName IN (SELECT VendorName FROM vendor_revenue_summary WHERE MeetsMinK)` for
+  `vendor_health_mix`, which has no flag of its own. The subquery is built from sqlglot
+  expressions, not strings.
+- An existing filter isn't duplicated, and CTEs are filtered inside.
+- The table list lives in `sql_rules.yaml` (`min_k_filter`). A test checks it against the
+  tracked `MANIFEST.json`, and checks the manifest's `min_k` equals the policy's k.
+- `ValidationResult.applied_filters` records what was filtered, and the SQL service adds an
+  assumption saying so, which the Data Analyst passes on.
+- **Rows are hidden, so a viewer's totals cover the 92 vendors that meet k:** $450,251,779.84
+  revenue against $451,620,183.69 for an analyst. This is what the policy says, and it also
+  stops a viewer recovering one small vendor's figure by subtracting two totals.
+
+**Evals:** all 46 golden SQL questions are asked as a viewer, and their stored answers are
+full-data. Rather than rewrite them, `evaluators.expected_rows_for_role` runs the golden SQL
+through the same validator for the asker's role when a filter applies. A viewer's answer is
+compared with what a viewer may see; analysts' answers with the stored rows.
+
+**Tests:**
+- case 22 now asserts the filter is in the SQL;
+- 6 validator tests (joins, the vendor-keyed table, no duplicate, CTE, anonymous untouched,
+  manifest consistency);
+- 2 service tests on a fixture with a small vendor;
+- 1 evaluator test.
+
+Two test fixtures gained the `MeetsMinK` column the real table has. Full suite 605 passed (also
+with strict msgpack); ruff and mypy clean. `knowledge/methodology.md` v3 says viewers' totals
+cover 92 vendors: rebuild the RAG index.

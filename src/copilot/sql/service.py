@@ -29,7 +29,7 @@ from copilot.llm.prompts import Prompt, load_prompt
 from copilot.llm.types import CallMetrics
 from copilot.sql.examples import format_examples, retrieve_examples
 from copilot.sql.schema import build_schema_card
-from copilot.sql.validator import SqlRules, Violation, load_rules, validate
+from copilot.sql.validator import SqlRules, ValidationResult, Violation, load_rules, validate
 
 # Layer 4 of the spec: "max 2 retries" after the first attempt, then abstain with the reason.
 MAX_SELF_CORRECTIONS = 2
@@ -122,7 +122,7 @@ class TextToSqlService:
                     role=role,
                     sql=result.sql,
                     rows=rows,
-                    assumptions=generation.assumptions,
+                    assumptions=[*generation.assumptions, *self._k_filter_note(result)],
                     abstained=False,
                     truncated=result.truncated,
                     self_corrections=attempt,
@@ -153,6 +153,17 @@ class TextToSqlService:
             total_latency_s=total_latency,
             llm_calls=MAX_SELF_CORRECTIONS + 1,
         )
+
+    def _k_filter_note(self, result: ValidationResult) -> list[str]:
+        """Tell the reader when the k-threshold filter hid some vendors (8 Nov 2026). The note
+        travels as an assumption, so the Data Analyst passes it on and the answer says it."""
+        if not result.applied_filters:
+            return []
+        k = self._policy.min_aggregation.k
+        return [
+            f"for your role, vendors with fewer than {k} products are left out of these "
+            f"figures (the k = {k} privacy rule), so any totals cover the other vendors only"
+        ]
 
     def _call(
         self, prompt: Prompt, system: str, convo: list[MessageParam], effort: Effort | None

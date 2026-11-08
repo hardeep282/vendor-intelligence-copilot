@@ -38,3 +38,29 @@ non_additive_count_groups:
 data_coverage:
   years: [2024]
   months: [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12]
+
+# 8 Nov 2026: the k = 5 rule from policies/disclosure.yaml (min_aggregation) applied to every
+# generated query from a role it covers (viewer, anonymous). Before this, only the insight
+# service and the MCP tools respected it; the copilot's own text-to-SQL path did not, so a
+# viewer could read the figures of the 34 vendors with fewer than 5 products. The validator
+# now adds `<table>.MeetsMinK` to the WHERE clause for every flagged table a covered role
+# queries, and `VendorName IN (SELECT VendorName FROM vendor_revenue_summary WHERE MeetsMinK)`
+# for vendor-keyed tables that have no flag of their own. Rows are hidden, as the policy
+# says, so a viewer's totals cover the vendors that meet k only (which also stops a viewer
+# working out one small vendor's figure by subtracting two totals).
+# flagged_tables must match the tables whose MANIFEST.json columns include MeetsMinK; a test
+# checks this.
+min_k_filter:
+  flag_column: MeetsMinK
+  flagged_tables:
+    - vendor_revenue_summary
+    - vendor_tiering
+    - vendor_pareto
+    - vendor_profit_leakage
+    - vendor_rankings
+    - vendor_logistics_cost
+    - vendor_full_cost
+    - vendor_monthly_demand
+  vendor_keyed_tables: [vendor_health_mix]
+  reference_table: vendor_revenue_summary
+  vendor_column: VendorName

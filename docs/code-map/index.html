@@ -382,7 +382,7 @@ main { flex: 1; min-width: 0; overflow-y: auto; display: flex; flex-direction: c
       <div class="pane-scroll"><div class="pane" id="pane"></div></div>
       <div class="pane-foot">
         Generated from <code>docs/CODE_MAP.md</code> by <code>scripts/build_code_map_page.py</code>
-        (87 entries, built 2026-11-01). The markdown is the source of truth; whenever a file is added or changes
+        (87 entries, built 2026-11-08). The markdown is the source of truth; whenever a file is added or changes
         job, its entry there changes in the same commit and this page is regenerated.
       </div>
     </main>
@@ -492,7 +492,7 @@ const FILES = [
   "day": 10,
   "path": "src/copilot/data/units.py",
   "headline": "Added 30 Oct 2026, after the sprint.",
-  "does": "<p>What each snapshot column measures: \"US dollars\", \"units sold, not dollars\", \"percent of that vendor's total revenue\", and so on. Every percentage label was checked by recomputing it from the snapshot. <code>describe_units(sql)<\/code> labels each selected column that reads exactly one known column (directly or via SUM/AVG/MIN/MAX/ROUND); ratios, COUNTs and unknown columns get no label rather than a guessed one.<\/p><p><strong>Also (30 Oct):<\/strong> <code>describe_ordering(sql)<\/code> names the measure the rows are sorted by (an ORDER BY alias is mapped back to its source column), so the Verifier can compare a ranking with the question.<\/p><p><strong>Also (2 Nov):<\/strong> <code>ordering_column(sql)<\/code> returns the column a query is sorted by (through an alias or a one-column aggregate), and <code>expected_ranking(question)<\/code> returns the columns a ranking question needs (\"most controllable\" -&gt; ControllableLeakage). <code>run_data_analyst<\/code> uses the pair to re-ask once when they don't match.<\/p>",
+  "does": "<p>What each snapshot column measures: \"US dollars\", \"units sold, not dollars\", \"percent of that vendor's total revenue\", and so on. Every percentage label was checked by recomputing it from the snapshot. <code>describe_units(sql)<\/code> labels each selected column that reads exactly one known column (directly or via SUM/AVG/MIN/MAX/ROUND); ratios, COUNTs and unknown columns get no label rather than a guessed one.<\/p><p><strong>Also (30 Oct):<\/strong> <code>describe_ordering(sql)<\/code> names the measure the rows are sorted by (an ORDER BY alias is mapped back to its source column), so the Verifier can compare a ranking with the question.<\/p><p><strong>Also (8 Nov), in <code>sql/validator.py<\/code>:<\/strong> <code>_apply_min_k_filter<\/code> adds the k = 5 filter (<code>MeetsMinK<\/code>) to viewer and anonymous queries, and <code>ValidationResult.applied_filters<\/code> records it; <code>evals/evaluators.expected_rows_for_role<\/code> scores viewer answers against what a viewer may see.<\/p><p><strong>Also (2 Nov):<\/strong> <code>ordering_column(sql)<\/code> returns the column a query is sorted by (through an alias or a one-column aggregate), and <code>expected_ranking(question)<\/code> returns the columns a ranking question needs (\"most controllable\" -&gt; ControllableLeakage). <code>run_data_analyst<\/code> uses the pair to re-ask once when they don't match.<\/p>",
   "talksTo": [],
   "sym": "describe_units()",
   "takes": "the SQL a Data Analyst query ran.",

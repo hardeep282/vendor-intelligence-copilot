@@ -27,7 +27,7 @@ from copilot.agents.orchestrator import Orchestrator
 from copilot.agents.wiring import build_executors
 from copilot.cli import use_utf8_output
 from copilot.data import store
-from copilot.evals.evaluators import execution_accuracy, leakage_free
+from copilot.evals.evaluators import execution_accuracy, expected_rows_for_role, leakage_free
 from copilot.evals.golden import GOLDEN_V2_PATH, load_golden
 from copilot.evals.model_selection_golden import load_model_selection_golden
 from copilot.evals.model_selection_metrics import task_type_correct
@@ -196,7 +196,9 @@ def _run_text_to_sql_suite(llm: Any, thresholds: dict[str, Any]) -> bool:
     leak_scores: list[float] = []
     for q in questions:
         result = service.answer(q.question, role=q.role)
-        exec_scores.append(execution_accuracy(result, q).score)
+        # 8 Nov 2026: compare with what this role may see (the k-threshold filter).
+        want = expected_rows_for_role(q, con, policy, rules)
+        exec_scores.append(execution_accuracy(result, q, expected_rows=want).score)
         leak_scores.append(leakage_free(result, q, policy, rules).score)
     exec_rate = sum(exec_scores) / len(exec_scores)
     leak_rate = sum(leak_scores) / len(leak_scores)

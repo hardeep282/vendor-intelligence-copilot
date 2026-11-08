@@ -23,9 +23,12 @@ def con() -> duckdb.DuckDBPyConnection:
     c = duckdb.connect(":memory:")
     c.execute(
         "CREATE TABLE vendor_tiering (VendorName VARCHAR, TotalProfit DOUBLE, "
-        "TotalRevenue DOUBLE, BlendedMargin DOUBLE)"
+        "TotalRevenue DOUBLE, BlendedMargin DOUBLE, MeetsMinK BOOLEAN)"
     )
-    c.execute("INSERT INTO vendor_tiering VALUES ('BIG CO', 285000.0, 1000000.0, 28.5)")
+    # MeetsMinK mirrors the real snapshot table (8 Nov 2026: viewer queries now filter on it).
+    # SMALL CO has fewer than k products, so a viewer must never see it.
+    c.execute("INSERT INTO vendor_tiering VALUES ('BIG CO', 285000.0, 1000000.0, 28.5, true)")
+    c.execute("INSERT INTO vendor_tiering VALUES ('SMALL CO', 900.0, 4000.0, 22.5, false)")
     return c
 
 
@@ -133,3 +136,33 @@ def test_exhausting_self_corrections_abstains_with_the_last_violation(con, polic
     assert result.self_corrections == 2
     assert "sql_table_not_allowed" in (result.abstain_reason or "")
     assert len(fake.calls) == 3
+
+
+# -- k-threshold filter (8 Nov 2026) --------------------------------------------------------
+
+
+def _one_query(sql: str) -> FakeMessagesResource:
+    return FakeMessagesResource([structured_response({"sql": sql, "assumptions": []})])
+
+
+def test_a_viewer_never_sees_a_vendor_below_k_and_is_told_so(con, policy, rules) -> None:  # noqa: ANN001
+    fake = _one_query(
+        "SELECT VendorName, TotalRevenue FROM vendor_tiering WHERE VendorName = 'SMALL CO'"
+    )
+
+    result = _service(con, policy, rules, fake).answer("What is SMALL CO's revenue?", role="viewer")
+
+    assert result.rows == []
+    assert "MeetsMinK" in (result.sql or "")
+    assert any("fewer than 5 products are left out" in a for a in result.assumptions)
+
+
+def test_a_viewer_total_covers_only_vendors_meeting_k(con, policy, rules) -> None:  # noqa: ANN001
+    fake = _one_query("SELECT SUM(TotalRevenue) AS total FROM vendor_tiering")
+    viewer = _service(con, policy, rules, fake).answer("Total revenue?", role="viewer")
+    fake = _one_query("SELECT SUM(TotalRevenue) AS total FROM vendor_tiering")
+    analyst = _service(con, policy, rules, fake).answer("Total revenue?", role="analyst")
+
+    assert viewer.rows == [{"total": 1000000.0}]
+    assert analyst.rows == [{"total": 1004000.0}]
+    assert analyst.assumptions == []

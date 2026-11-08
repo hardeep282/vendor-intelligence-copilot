@@ -1,7 +1,7 @@
 ---
 doc_type: methodology
 vendor: null
-version: 2
+version: 3
 data_class: public
 allowed_roles: [anonymous, viewer, analyst, approver, admin]
 ---
@@ -127,6 +127,9 @@ the final answer check all enforce it. Information comes in four classes:
 **The minimum group size rule (k = 5).** For the viewer and anonymous roles, no figure may be
 built from fewer than 5 products (SKUs). Smaller groups are hidden, so a small vendor's figures
 can't be worked back to individual products.
+In practice, 34 of the 126 vendors have fewer than 5 products, and for viewers they are left out
+entirely: their rows are hidden, and any total a viewer sees covers the other 92 vendors only.
+Every such answer says that small vendors were left out. Analysts and approvers see all 126.
 
 **Some common figures.**
 - The portfolio-wide count of products in each health category is public, so any role may see

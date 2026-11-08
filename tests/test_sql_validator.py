@@ -11,6 +11,9 @@ import pytest
 from copilot.guardrails.policy import load_policy
 from copilot.sql.validator import load_rules, validate
 
+POLICY = load_policy()
+RULES = load_rules()
+
 
 @pytest.fixture
 def policy():
@@ -264,3 +267,75 @@ def test_allows_an_explicit_join_with_an_on_condition(policy, rules):
     )
     result = validate(sql, "analyst", policy, rules)
     assert result.ok
+
+
+# -- k-threshold filter (8 Nov 2026) --------------------------------------------------------
+
+
+def test_viewer_queries_get_the_k_filter_on_every_flagged_table() -> None:
+    result = validate(
+        "SELECT r.VendorName, l.ControllableLeakage FROM vendor_revenue_summary r "
+        "JOIN vendor_profit_leakage l ON r.VendorName = l.VendorName",
+        "viewer",
+        POLICY,
+        RULES,
+    )
+    assert result.ok
+    assert "r.MeetsMinK" in result.sql and "l.MeetsMinK" in result.sql
+    assert result.applied_filters == [
+        "MeetsMinK on vendor_revenue_summary",
+        "MeetsMinK on vendor_profit_leakage",
+    ]
+
+
+def test_analyst_queries_are_not_filtered() -> None:
+    result = validate(
+        "SELECT SUM(TotalRevenue) FROM vendor_revenue_summary", "analyst", POLICY, RULES
+    )
+    assert result.ok
+    assert "MeetsMinK" not in result.sql
+    assert result.applied_filters == []
+
+
+def test_vendor_keyed_tables_are_filtered_through_the_reference_table() -> None:
+    result = validate(
+        "SELECT HealthStatus, SUM(SKUs) FROM vendor_health_mix GROUP BY 1", "viewer", POLICY, RULES
+    )
+    assert result.ok
+    assert "IN (SELECT VendorName FROM vendor_revenue_summary WHERE MeetsMinK)" in result.sql
+
+
+def test_an_existing_filter_is_not_added_twice_and_ctes_are_filtered_inside() -> None:
+    already = validate(
+        "SELECT COUNT(*) FROM vendor_revenue_summary WHERE MeetsMinK", "viewer", POLICY, RULES
+    )
+    assert already.ok and already.sql.count("MeetsMinK") == 1
+    cte = validate(
+        "WITH t AS (SELECT VendorName FROM vendor_revenue_summary) SELECT COUNT(*) FROM t",
+        "viewer",
+        POLICY,
+        RULES,
+    )
+    assert cte.ok and cte.sql.count("MeetsMinK") == 1
+
+
+def test_public_tables_for_anonymous_callers_are_untouched() -> None:
+    result = validate(
+        "SELECT SUM(MonthlyRevenue) FROM portfolio_monthly_demand", "anonymous", POLICY, RULES
+    )
+    assert result.ok
+    assert result.applied_filters == []
+
+
+def test_the_flagged_table_list_matches_the_snapshot_manifest() -> None:
+    """A table that gains or loses MeetsMinK in the snapshot must be updated in sql_rules.yaml,
+    or a viewer could slip past the filter (or a query could reference a missing column)."""
+    import json
+
+    from copilot.settings import REPO_ROOT
+
+    manifest = json.loads((REPO_ROOT / "data" / "snapshot" / "MANIFEST.json").read_text())
+    with_flag = {name for name, t in manifest["tables"].items() if "MeetsMinK" in t["columns"]}
+    assert RULES.min_k_filter is not None
+    assert set(RULES.min_k_filter.flagged_tables) == with_flag
+    assert manifest["min_k"] == POLICY.min_aggregation.k

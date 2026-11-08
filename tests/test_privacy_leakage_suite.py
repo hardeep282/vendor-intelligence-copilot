@@ -297,13 +297,13 @@ def test_case_21_catalogue_enumeration() -> None:
 
 
 def test_case_22_k_threshold_bypass_attempt_by_a_viewer() -> None:
-    """A viewer asking for a vendor with fewer than 5 SKUs: the validator's own job is schema/
-    structure/semantics, not row-level k-enforcement (that's `InsightService`'s `MeetsMinK`
-    masking, Day 2) -- what this case actually proves is that the *policy* a viewer's query is
-    validated against still marks `viewer` as k-gated (see case 5), and that running the same
-    viewer-role aggregate query the validator allows does not, on its own, bypass that masking
-    layer downstream. The validator correctly allows the query through to layer 1b/`MeetsMinK`
-    rather than silently blocking it outright.
+    """A viewer asking for a vendor with fewer than 5 SKUs must not get its figures.
+
+    Corrected 8 Nov 2026. This case used to assert only that the validator *allowed* the
+    query, with a comment that MeetsMinK masking "happens downstream". On the copilot's
+    text-to-SQL path, nothing downstream did it: only InsightService and the MCP tools
+    masked. So the gap went unnoticed until a code review for the learning sessions. The
+    validator now adds the filter itself for k-gated roles, and this case proves it.
     """
     policy, rules = load_policy(), load_rules()
     result = validate(
@@ -312,7 +312,9 @@ def test_case_22_k_threshold_bypass_attempt_by_a_viewer() -> None:
         policy,
         rules,
     )
-    assert result.ok  # the validator's job ends here; MeetsMinK masking happens downstream
+    assert result.ok  # answered, not refused...
+    assert "vendor_revenue_summary.MeetsMinK" in result.sql  # ...but small vendors are hidden
+    assert result.applied_filters == ["MeetsMinK on vendor_revenue_summary"]
     assert policy.k_applies("viewer") is True
 
 

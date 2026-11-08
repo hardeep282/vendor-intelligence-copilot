@@ -19,9 +19,10 @@ from __future__ import annotations
 
 from typing import Any
 
+import duckdb
 from pydantic import BaseModel
 
-from copilot.evals.golden import GoldenQuestion
+from copilot.evals.golden import GoldenQuestion, run_rows
 from copilot.guardrails.policy import DisclosurePolicy
 from copilot.sql.service import TextToSqlResult
 from copilot.sql.validator import SqlRules, validate
@@ -85,9 +86,37 @@ def rows_match(
     return True
 
 
-def execution_accuracy(result: TextToSqlResult, example: GoldenQuestion) -> EvalScore:
+def expected_rows_for_role(
+    example: GoldenQuestion,
+    con: duckdb.DuckDBPyConnection,
+    policy: DisclosurePolicy,
+    rules: SqlRules,
+) -> list[dict[str, Any]] | None:
+    """The rows a correct answer should return *for the asker's role*.
+
+    Added 8 Nov 2026 with the k-threshold filter. The golden files store each question's
+    answer on the full data. A viewer is now allowed to see only vendors that meet k, so
+    comparing a viewer's (correctly filtered) answer with the full-data rows would mark it
+    wrong. So the golden SQL goes through the same validator for the same role, and when the
+    filter applies, it's run to get the role's reference rows. When nothing is filtered, the
+    stored rows are returned unchanged.
+    """
+    if example.sql is None:
+        return example.expected_rows
+    check = validate(example.sql, example.role, policy, rules)
+    if not check.ok or not check.applied_filters:
+        return example.expected_rows
+    return run_rows(con, check.sql)
+
+
+def execution_accuracy(
+    result: TextToSqlResult,
+    example: GoldenQuestion,
+    expected_rows: list[dict[str, Any]] | None = None,
+) -> EvalScore:
     """Did the system both behave correctly (answer vs. abstain) and, when it answered,
-    return the right numbers?"""
+    return the right numbers? `expected_rows` overrides the stored rows (see
+    `expected_rows_for_role`)."""
     expects_refusal = example.expect in {"refuse", "block"}
 
     if expects_refusal:
@@ -107,12 +136,13 @@ def execution_accuracy(result: TextToSqlResult, example: GoldenQuestion) -> Eval
         )
 
     ordered = example.category == "trend"
-    if rows_match(result.rows, example.expected_rows, ordered=ordered):
+    want = expected_rows if expected_rows is not None else example.expected_rows
+    if rows_match(result.rows, want, ordered=ordered):
         return EvalScore(key="execution_accuracy", score=1.0, comment="rows match")
     return EvalScore(
         key="execution_accuracy",
         score=0.0,
-        comment=f"rows differ: got {result.rows!r}, want {example.expected_rows!r}",
+        comment=f"rows differ: got {result.rows!r}, want {want!r}",
     )
 
 
