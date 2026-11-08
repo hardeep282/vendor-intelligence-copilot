@@ -2885,3 +2885,8 @@ compared with what a viewer may see; analysts' answers with the stored rows.
 Two test fixtures gained the `MeetsMinK` column the real table has. Full suite 605 passed (also
 with strict msgpack); ruff and mypy clean. `knowledge/methodology.md` v3 says viewers' totals
 cover 92 vendors: rebuild the RAG index.
+
+**Same day, learning scripts:** `scripts/learn/session1_data_and_sql.py` runs the data and SQL
+layer's real code in 7 numbered steps with no AI calls, for stepping through in VS Code's
+debugger. `tests/test_learning_scripts.py` runs it end to end (when the snapshot exists), so a
+later refactor can't silently break a study aid. Full suite 606 passed.

@@ -238,7 +238,7 @@ the MCP server wraps `copilot.data.store`, `copilot.sql.service.TextToSqlService
 |---|---|
 | `uv run python scripts/build_snapshot.py "path/to/Vendor_Summary.xlsx"` | Rebuilds the aggregate-only Parquet snapshot from the analytics repo's workbook |
 | `uv run python -c "from copilot.data.store import build_database; print(build_database())"` | Builds `data/snapshot/snapshot.duckdb` from those Parquet files. Without it, 27 snapshot-dependent tests skip |
-| `uv run pytest -q` | Full suite: 511 passed with the snapshot built (512 from 29 Oct after the fail-closed approval fix; 515 after the PII fix and 524 after the units and forecast-warning fixes, 531 after the ranking check (30 Oct), 534 after the approval-flow fixes and 539 after the smoke-test fixes (31 Oct), 545 after the rerun fixes (1 Nov), 571 after the full-run fixes and 596 after the plan-constraints fix (2 Nov), 605 after the k-threshold fix (8 Nov)) |
+| `uv run pytest -q` | Full suite: 511 passed with the snapshot built (512 from 29 Oct after the fail-closed approval fix; 515 after the PII fix and 524 after the units and forecast-warning fixes, 531 after the ranking check (30 Oct), 534 after the approval-flow fixes and 539 after the smoke-test fixes (31 Oct), 545 after the rerun fixes (1 Nov), 571 after the full-run fixes and 596 after the plan-constraints fix (2 Nov), 605 after the k-threshold fix and 606 with the first learning script (8 Nov)) |
 | `gitleaks git . --redact -v` | Scans every commit in history for secrets before the repo goes public (`--redact` hides any match in the output) |
 | `uv run python scripts/build_code_map_page.py` | Regenerates the Code Map page (`docs/code-map/index.html`) from `docs/CODE_MAP.md`; run after editing the markdown |
 | `uv lock --check --offline` | Confirms `uv.lock` still matches `pyproject.toml` after the version bump, without touching the network |
@@ -246,3 +246,14 @@ the MCP server wraps `copilot.data.store`, `copilot.sql.service.TextToSqlService
 | `git push origin v0.1.1` | Pushes that one tag to GitHub (this session's credentials get HTTP 403 on tag pushes) |
 | `git tag -a v0.2.0 -m "Real-key runs done, fixes frozen"` | 2 Nov 2026: the release tag after the real-key runs and their fixes (run on your machine after `git pull`) |
 | `git push origin v0.2.0` | Pushes the v0.2.0 tag |
+
+
+## Learning scripts (8 Nov 2026)
+
+Study aids for the learning sessions. Each one runs the copilot's real code for one layer in
+numbered steps, with no Claude calls: free, no key needed, and the same output every time. Open
+one in VS Code, put red dots inside the `step_...` functions, and press F5 to step through it.
+
+| Command | What it does |
+|---|---|
+| `uv run python scripts/learn/session1_data_and_sql.py` | Session 1 (data and SQL), 7 steps: open the locked database, try to break the lock, see the schema card per role, pick worked examples, run the validator on attacks, run a good query, and the same total as an analyst and as a viewer (the k = 5 rule). |
