@@ -1199,12 +1199,16 @@ Desktop, the MCP Inspector, another agent -- three tools over the same guarded d
 `/ask` API uses: one vendor's headline metrics, portfolio totals, and a free-form question that
 runs through `TextToSqlService` and then the `Guardian`. Every tool is hard-wired to the lowest
 role (`viewer`): a role passed in as a tool argument would be an unauthenticated claim and a
-privilege-escalation route. Remote MCP with real authentication is a depth-track item.
+privilege-escalation route. Since 9 Nov 2026 the question tool goes through the same
+`InputGate` as `/ask` first, and the portfolio totals run through the SQL validator, so a viewer
+gets the same k = 5 figures through either door. Remote MCP with real authentication is a
+depth-track item.
 **Takes in:** MCP tool calls (a vendor name, or a plain-English question).
 **Gives out:** plain-text rows or a Guardian-reviewed answer; "not found" messages, never raw
 errors.
 **Talks to:** `copilot.data.store`, `copilot.sql.service.TextToSqlService`,
-`copilot.guardrails.guardian`; tested by `tests/test_mcp_server.py`.
+`copilot.sql.validator`, `copilot.guardrails.input_gate`, `copilot.guardrails.guardian`; tested
+by `tests/test_mcp_server.py`.
 
 ### `finetuning/day9_qlora_colab.ipynb` + `finetuning/requirements-colab.txt` *(day: 9, isNew: true)*
 The Colab notebook that fine-tunes Qwen2.5-1.5B-Instruct with QLoRA on `sql_pairs_v2`'s 340
@@ -1248,10 +1252,13 @@ bakes the git SHA into `/version`.
 
 ### `infra/server/user-data.sh`, `infra/server/deploy.sh` *(day: 2)*
 `user-data.sh` bootstraps the Ubuntu EC2 host once (Docker + Compose, nginx reverse proxy to
-127.0.0.1:8000, Certbot, AWS CLI). `deploy.sh` runs on the host via SSM Run Command, switches the
-API to a new image and rolls back to the previous one if `/health` fails.
+127.0.0.1:8000, Certbot, AWS CLI). nginx overwrites `X-Forwarded-For` with the real client
+address rather than appending to it, because the app trusts that header for its per-IP rate
+limit (9 Nov 2026). `deploy.sh` runs on the host via SSM Run Command, switches the API to a new
+image and rolls back to the previous one if `/health` fails.
 **Takes in:** `deploy.sh` takes the image URI and AWS region.
-**Talks to:** `.github/workflows/ci.yml`'s `deploy` job; ADR-003.
+**Talks to:** `.github/workflows/ci.yml`'s `deploy` job; ADR-003; the header rule is checked by
+`tests/test_proxy_headers.py`.
 
 ### `infra/aws/github-oidc-trust.json`, `github-deploy-policy.json`, `ec2-instance-policy.json` *(day: 2)*
 IAM documents: the trust policy that lets GitHub Actions assume a deploy role through OIDC (no

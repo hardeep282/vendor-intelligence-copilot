@@ -35,5 +35,8 @@ EXPOSE 8000
 HEALTHCHECK --interval=30s --timeout=3s --start-period=10s --retries=3 \
   CMD ["python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/health', timeout=2)"]
 # --proxy-headers: trust X-Forwarded-* from nginx. The port is published on 127.0.0.1 only
-# (see infra/server/compose.yaml), so nothing outside the host can spoof these headers.
+# (see infra/server/compose.yaml), so only nginx can reach it, and nginx overwrites
+# X-Forwarded-For with the real client address (infra/server/user-data.sh) instead of
+# appending to whatever the client sent. Trusting "*" is only safe because of that overwrite,
+# as uvicorn's deployment docs warn; tests/test_proxy_headers.py checks both halves.
 CMD ["uvicorn", "copilot.api.main:app", "--host", "0.0.0.0", "--port", "8000", "--proxy-headers", "--forwarded-allow-ips", "*"]

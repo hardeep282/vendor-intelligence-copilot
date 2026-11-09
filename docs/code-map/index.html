@@ -382,7 +382,7 @@ main { flex: 1; min-width: 0; overflow-y: auto; display: flex; flex-direction: c
       <div class="pane-scroll"><div class="pane" id="pane"></div></div>
       <div class="pane-foot">
         Generated from <code>docs/CODE_MAP.md</code> by <code>scripts/build_code_map_page.py</code>
-        (87 entries, built 2026-11-08). The markdown is the source of truth; whenever a file is added or changes
+        (87 entries, built 2026-11-09). The markdown is the source of truth; whenever a file is added or changes
         job, its entry there changes in the same commit and this page is regenerated.
       </div>
     </main>
@@ -1849,7 +1849,7 @@ const FILES = [
   "day": 9,
   "path": "src/copilot/mcp/server.py",
   "headline": "A read-only Model Context Protocol server (stdio transport) that gives any MCP host -- Claude Desktop, the MCP Inspector, another agent -- three …",
-  "does": "A read-only Model Context Protocol server (stdio transport) that gives any MCP host -- Claude Desktop, the MCP Inspector, another agent -- three tools over the same guarded data path the <code>/ask<\/code> API uses: one vendor's headline metrics, portfolio totals, and a free-form question that runs through <code>TextToSqlService<\/code> and then the <code>Guardian<\/code>. Every tool is hard-wired to the lowest role (<code>viewer<\/code>): a role passed in as a tool argument would be an unauthenticated claim and a privilege-escalation route. Remote MCP with real authentication is a depth-track item.",
+  "does": "A read-only Model Context Protocol server (stdio transport) that gives any MCP host -- Claude Desktop, the MCP Inspector, another agent -- three tools over the same guarded data path the <code>/ask<\/code> API uses: one vendor's headline metrics, portfolio totals, and a free-form question that runs through <code>TextToSqlService<\/code> and then the <code>Guardian<\/code>. Every tool is hard-wired to the lowest role (<code>viewer<\/code>): a role passed in as a tool argument would be an unauthenticated claim and a privilege-escalation route. Since 9 Nov 2026 the question tool goes through the same <code>InputGate<\/code> as <code>/ask<\/code> first, and the portfolio totals run through the SQL validator, so a viewer gets the same k = 5 figures through either door. Remote MCP with real authentication is a depth-track item.",
   "talksTo": [
    {
     "id": "src-copilot-data-store-py",
@@ -1858,6 +1858,14 @@ const FILES = [
    {
     "id": "src-copilot-sql-service-py",
     "label": "copilot.sql.service.TextToSqlService"
+   },
+   {
+    "id": "src-copilot-sql-validator-py",
+    "label": "copilot.sql.validator"
+   },
+   {
+    "id": "src-copilot-guardrails-input-gate-py",
+    "label": "copilot.guardrails.input_gate"
    },
    {
     "id": "src-copilot-guardrails-guardian-py",
@@ -1941,10 +1949,13 @@ const FILES = [
   "day": 2,
   "path": "infra/server/user-data.sh, infra/server/deploy.sh",
   "headline": "<code>user-data.sh<\/code> bootstraps the Ubuntu EC2 host once (Docker + Compose, nginx reverse proxy to 127.0.0.1:8000, Certbot, AWS CLI).",
-  "does": "<code>deploy.sh<\/code> runs on the host via SSM Run Command, switches the API to a new image and rolls back to the previous one if <code>/health<\/code> fails.",
+  "does": "nginx overwrites <code>X-Forwarded-For<\/code> with the real client address rather than appending to it, because the app trusts that header for its per-IP rate limit (9 Nov 2026). <code>deploy.sh<\/code> runs on the host via SSM Run Command, switches the API to a new image and rolls back to the previous one if <code>/health<\/code> fails.",
   "talksTo": [
    {
     "label": ".github/workflows/ci.yml"
+   },
+   {
+    "label": "tests/test_proxy_headers.py"
    }
   ],
   "takes": "<code>deploy.sh<\/code> takes the image URI and AWS region."

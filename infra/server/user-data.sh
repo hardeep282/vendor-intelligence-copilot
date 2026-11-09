@@ -29,7 +29,10 @@ server {
         proxy_http_version 1.1;
         proxy_set_header Host $host;
         proxy_set_header X-Real-IP $remote_addr;
-        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        # Overwrite, never append: the app trusts this header (uvicorn --proxy-headers), so a
+        # client-sent X-Forwarded-For must not survive the trip, or it could fake its IP and
+        # slip past the per-IP rate limit (found 9 Nov 2026, tests/test_proxy_headers.py).
+        proxy_set_header X-Forwarded-For $remote_addr;
         proxy_set_header X-Forwarded-Proto $scheme;
         proxy_set_header X-Request-ID $request_id;
         proxy_read_timeout 120s;

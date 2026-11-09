@@ -13,9 +13,10 @@ unusual for this project's "run it yourself" scripts (see docs/HANDOFF.md), but 
 the first that needs outbound network access beyond api.anthropic.com -- if your machine also
 blocks those two hosts, `tiktoken.get_encoding()` / `Tokenizer.from_pretrained()` will say so.
 
-Cost: `messages.count_tokens(...)` does not generate a completion, so it is billed as a
-token-counting request (far cheaper than a real message) -- the 5 real calls this script makes
-by default cost a small fraction of one InsightService call.
+Cost: `messages.count_tokens(...)` does not generate a completion, and Anthropic's token
+counting docs say it is free (limited only by requests per minute, separately from message
+creation). Corrected 9 Nov 2026: this note used to say it was billed. The script's 5 calls
+cost nothing; only the one-time tokenizer downloads need the network.
 
 Usage: uv run python scripts/run_tokenization_lab.py
 """

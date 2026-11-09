@@ -2890,3 +2890,47 @@ cover 92 vendors: rebuild the RAG index.
 layer's real code in 7 numbered steps with no AI calls, for stepping through in VS Code's
 debugger. `tests/test_learning_scripts.py` runs it end to end (when the snapshot exists), so a
 later refactor can't silently break a study aid. Full suite 606 passed.
+
+## 2026-11-09 · Three fixes found while writing the learning pages
+
+All three came from checking explanations against the code, not from a failing run. None was
+live (nothing is deployed, and the MCP server is local-only).
+
+**1. A visitor could fake its IP address behind nginx.** uvicorn runs with
+`--proxy-headers --forwarded-allow-ips "*"`, so the app takes the client address from
+`X-Forwarded-For`. nginx set that header with `$proxy_add_x_forwarded_for`, which *appends* the
+real address to whatever the client sent. Reproduced with the locked uvicorn (0.54.0):
+`X-Forwarded-For: 6.6.6.6` from a real 203.0.113.9 made `request.client.host` read 6.6.6.6,
+which defeats the per-IP rate limit (the per-key limit and daily budget still held). uvicorn's
+deployment docs say trusting "*" is only safe when the proxy overwrites the header.
+- Fix: `infra/server/user-data.sh` now sets `X-Forwarded-For $remote_addr` (overwrite). The
+  Dockerfile comment now gives the real reason trusting "*" is safe.
+- `tests/test_proxy_headers.py` (4 tests): the nginx line, the uvicorn flags, the real address
+  after an overwrite, and why appending was spoofable.
+
+**2. The MCP server gave a viewer different totals from `/ask`.** `portfolio_summary` summed
+all 126 vendors ($451,620,183.69); since the 8 Nov k = 5 fix, a viewer through `/ask` gets the
+92 that meet k ($450,251,779.84). Not a leak (the gap is 34 small vendors together), but one role
+got two answers to one question.
+- Fix: its three queries now run through the same validator first (`_run_as_mcp_role`), so the
+  k = 5 filter comes from `sql_rules.yaml`, not from SQL re-typed in the MCP file. The reply
+  carries a note saying what's left out.
+- Tests: the fixture's `vendor_pareto` gained its real `MeetsMinK` column and a small vendor;
+  a snapshot test checks 92 vendors and $450,251,779.84, the `/ask` viewer figures.
+
+**3. `ask_vendor_question` skipped the input gate.** It went straight to text-to-SQL, with no
+kill switch, length, injection, scope, rate-limit or spend-cap check.
+- Fix: it now calls `InputGate.review` first and `record_spend` after, the same calls
+  `Orchestrator.stream_answer` makes, so MCP spend counts against the same per-role cap.
+- Tests: an injection attempt is blocked with no LLM call; spend is recorded. An older test
+  asked "What's the weather like?", which the scope check now stops at the door, so it asks an
+  on-topic question instead.
+
+**Docs:** the case study and README now say which specialists call Claude (Data Analyst,
+Knowledge, Action) and which are deterministic Python (Forecasting, Inventory).
+`scripts/run_tokenization_lab.py` said token counting is billed; Anthropic's docs say it's free.
+
+**Not done:** whether prompt caching ever hits is still unchecked (Sonnet 5 needs at least 1,024
+tokens to cache; the logs record `cache_read`). The effort lab's clean re-run is still open.
+
+Full suite 613 passed (also with strict msgpack); ruff and mypy clean.

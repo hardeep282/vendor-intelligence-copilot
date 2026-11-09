@@ -176,8 +176,8 @@ def run_tokenization_lab(
 
 
 def anthropic_provider_counter(client: anthropic.Anthropic) -> ProviderCounter:
-    """Wraps `client.messages.count_tokens(...)` -- a real, authenticated API call (no
-    completion is generated, so it is billed as a token-counting request, not a message)."""
+    """Wraps `client.messages.count_tokens(...)` -- a real, authenticated API call. No
+    completion is generated, and token counting is free (rate-limited per minute only)."""
 
     def _count(*, model: str, system: str, user_messages: Sequence[str]) -> int:
         result = client.messages.count_tokens(

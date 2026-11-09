@@ -36,8 +36,15 @@ Tools:
                                      text-to-SQL safety stack (Day 3) end to end over MCP.
 
 Every tool that returns real row data is still subject to the same k-threshold filtering
-(`MeetsMinK`) the rest of the app applies -- queries below filter on it exactly as
-`copilot.sql.pair_generation`'s templates and the golden set's own SQL do.
+(`MeetsMinK`) the rest of the app applies. `vendor_metrics` filters on it directly;
+`portfolio_summary` runs its SQL through the same validator `/ask` uses, so the validator adds
+the filter itself and a viewer gets the same totals through either door (9 Nov 2026: before
+that, this tool summed all 126 vendors while `/ask` summed the 92 that meet k).
+
+**Same input gate as `/ask` (9 Nov 2026):** `ask_vendor_question` runs `InputGate.review` before
+any LLM call -- kill switch, length, prompt-injection patterns, scope, rate limit, daily spend
+cap -- and records its real cost afterwards, exactly as `Orchestrator.stream_answer` does. The
+two deterministic tools make no LLM call and spend nothing, so they don't go through it.
 """
 
 from __future__ import annotations
@@ -50,11 +57,12 @@ from mcp.server.fastmcp import FastMCP
 
 from copilot.data import store
 from copilot.guardrails.guardian import Guardian
+from copilot.guardrails.input_gate import InputGate
 from copilot.guardrails.policy import Role, load_policy
 from copilot.llm.client import LLMClient
 from copilot.llm.types import LLMCallError
 from copilot.sql.service import TextToSqlService
-from copilot.sql.validator import load_rules
+from copilot.sql.validator import load_rules, validate
 
 MCP_ROLE: Role = "viewer"
 
@@ -93,6 +101,24 @@ def _get_sql_service() -> TextToSqlService:
 @lru_cache
 def _get_guardian() -> Guardian:
     return Guardian(load_policy())
+
+
+@lru_cache
+def _get_input_gate() -> InputGate:
+    """Same construction the API uses: settings-driven limits and the shared, file-backed daily
+    spend log, so MCP spend counts against the same per-role cap as `/ask` spend."""
+    return InputGate()
+
+
+def _run_as_mcp_role(sql: str) -> list[tuple[Any, ...]]:
+    """Run fixed SQL through the validator at MCP_ROLE first, exactly as generated SQL is, so
+    role rules and the k = 5 filter come from one place (policies/sql_rules.yaml) instead of
+    being re-typed here. A refusal is a bug in this file's own SQL, so it raises."""
+    checked = validate(sql, MCP_ROLE, load_policy(), load_rules())
+    if not checked.ok or checked.sql is None:
+        codes = ", ".join(v.code for v in checked.violations)
+        raise RuntimeError(f"portfolio_summary SQL refused by the validator: {codes}")
+    return _get_connection().execute(checked.sql).fetchall()
 
 
 class _ToolReviewable:
@@ -200,18 +226,17 @@ def vendor_metrics(vendor_name: str) -> dict[str, Any]:
 @mcp.tool()
 def portfolio_summary() -> dict[str, Any]:
     """Portfolio-wide totals: vendor count, total revenue, Pareto band breakdown and SKU health
-    mix. Read-only, no vendor-level data (nothing here is below the k-anonymity threshold --
-    these are sums and counts across the whole portfolio)."""
-    con = _get_connection()
-    vendors, revenue = con.execute(
+    mix. Read-only, no vendor-level data. Vendor counts and revenue cover only vendors with at
+    least 5 products (the k = 5 privacy rule), the same figures a viewer gets from /ask."""
+    ((vendors, revenue),) = _run_as_mcp_role(
         "SELECT count(*), round(sum(TotalRevenue), 2) FROM vendor_revenue_summary"
-    ).fetchone()  # type: ignore[misc]
-    pareto_rows = con.execute(
+    )
+    pareto_rows = _run_as_mcp_role(
         "SELECT ParetoBand, count(*) FROM vendor_pareto GROUP BY ParetoBand ORDER BY ParetoBand"
-    ).fetchall()
-    health_rows = con.execute(
+    )
+    health_rows = _run_as_mcp_role(
         "SELECT HealthStatus, SKUs, SharePct FROM portfolio_health_mix ORDER BY SharePct DESC"
-    ).fetchall()
+    )
     return {
         "vendor_count": vendors,
         "total_revenue": revenue,
@@ -220,6 +245,10 @@ def portfolio_summary() -> dict[str, Any]:
             {"health_status": status, "skus": skus, "share_pct": share}
             for status, skus, share in health_rows
         ],
+        "note": (
+            "Vendor count, revenue and Pareto bands leave out vendors with fewer than 5 "
+            "products (the k = 5 privacy rule). The SKU health mix is a portfolio-wide table."
+        ),
     }
 
 
@@ -230,13 +259,25 @@ def ask_vendor_question(question: str) -> dict[str, Any]:
     SQL generation -- docs/specs/text_to_sql_safety.md) and the same mandatory Guardian final
     pass (docs/adr/006-guardian-design.md) before returning an answer. Requires a configured
     Anthropic API key (real LLM call, real cost); returns an explicit error, not a guess, if one
-    isn't set."""
+    isn't set. Checked first by the same input gate as /ask; a blocked question never reaches
+    the LLM."""
+    gate = _get_input_gate()
+    gate_verdict = gate.review(question, MCP_ROLE)
+    if gate_verdict.outcome == "block":
+        return {
+            "answered": False,
+            "blocked_by": "input_gate",
+            "reason_codes": gate_verdict.reason_codes,
+            "message": gate_verdict.message,
+        }
+
     try:
         service = _get_sql_service()
     except LLMCallError as exc:
         return {"answered": False, "error": f"no Anthropic API key configured: {exc}"}
 
     result = service.answer(question, role=MCP_ROLE)
+    gate.record_spend(MCP_ROLE, result.total_cost_usd)
 
     if result.abstained:
         return {"answered": False, "abstain_reason": result.abstain_reason}

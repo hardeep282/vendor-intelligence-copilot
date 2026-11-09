@@ -26,6 +26,9 @@ I built a multi-agent system where the architecture itself is the guardrail, not
   Forecasting & Risk agent, an Inventory Planning agent, a Knowledge agent (retrieval over
   methodology and contract documents), and an Action agent that only drafts — never sends.
   Each works in its own lane with its own tools; none can call another's tools directly.
+  Three of the five call Claude (Data Analyst, Knowledge, Action). Forecasting and Inventory
+  are deterministic Python, and every safety check (input gate, SQL validator, Guardian) is
+  rule-based by design, so it can't be talked out of its decision.
 - **A Verifier checks the draft is actually grounded** in what the specialists found before it
   goes anywhere near the user — up to two redraft loops, then finalized honestly flagged if it
   still isn't confirmed.
@@ -43,7 +46,7 @@ I built a multi-agent system where the architecture itself is the guardrail, not
 Nothing below is a projection — it's a real number from a real run, or explicitly marked as
 explicitly marked as not done:
 
-- **606 automated tests passing, 0 failing.**
+- **613 automated tests passing, 0 failing.**
 - **23/23 on a privacy red team** — 15 data-leakage attack patterns plus 8 SQL-injection
   attempts (UNION into uncatalogued tables, file reads via table functions, unbounded
   denial-of-service joins), all correctly blocked or escalated.
