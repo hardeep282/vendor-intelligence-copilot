@@ -1,7 +1,7 @@
 ---
 doc_type: data_dictionary
 vendor: null
-version: 2
+version: 3
 data_class: public
 allowed_roles: [anonymous, viewer, analyst, approver, admin]
 ---
@@ -11,6 +11,16 @@ allowed_roles: [anonymous, viewer, analyst, approver, admin]
 What each snapshot table and column means. Every table here is the licence-safe, aggregate-only
 Gold snapshot (`data/snapshot/*.parquet`) built by `scripts/build_snapshot.py` from the vendor
 analytics project's Gold views — never the raw purchased dataset.
+
+Eleven tables. Seven are one row per vendor and agree with each other exactly: the same 126
+vendor names, and the same TotalRevenue, MeetsMinK and blended margin on every vendor (checked
+by `tests/test_snapshot_reconciliation.py`). The monthly demand table comes from a different
+source and does not line up with them exactly; see its section below before joining the two.
+
+**Column names for the same measure differ between tables.** `BlendedMargin` (vendor_tiering,
+vendor_pareto, vendor_rankings) is the same figure as `BlendedMarginPct` (vendor_revenue_summary),
+already on a 0–100 scale even though the name has no "Pct". Likewise `AvgMargin` equals
+`AvgMarginPct`.
 
 ## Vendor-level tables (one row per vendor, 126 rows)
 
@@ -30,7 +40,8 @@ analytics project's Gold views — never the raw purchased dataset.
 | BlendedMarginPct | TotalGrossProfit divided by TotalRevenue, as a percentage. The correct
   figure for a portfolio-level or vendor-level margin claim. |
 | MeetsMinK | Boolean. True if NumberOfSKUs >= the disclosure policy's minimum aggregation
-  threshold (currently 5). A viewer-role query must suppress rows where this is False. |
+  threshold (currently 5). A viewer-role query must suppress rows where this is False. In the
+  seven vendor tables this flag is decided **per vendor**, and it is identical in all seven. |
 
 ### vendor_tiering
 
@@ -80,6 +91,25 @@ Monthly demand aggregated to the vendor level. Covers 12 months (2024 only — s
 Data coverage). Do not mix this table's revenue total with vendor_revenue_summary's total in the
 same answer without noting the ~0.1% gap between the two source tables (RAID item R6).
 
+It is built straight from the `output_monthly_demand` source sheet, not from the Gold vendor
+views, so it differs from the vendor tables in three ways (measured 10 Nov 2026):
+
+- **Vendor names.** 129 names, against 126 in the vendor tables. Five names appear only here,
+  together $44,869.03 of revenue: BERNIKO LLC, EXCLUSIVE WINES & SPIRITS, SOUTHERN GLAZERS W&S
+  OF NE, VINEYARD BRANDS LLC and WHYTE & MACKAY. Some may be other spellings of vendors in the
+  vendor tables (the Gold views merge spellings through `vw_VendorSalesBase`; this sheet doesn't),
+  but that is unconfirmed. Two vendors in the vendor tables have no monthly rows: AAPER ALCOHOL &
+  CHEMICAL CO and LAUREATE IMPORTS CO, both with $0 revenue, so that is expected. A join between
+  this table and a vendor table on VendorName silently drops the five extra names.
+- **Revenue.** Its total is $452,062,952.02, against $451,620,183.69 in the vendor tables: a
+  $442,768.33 gap. $44,869.03 of it comes from the five extra names; the other $397,899.30 comes
+  from 66 vendors whose monthly sum differs from their vendor-table total (largest: EDRINGTON
+  AMERICAS +$108,245.66, MARTIGNETTI COMPANIES +$87,188.48).
+- **MeetsMinK is decided per vendor-month**, not per vendor: True when ActiveSKUs (products sold
+  that month) >= 5. So 124 rows belong to vendors a viewer can see in every vendor table, yet
+  those months are hidden from the viewer, and a viewer's monthly trend for such a vendor has
+  gaps. 428 of the 1,400 rows are hidden from viewers in total.
+
 ### portfolio_monthly_demand (12 rows: one per month)
 
 Demand aggregated to the whole-portfolio level, one row per month. Public class — no vendor-level
@@ -89,7 +119,8 @@ detail, so no aggregation threshold applies.
 
 ### vendor_health_mix (399 rows: vendor x health category)
 
-Count of SKUs per vendor in each of five health categories: Healthy, Profitable but Slow, Loss
+Has no MeetsMinK column of its own: for viewers, the k = 5 filter uses the vendor's flag from
+vendor_revenue_summary. Count of SKUs per vendor in each of five health categories: Healthy, Profitable but Slow, Loss
 Making, At Risk, Thin Margin. **These five categories are independent classification dimensions
 that each sum to 100% on their own — never add counts across them** (a SKU can be "Loss Making"
 by one dimension and also appear in another dimension's count; adding the two double-counts it).

@@ -2934,3 +2934,47 @@ Knowledge, Action) and which are deterministic Python (Forecasting, Inventory).
 tokens to cache; the logs record `cache_read`). The effort lab's clean re-run is still open.
 
 Full suite 613 passed (also with strict msgpack); ruff and mypy clean.
+
+## 2026-11-10 · Tests stop writing to the real audit log; the snapshot is reconciled
+
+Both came from writing the learning pages (JSON, YAML and CSS; Schemas and Databases).
+
+**1. Tests were writing into the real Guardian audit log.** Counting lines before and after one
+test run: each full run appended about 45 made-up decisions to `data/audit/guardian_log.jsonl`,
+mixing test noise into the record of what the Guardian actually decided. The cause: the
+functions in `audit_log.py` took `path: Path = DEFAULT_AUDIT_LOG_PATH`, a default fixed when the
+module is imported, so nothing could redirect it.
+- Fix: the default is now `None`, resolved at write time (`_resolve`), and `tests/conftest.py`
+  gained an autouse `_isolated_audit_log` fixture, the same pattern the spend log already used.
+- New test: `test_default_path_is_redirected_during_tests`. Checked across the whole suite by
+  listing every file under `data/` (except the snapshot) before and after a full run: none
+  changed.
+
+**2. The snapshot is reconciled, and the known differences are written down (RAID R6, new R14).**
+- The seven one-row-per-vendor tables agree exactly: the same 126 names, and the same
+  TotalRevenue, MeetsMinK and blended margin on every vendor.
+- `vendor_monthly_demand` is built straight from the `output_monthly_demand` sheet, whose vendor
+  names aren't merged the way `vw_VendorSalesBase` merges them for the Gold views. It has 129
+  names. Five appear only there ($44,869.03 together). Two vendor-table vendors have no monthly
+  rows, but both have $0 revenue, so that's expected.
+- R6 (open since Day 1) asked for the lineage of the $442,768.33 revenue gap: $44,869.03 comes
+  from those five names, and $397,899.30 from 66 vendors whose monthly sum differs from their
+  vendor-table total (largest EDRINGTON AMERICAS +$108,245.66). The 66 differences come from
+  upstream source tables, so R6 stays open.
+- In the monthly table, MeetsMinK is decided per vendor-month (ActiveSKUs >= 5), not per vendor:
+  124 months of vendors a viewer can otherwise see are hidden from them (428 hidden rows in all).
+- `BlendedMargin` (three tables) is the same 0-100 figure as `BlendedMarginPct`.
+- Written into `knowledge/data_dictionary.md` (v3) and `methodology.md` (v4); RAID R6 updated,
+  R14 added. `tests/test_snapshot_reconciliation.py` (22 checks, skipped without the snapshot)
+  pins all of it, so a rebuilt snapshot that changes any of it fails a test.
+- Not done: merging the vendor spellings in `build_snapshot.py`. It needs the name mapping from
+  `vw_VendorSalesBase` in the analytics project.
+
+**Correction:** the learning page first presented the revenue gap as a new finding. It wasn't:
+RAID R6 has recorded it since Day 1. What's new is its breakdown.
+
+**Needs doing on the laptop:** `uv run python scripts/build_rag_index.py`, because two knowledge
+documents changed.
+
+Full suite 636 passed with the snapshot (also with strict msgpack); 582 passed and 54 skipped
+without it, as in CI. ruff and mypy clean.

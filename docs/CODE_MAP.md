@@ -185,7 +185,9 @@ reject call (no `GuardianVerdict` to log there -- an edit gets its own separate 
 row from the re-review). Both never raise into the caller: a write wrapped in `try/except OSError`
 returns `True`/`False` instead, because an audit-log write problem must not itself block an
 already-decided answer from reaching the user. `read_decisions(path)` returns `[]` for a log that
-doesn't exist yet. Local-only, never committed (`data/audit/*.jsonl` added to `.gitignore`
+doesn't exist yet. Since 10 Nov 2026 the default path is looked up when a row is written
+(`_resolve`), not fixed at import time, so tests can redirect it; before that, every full test
+run appended about 45 made-up decisions to the real log. Local-only, never committed (`data/audit/*.jsonl` added to `.gitignore`
 alongside this file -- no existing wildcard covered `.jsonl`). Day 8: `log_decision` takes an
 optional `review_id=` (a uuid4 string the orchestrator generates only for an ESCALATE outcome),
 written into the row so a future reviewer can join a `pending_review` status back to its exact
@@ -1357,7 +1359,13 @@ so `test_llm_client.py` and others can test retry/repair/caching logic without a
 `tests/conftest.py` (Day 7 step 6) is an autouse fixture that points every test's default
 `InputGate` spend tracking at a throwaway `tmp_path` file instead of the real repo path --
 without it, every orchestrator test that builds a plain `Orchestrator(...)` with no explicit
-`input_gate` would share one on-disk running total across the whole test session.
+`input_gate` would share one on-disk running total across the whole test session. A second
+autouse fixture (10 Nov 2026) does the same for the Guardian's audit log, so tests never write
+to the real `data/audit/guardian_log.jsonl`.
+`tests/test_snapshot_reconciliation.py` (10 Nov 2026) is another cross-cutting file: 22 checks
+on the real snapshot (skipped without it) that the seven vendor tables agree with each other, and
+that the monthly table's known differences from them (RAID R6 and R14: vendor names, the
+$442,768.33 revenue gap and its split, the per-vendor-month k flag) haven't changed.
 `tests/test_privacy_leakage_suite.py` (Day 7 step 8) is the one exception to "mirrors the module
 list" -- it's a cross-cutting suite, not a per-module test file: 23 named cases (15 role-
 escalation/poisoned-contract/cross-vendor-draft/prompt-extraction/etc. cases through `Guardian`/

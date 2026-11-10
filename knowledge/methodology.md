@@ -1,7 +1,7 @@
 ---
 doc_type: methodology
 vendor: null
-version: 3
+version: 4
 data_class: public
 allowed_roles: [anonymous, viewer, analyst, approver, admin]
 ---
@@ -130,6 +130,10 @@ can't be worked back to individual products.
 In practice, 34 of the 126 vendors have fewer than 5 products, and for viewers they are left out
 entirely: their rows are hidden, and any total a viewer sees covers the other 92 vendors only.
 Every such answer says that small vendors were left out. Analysts and approvers see all 126.
+The flag is decided per row, and a row means different things in different tables. In the vendor
+tables a row is a whole vendor (5 or more products in total). In the monthly demand table a row
+is one vendor's month (5 or more products sold that month), so a vendor a viewer can see may
+still have some months hidden. See the Data Dictionary's monthly demand section.
 
 **Some common figures.**
 - The portfolio-wide count of products in each health category is public, so any role may see
@@ -144,6 +148,16 @@ Every such answer says that small vendors were left out. Analysts and approvers 
 contract terms. No internal figures and no other vendor's terms. An internal draft, such as a
 reorder recommendation for our own procurement team, may use internal figures, subject to the
 role rules above. Every draft needs a human approver's sign-off and is never sent automatically.
+
+## How the tables are checked against each other
+
+The snapshot comes from two different source sheets, so it is checked rather than assumed to
+agree. On every test run with the snapshot present, `tests/test_snapshot_reconciliation.py`
+confirms that the seven vendor tables agree on every vendor's revenue, k flag and blended margin,
+and pins the known differences with the monthly demand table: which vendor names differ, the
+$442,768.33 revenue gap and how it splits, and the two meanings of the k flag. If a rebuilt
+snapshot changes any of these, the test fails, so the change is seen and these documents are
+updated instead of the difference going unnoticed.
 
 ## Classification models
 

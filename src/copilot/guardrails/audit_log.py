@@ -36,7 +36,7 @@ def log_decision(
     *,
     question: str,
     role: str,
-    path: Path = DEFAULT_AUDIT_LOG_PATH,
+    path: Path | None = None,
     review_id: str | None = None,
 ) -> bool:
     """Append one row. Returns True on a successful write, False on a logging failure (disk
@@ -62,7 +62,7 @@ def log_decision(
         "findings": [f.model_dump() for f in verdict.findings],
         "review_id": review_id,
     }
-    return _append_row(row, path)
+    return _append_row(row, _resolve(path))
 
 
 def log_approval(
@@ -71,7 +71,7 @@ def log_approval(
     role: str,
     decision: str,
     final_answer: str,
-    path: Path = DEFAULT_AUDIT_LOG_PATH,
+    path: Path | None = None,
 ) -> bool:
     """Append one approver-decision row (Day 7 step 5: the Action-draft approve/edit/reject
     flow). `role` here is the *approver's* role (already checked to be `approver`/`admin` by
@@ -88,7 +88,16 @@ def log_approval(
         "decision": decision,
         "final_answer": final_answer,
     }
-    return _append_row(row, path)
+    return _append_row(row, _resolve(path))
+
+
+def _resolve(path: Path | None) -> Path:
+    """The default is looked up when a row is written, not when this module was imported, so
+    tests can point it at a temporary file (tests/conftest.py). A `path: Path =
+    DEFAULT_AUDIT_LOG_PATH` default is fixed at import time and can't be redirected: until
+    10 Nov 2026 every full test run appended about 45 made-up decisions to the real
+    `data/audit/guardian_log.jsonl`."""
+    return path if path is not None else DEFAULT_AUDIT_LOG_PATH
 
 
 def _append_row(row: dict[str, object], path: Path) -> bool:
@@ -101,10 +110,11 @@ def _append_row(row: dict[str, object], path: Path) -> bool:
     return True
 
 
-def read_decisions(path: Path = DEFAULT_AUDIT_LOG_PATH) -> list[dict[str, object]]:
+def read_decisions(path: Path | None = None) -> list[dict[str, object]]:
     """Read every logged decision back, oldest first. Used by tests and by `scripts/` reports;
     returns `[]` for a log that doesn't exist yet rather than raising.
     """
+    path = _resolve(path)
     if not path.exists():
         return []
     rows: list[dict[str, object]] = []

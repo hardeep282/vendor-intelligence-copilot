@@ -63,3 +63,19 @@ def test_review_id_is_recorded_when_given(tmp_path: Path) -> None:
     row = read_decisions(path)[0]
     assert row["outcome"] == "escalate"
     assert row["review_id"] == "rid-123"
+
+
+def test_default_path_is_redirected_during_tests(tmp_path: Path) -> None:
+    """10 Nov 2026: tests used to append to the real data/audit/guardian_log.jsonl. The default
+    path is now resolved at write time, so tests/conftest.py can point it at a temp file."""
+    from copilot.guardrails import audit_log
+    from copilot.settings import REPO_ROOT
+
+    real = REPO_ROOT / "data" / "audit" / "guardian_log.jsonl"
+    size_before = real.stat().st_size if real.exists() else None
+
+    assert log_decision(_verdict(), question="q", role="viewer") is True  # no path given
+
+    assert audit_log.DEFAULT_AUDIT_LOG_PATH.parent == tmp_path
+    assert len(read_decisions()) == 1  # read back through the same redirected default
+    assert (real.stat().st_size if real.exists() else None) == size_before
