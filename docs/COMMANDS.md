@@ -238,7 +238,7 @@ the MCP server wraps `copilot.data.store`, `copilot.sql.service.TextToSqlService
 |---|---|
 | `uv run python scripts/build_snapshot.py "path/to/Vendor_Summary.xlsx"` | Rebuilds the aggregate-only Parquet snapshot from the analytics repo's workbook |
 | `uv run python -c "from copilot.data.store import build_database; print(build_database())"` | Builds `data/snapshot/snapshot.duckdb` from those Parquet files. Without it, 27 snapshot-dependent tests skip |
-| `uv run pytest -q` | Full suite: 511 passed with the snapshot built (512 from 29 Oct after the fail-closed approval fix; 515 after the PII fix and 524 after the units and forecast-warning fixes, 531 after the ranking check (30 Oct), 534 after the approval-flow fixes and 539 after the smoke-test fixes (31 Oct), 545 after the rerun fixes (1 Nov), 571 after the full-run fixes and 596 after the plan-constraints fix (2 Nov), 605 after the k-threshold fix and 606 with the first learning script (8 Nov), 613 after the proxy-header and MCP fixes (9 Nov), 636 with the reconciliation tests and 637 after the vendor-name merge and 638 after the no-real-API guard (10 Nov)) |
+| `uv run pytest -q` | Full suite: 511 passed with the snapshot built (512 from 29 Oct after the fail-closed approval fix; 515 after the PII fix and 524 after the units and forecast-warning fixes, 531 after the ranking check (30 Oct), 534 after the approval-flow fixes and 539 after the smoke-test fixes (31 Oct), 545 after the rerun fixes (1 Nov), 571 after the full-run fixes and 596 after the plan-constraints fix (2 Nov), 605 after the k-threshold fix and 606 with the first learning script (8 Nov), 613 after the proxy-header and MCP fixes (9 Nov), 636 with the reconciliation tests and 637 after the vendor-name merge, 638 after the no-real-API guard and 644 with the session 2-7 learning scripts (10 Nov)) |
 | `gitleaks git . --redact -v` | Scans every commit in history for secrets before the repo goes public (`--redact` hides any match in the output) |
 | `uv run python scripts/build_code_map_page.py` | Regenerates the Code Map page (`docs/code-map/index.html`) from `docs/CODE_MAP.md`; run after editing the markdown |
 | `uv lock --check --offline` | Confirms `uv.lock` still matches `pyproject.toml` after the version bump, without touching the network |
@@ -248,12 +248,19 @@ the MCP server wraps `copilot.data.store`, `copilot.sql.service.TextToSqlService
 | `git push origin v0.2.0` | Pushes the v0.2.0 tag |
 
 
-## Learning scripts (8 Nov 2026)
+## Learning scripts (8 and 10 Nov 2026)
 
 Study aids for the learning sessions. Each one runs the copilot's real code for one layer in
-numbered steps, with no Claude calls: free, no key needed, and the same output every time. Open
+numbered steps, with no real Claude calls: free, no key needed, and the same output every time.
+Where an agent would call Claude (sessions 4 to 7), a scripted stand-in answers instead. Open
 one in VS Code, put red dots inside the `step_...` functions, and press F5 to step through it.
 
 | Command | What it does |
 |---|---|
 | `uv run python scripts/learn/session1_data_and_sql.py` | Session 1 (data and SQL), 7 steps: open the locked database, try to break the lock, see the schema card per role, pick worked examples, run the validator on attacks, run a good query, and the same total as an analyst and as a viewer (the k = 5 rule). |
+| `uv run python scripts/learn/session2_ml_tools.py` | Session 2 (ML tools), 8 steps: the history, a backtest by hand, ETS vs naive, one vendor, inventory maths, the flat-forecast trap, the leaking features, the model catalogue. About 30 s (ETS fitting). Needs the snapshot. |
+| `uv run python scripts/learn/session3_rag.py` | Session 3 (RAG), 8 steps: documents, chunks, BM25, RRF by hand, visibility per role, hybrid search and the stale-chunk count (both need `data/chroma/`), the corrective loop's settings. Set `$env:LEARN_SKIP_EMBEDDINGS="1"` to skip the two index steps. |
+| `uv run python scripts/learn/session4_llm_layer.py` | Session 4 (LLM layer), 8 steps: prompt versions, what a call sends, cost, retries, the repair loop, the empty-box bug, recorded token/effort/QLoRA results. No snapshot needed. |
+| `uv run python scripts/learn/session5_agents.py` | Session 5 (agents), 8 steps: the roster, the compiled graph, the inventory rule, one real orchestrator run with scripted Claude replies and real specialists, the verifier loop, the Guardian, budgets. Needs the snapshot. |
+| `uv run python scripts/learn/session6_guardrails.py` | Session 6 (guardrails), 8 steps: input gate, spend cap, Guardian cases, worst wins, PII, the approval pause, the audit log, trace masking. No snapshot needed. |
+| `uv run python scripts/learn/session7_product_and_quality.py` | Session 7 (product and quality), 8 steps: the FastAPI app in-process (routes, health, 401, invite to key, the live stream, 429), then the CI jobs and eval-gate pass marks. Needs the snapshot. |

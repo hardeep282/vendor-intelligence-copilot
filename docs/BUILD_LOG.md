@@ -3036,3 +3036,46 @@ Two fixes:
 
 Full suite 638 passed, also with a dummy `ANTHROPIC_API_KEY` set for the whole run (the
 laptop-with-a-key case) and with strict msgpack; ruff and mypy clean.
+
+## 2026-11-10 (night) · Learning sessions 2 to 7, their scripts, and RAID R15
+
+All seven learning sessions now exist, one hosted page each, linked from the Study Path. Each page
+covers one layer with its code open: diagrams, a hands-on widget, the real numbers, the bugs found
+along the way, limits, interview questions, industry equivalents and sources. Every page keeps
+agents (parts that call Claude) apart from plain code and safety rules.
+
+Six new scripts in `scripts/learn/`, one per session, each with eight numbered steps to step
+through in VS Code:
+- `session2_ml_tools.py`: the naive backtest done by hand gives WAPE 0.1153, the same as the
+  forecast tool; safety stock at 90/95/99% service; the flat-forecast trap; the leaking features.
+- `session3_rag.py`: documents, chunks, BM25, RRF by hand, visibility per role; with the local
+  index, hybrid search and a count of stale chunks.
+- `session4_llm_layer.py`: the exact request one structured call sends, cost per model, the
+  repair loop, and the empty-box bug shown with the SDK's real `transform_schema`.
+- `session5_agents.py`: the real orchestrator on one question, with scripted planner, writer and
+  verifier replies and the two real plain-code specialists; the first draft is scripted to fail.
+- `session6_guardrails.py`: the input gate, eight Guardian cases, PII, a real approval pause and
+  resume, the audit log, trace masking.
+- `session7_product_and_quality.py`: the FastAPI app in-process (401, invite to key, the live
+  stream, a 429), then the CI jobs and eval pass marks read from their files.
+
+No script makes a real Claude call (where an agent would, the tests' stand-in answers), and none
+writes to `data/`: spend, audit log, checkpoints and logins go to a temporary folder.
+`tests/test_learning_scripts.py` now runs all seven (6 new tests; 3 need the snapshot).
+
+**New finding, RAID R15 (open):** the laptop's last index build said "132 total chunks.
+Collection now has 244 chunks." A version bump gives every chunk a new id, and
+`ChunkStore.upsert` adds new ids but never deletes old ones, so 112 chunks from older document
+versions are still in Chroma. They're dropped after retrieval (not current chunks), so nothing
+wrong is ever shown, but they can fill slots in the 20-candidate vector pool. Proposed fix: delete
+ids that aren't in the current chunk set when the index is built. Not made yet: it's a code
+change, so it waits for the go-ahead. Session 3, lesson 9 explains it; script step 7 counts it.
+
+Corrections made while writing the pages, checked against the code: the PII entity list was six
+types on 30 Oct and four from 1 Nov; LangGraph's strict msgpack mode is run by hand on each
+build, not in CI; the eval gate runs only on pull requests into main, so with direct pushes it
+effectively never runs in CI (now stated on the Session 7 page).
+
+Full suite 644 passed with the snapshot, also with a dummy key set for the whole run; ruff clean.
+CODE_MAP has a new "Learning scripts" section (all seven) and the no-real-API fixture; the page
+is regenerated.

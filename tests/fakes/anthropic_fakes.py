@@ -8,7 +8,7 @@ Purpose : exercise copilot.llm.client's retry, repair, TTFT and cost logic witho
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from typing import Any
+from typing import Any, Literal
 
 
 @dataclass
@@ -48,7 +48,7 @@ class FakeStream:
     def __enter__(self) -> FakeStream:
         return self
 
-    def __exit__(self, *exc: object) -> bool:
+    def __exit__(self, *exc: object) -> Literal[False]:
         return False
 
     def __iter__(self) -> Any:

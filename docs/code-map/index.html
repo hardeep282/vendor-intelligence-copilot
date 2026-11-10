@@ -382,7 +382,7 @@ main { flex: 1; min-width: 0; overflow-y: auto; display: flex; flex-direction: c
       <div class="pane-scroll"><div class="pane" id="pane"></div></div>
       <div class="pane-foot">
         Generated from <code>docs/CODE_MAP.md</code> by <code>scripts/build_code_map_page.py</code>
-        (88 entries, built 2026-11-10). The markdown is the source of truth; whenever a file is added or changes
+        (95 entries, built 2026-11-10). The markdown is the source of truth; whenever a file is added or changes
         job, its entry there changes in the same commit and this page is regenerated.
       </div>
     </main>
@@ -2097,6 +2097,216 @@ const FILES = [
   "isNew": true
  },
  {
+  "id": "scripts-learn-session1-data-and-sql-py",
+  "group": "Learning scripts",
+  "day": 11,
+  "path": "scripts/learn/session1_data_and_sql.py",
+  "headline": "Session 1, seven steps: the locked database, attacks it refuses, schema cards per role, worked examples, the validator on attacks, a good query, and the k = 5 rule.",
+  "does": "<strong>Needs:<\/strong> the local snapshot.",
+  "talksTo": [
+   {
+    "id": "src-copilot-data-store-py",
+    "label": "copilot.data.store"
+   },
+   {
+    "id": "src-copilot-sql-schema-py",
+    "label": "copilot.sql.schema"
+   },
+   {
+    "id": "src-copilot-sql-examples-py",
+    "label": "copilot.sql.examples"
+   },
+   {
+    "id": "src-copilot-sql-validator-py",
+    "label": "copilot.sql.validator"
+   }
+  ]
+ },
+ {
+  "id": "scripts-learn-session2-ml-tools-py",
+  "group": "Learning scripts",
+  "day": 11,
+  "path": "scripts/learn/session2_ml_tools.py",
+  "headline": "Session 2: the 12-month history, the naive backtest worked by hand (WAPE 0.1153, matching the tool), ETS vs naive, one vendor, safety stock / reorder …",
+  "does": "Session 2: the 12-month history, the naive backtest worked by hand (WAPE 0.1153, matching the tool), ETS vs naive, one vendor, safety stock / reorder point / EOQ at three service levels, the flat-forecast trap, the leaking risk-model features (synthetic SKUs, real-run numbers printed alongside), and the Model Selection Agent's catalogue (printed, not called). <strong>Needs:<\/strong> the local snapshot.",
+  "talksTo": [
+   {
+    "id": "src-copilot-ml-forecast-py",
+    "label": "copilot.ml.forecast"
+   },
+   {
+    "id": "src-copilot-ml-metrics-py",
+    "label": "copilot.ml.metrics"
+   },
+   {
+    "id": "src-copilot-ml-inventory-py",
+    "label": "copilot.ml.inventory"
+   },
+   {
+    "id": "src-copilot-ml-risk-classifier-py",
+    "label": "copilot.ml.risk_classifier"
+   },
+   {
+    "id": "src-copilot-agents-model-selection-py",
+    "label": "copilot.agents.model_selection"
+   }
+  ],
+  "isNew": true
+ },
+ {
+  "id": "scripts-learn-session3-rag-py",
+  "group": "Learning scripts",
+  "day": 11,
+  "path": "scripts/learn/session3_rag.py",
+  "headline": "Session 3: load and policy-check the 14 documents, chunk them (132 chunks), BM25 search, RRF by hand, chunks visible per role, and -- if …",
+  "does": "Session 3: load and policy-check the 14 documents, chunk them (132 chunks), BM25 search, RRF by hand, chunks visible per role, and -- if <code>data/chroma/<\/code> exists -- real hybrid search per role and a count of stale chunks from older document versions (RAID R15). Then the corrective loop's settings. <code>LEARN_SKIP_EMBEDDINGS=1<\/code> skips the two index steps (the test does). <strong>Needs:<\/strong> nothing for steps 1-5 and 8; the local index and embedding model for steps 6-7.",
+  "talksTo": [
+   {
+    "id": "src-copilot-rag-corpus-py",
+    "label": "copilot.rag.corpus"
+   },
+   {
+    "id": "src-copilot-rag-chunking-py",
+    "label": "copilot.rag.chunking"
+   },
+   {
+    "id": "src-copilot-rag-retrieval-py",
+    "label": "copilot.rag.retrieval"
+   },
+   {
+    "id": "src-copilot-rag-permissions-py",
+    "label": "copilot.rag.permissions"
+   },
+   {
+    "id": "src-copilot-rag-store-py",
+    "label": "copilot.rag.store"
+   },
+   {
+    "id": "src-copilot-llm-prompts-py",
+    "label": "copilot.llm.prompts"
+   }
+  ],
+  "isNew": true
+ },
+ {
+  "id": "scripts-learn-session4-llm-layer-py",
+  "group": "Learning scripts",
+  "day": 11,
+  "path": "scripts/learn/session4_llm_layer.py",
+  "headline": "Session 4: the prompt files and versions, the exact request one structured call sends, cost per model, which errors are retried, the repair loop, the …",
+  "does": "Session 4: the prompt files and versions, the exact request one structured call sends, cost per model, which errors are retried, the repair loop, the empty-box schema bug shown with the SDK's real <code>transform_schema<\/code>, and recorded token/effort/QLoRA results. <strong>Needs:<\/strong> nothing (no snapshot, no key).",
+  "talksTo": [
+   {
+    "id": "src-copilot-llm-client-py",
+    "label": "copilot.llm.client"
+   },
+   {
+    "id": "src-copilot-llm-pricing-py",
+    "label": "copilot.llm.pricing"
+   },
+   {
+    "id": "src-copilot-llm-prompts-py",
+    "label": "copilot.llm.prompts"
+   },
+   {
+    "label": "tests/fakes/anthropic_fakes.py"
+   }
+  ],
+  "isNew": true
+ },
+ {
+  "id": "scripts-learn-session5-agents-py",
+  "group": "Learning scripts",
+  "day": 11,
+  "path": "scripts/learn/session5_agents.py",
+  "headline": "Session 5: the specialist roster, the compiled graph's edges, the inventory rule over the planner, then one real orchestrator run with scripted …",
+  "does": "Session 5: the specialist roster, the compiled graph's edges, the inventory rule over the planner, then one real orchestrator run with scripted planner/writer/verifier replies (the first draft is scripted to fail, so the redraft loop shows) and the two real plain-code specialists. <strong>Needs:<\/strong> the local snapshot.",
+  "talksTo": [
+   {
+    "id": "src-copilot-agents-orchestrator-py",
+    "label": "copilot.agents.orchestrator"
+   },
+   {
+    "id": "src-copilot-agents-specialists-py",
+    "label": "copilot.agents.specialists"
+   },
+   {
+    "id": "src-copilot-guardrails-input-gate-py",
+    "label": "copilot.guardrails.input_gate"
+   },
+   {
+    "id": "src-copilot-guardrails-audit-log-py",
+    "label": "copilot.guardrails.audit_log"
+   }
+  ],
+  "isNew": true
+ },
+ {
+  "id": "scripts-learn-session6-guardrails-py",
+  "group": "Learning scripts",
+  "day": 11,
+  "path": "scripts/learn/session6_guardrails.py",
+  "headline": "Session 6: the input gate on five questions, the spend cap, the Guardian on eight cases, worst outcome wins, PII detection (and the business figures …",
+  "does": "Session 6: the input gate on five questions, the spend cap, the Guardian on eight cases, worst outcome wins, PII detection (and the business figures it must leave alone), a real approval pause and resume, the audit log, and trace masking. <strong>Needs:<\/strong> nothing (no snapshot, no key).",
+  "talksTo": [
+   {
+    "id": "src-copilot-guardrails-input-gate-py",
+    "label": "copilot.guardrails.input_gate"
+   },
+   {
+    "id": "src-copilot-guardrails-guardian-py",
+    "label": "copilot.guardrails.guardian"
+   },
+   {
+    "id": "src-copilot-guardrails-pii-py",
+    "label": "copilot.guardrails.pii"
+   },
+   {
+    "id": "src-copilot-guardrails-trace-masking-py",
+    "label": "copilot.guardrails.trace_masking"
+   },
+   {
+    "id": "src-copilot-agents-orchestrator-py",
+    "label": "copilot.agents.orchestrator"
+   }
+  ],
+  "isNew": true
+ },
+ {
+  "id": "scripts-learn-session7-product-and-quality-py",
+  "group": "Learning scripts",
+  "day": 11,
+  "path": "scripts/learn/session7_product_and_quality.py",
+  "headline": "Session 7: the real FastAPI app in-process (TestClient): routes, health, a 401, invite to key, the streamed answer, a 429; then the CI jobs and the eval gate's pass marks, read from their files.",
+  "does": "<strong>Needs:<\/strong> the local snapshot.",
+  "talksTo": [
+   {
+    "id": "src-copilot-api-main-py",
+    "label": "copilot.api.main"
+   },
+   {
+    "id": "src-copilot-api-dependencies-py",
+    "label": "copilot.api.dependencies"
+   },
+   {
+    "id": "src-copilot-api-auth-py",
+    "label": "copilot.api.auth"
+   },
+   {
+    "id": "src-copilot-api-rate-limit-py",
+    "label": "copilot.api.rate_limit"
+   },
+   {
+    "label": ".github/workflows/ci.yml"
+   },
+   {
+    "id": "evals-thresholds-yaml",
+    "label": "evals/thresholds.yaml"
+   }
+  ],
+  "isNew": true
+ },
+ {
   "id": "not-yet-started",
   "group": "Not yet started",
   "day": null,
@@ -2120,7 +2330,7 @@ const FILES = [
   "day": null,
   "path": "Tests",
   "headline": "One test file per module above, named <code>test_&lt;module&gt;.py<\/code> — not documented individually here since they mirror the module list exactly.",
-  "does": "<code>tests/fakes/anthropic_fakes.py<\/code> is a fake Anthropic SDK used so <code>test_llm_client.py<\/code> and others can test retry/repair/caching logic without a real API key. <code>tests/conftest.py<\/code> (Day 7 step 6) is an autouse fixture that points every test's default <code>InputGate<\/code> spend tracking at a throwaway <code>tmp_path<\/code> file instead of the real repo path -- without it, every orchestrator test that builds a plain <code>Orchestrator(...)<\/code> with no explicit <code>input_gate<\/code> would share one on-disk running total across the whole test session. A second autouse fixture (10 Nov 2026) does the same for the Guardian's audit log, so tests never write to the real <code>data/audit/guardian_log.jsonl<\/code>. <code>tests/test_snapshot_reconciliation.py<\/code> (10 Nov 2026) is another cross-cutting file: 22 checks on the real snapshot (skipped without it), 23 since the name merge: the seven vendor tables agree with each other, the merged spellings never reappear, and the monthly table's known differences from them (RAID R6: three tiny vendors, the $442,768.33 revenue gap and its split, the per-vendor-month k flag) haven't changed. <code>tests/test_privacy_leakage_suite.py<\/code> (Day 7 step 8) is the one exception to \"mirrors the module list\" -- it's a cross-cutting suite, not a per-module test file: 23 named cases (15 role- escalation/poisoned-contract/cross-vendor-draft/prompt-extraction/etc. cases through <code>Guardian<\/code>/ <code>InputGate<\/code>, + 8 SQL red-team cases from <code>docs/specs/text_to_sql_safety.md<\/code> through the validator), each asserting the real outcome a leak attempt gets today, run as ordinary pytest (no separate eval harness) so a regression here fails CI the same way any other test would.",
+  "does": "<code>tests/fakes/anthropic_fakes.py<\/code> is a fake Anthropic SDK used so <code>test_llm_client.py<\/code> and others can test retry/repair/caching logic without a real API key. <code>tests/conftest.py<\/code> (Day 7 step 6) is an autouse fixture that points every test's default <code>InputGate<\/code> spend tracking at a throwaway <code>tmp_path<\/code> file instead of the real repo path -- without it, every orchestrator test that builds a plain <code>Orchestrator(...)<\/code> with no explicit <code>input_gate<\/code> would share one on-disk running total across the whole test session. A second autouse fixture (10 Nov 2026) does the same for the Guardian's audit log, so tests never write to the real <code>data/audit/guardian_log.jsonl<\/code>. A third (10 Nov 2026, <code>_no_real_anthropic_calls<\/code>) patches the real SDK's <code>create<\/code>/<code>stream<\/code>/<code>count_tokens<\/code>/<code>parse<\/code> to raise, so no test can ever reach the real Anthropic API; <code>tests/test_no_real_api_guard.py<\/code> proves it is in place. <code>tests/test_snapshot_reconciliation.py<\/code> (10 Nov 2026) is another cross-cutting file: 22 checks on the real snapshot (skipped without it), 23 since the name merge: the seven vendor tables agree with each other, the merged spellings never reappear, and the monthly table's known differences from them (RAID R6: three tiny vendors, the $442,768.33 revenue gap and its split, the per-vendor-month k flag) haven't changed. <code>tests/test_privacy_leakage_suite.py<\/code> (Day 7 step 8) is the one exception to \"mirrors the module list\" -- it's a cross-cutting suite, not a per-module test file: 23 named cases (15 role- escalation/poisoned-contract/cross-vendor-draft/prompt-extraction/etc. cases through <code>Guardian<\/code>/ <code>InputGate<\/code>, + 8 SQL red-team cases from <code>docs/specs/text_to_sql_safety.md<\/code> through the validator), each asserting the real outcome a leak attempt gets today, run as ordinary pytest (no separate eval harness) so a regression here fails CI the same way any other test would.",
   "talksTo": []
  }
 ];

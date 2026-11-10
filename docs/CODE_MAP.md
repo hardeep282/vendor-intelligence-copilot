@@ -1339,6 +1339,73 @@ open items, and the depth-track schedule.
 
 ---
 
+## Learning scripts -- one per learning session (8 and 10 Nov 2026)
+
+Study aids, not part of the product: each runs one layer's real code in eight numbered
+`step_...` functions so it can be stepped through in VS Code's debugger. None makes a real Claude
+call. Where an agent would call Claude (sessions 4 to 7), the Claude side is the tests' scripted
+stand-in, `tests/fakes/anthropic_fakes.py`; everything else is the real code. Anything that would
+write a file (spend records, the audit log, checkpoints, logins) goes to a temporary folder.
+`tests/test_learning_scripts.py` runs every script, so a refactor can't quietly break one.
+
+### `scripts/learn/session1_data_and_sql.py` *(day: 11)*
+Session 1, seven steps: the locked database, attacks it refuses, schema cards per role, worked
+examples, the validator on attacks, a good query, and the k = 5 rule.
+**Needs:** the local snapshot.
+**Talks to:** `copilot.data.store`, `copilot.sql.schema`, `copilot.sql.examples`,
+`copilot.sql.validator`.
+
+### `scripts/learn/session2_ml_tools.py` *(day: 11, isNew: true)*
+Session 2: the 12-month history, the naive backtest worked by hand (WAPE 0.1153, matching the
+tool), ETS vs naive, one vendor, safety stock / reorder point / EOQ at three service levels, the
+flat-forecast trap, the leaking risk-model features (synthetic SKUs, real-run numbers printed
+alongside), and the Model Selection Agent's catalogue (printed, not called).
+**Needs:** the local snapshot.
+**Talks to:** `copilot.ml.forecast`, `copilot.ml.metrics`, `copilot.ml.inventory`,
+`copilot.ml.risk_classifier`, `copilot.agents.model_selection`.
+
+### `scripts/learn/session3_rag.py` *(day: 11, isNew: true)*
+Session 3: load and policy-check the 14 documents, chunk them (132 chunks), BM25 search, RRF by
+hand, chunks visible per role, and -- if `data/chroma/` exists -- real hybrid search per role and
+a count of stale chunks from older document versions (RAID R15). Then the corrective loop's
+settings. `LEARN_SKIP_EMBEDDINGS=1` skips the two index steps (the test does).
+**Needs:** nothing for steps 1-5 and 8; the local index and embedding model for steps 6-7.
+**Talks to:** `copilot.rag.corpus`, `copilot.rag.chunking`, `copilot.rag.retrieval`,
+`copilot.rag.permissions`, `copilot.rag.store`, `copilot.llm.prompts`.
+
+### `scripts/learn/session4_llm_layer.py` *(day: 11, isNew: true)*
+Session 4: the prompt files and versions, the exact request one structured call sends, cost per
+model, which errors are retried, the repair loop, the empty-box schema bug shown with the SDK's
+real `transform_schema`, and recorded token/effort/QLoRA results.
+**Needs:** nothing (no snapshot, no key).
+**Talks to:** `copilot.llm.client`, `copilot.llm.pricing`, `copilot.llm.prompts`,
+`tests/fakes/anthropic_fakes.py`.
+
+### `scripts/learn/session5_agents.py` *(day: 11, isNew: true)*
+Session 5: the specialist roster, the compiled graph's edges, the inventory rule over the
+planner, then one real orchestrator run with scripted planner/writer/verifier replies (the first
+draft is scripted to fail, so the redraft loop shows) and the two real plain-code specialists.
+**Needs:** the local snapshot.
+**Talks to:** `copilot.agents.orchestrator`, `copilot.agents.specialists`,
+`copilot.guardrails.input_gate`, `copilot.guardrails.audit_log`.
+
+### `scripts/learn/session6_guardrails.py` *(day: 11, isNew: true)*
+Session 6: the input gate on five questions, the spend cap, the Guardian on eight cases, worst
+outcome wins, PII detection (and the business figures it must leave alone), a real approval
+pause and resume, the audit log, and trace masking.
+**Needs:** nothing (no snapshot, no key).
+**Talks to:** `copilot.guardrails.input_gate`, `copilot.guardrails.guardian`,
+`copilot.guardrails.pii`, `copilot.guardrails.trace_masking`, `copilot.agents.orchestrator`.
+
+### `scripts/learn/session7_product_and_quality.py` *(day: 11, isNew: true)*
+Session 7: the real FastAPI app in-process (TestClient): routes, health, a 401, invite to key, the
+streamed answer, a 429; then the CI jobs and the eval gate's pass marks, read from their files.
+**Needs:** the local snapshot.
+**Talks to:** `copilot.api.main`, `copilot.api.dependencies`, `copilot.api.auth`,
+`copilot.api.rate_limit`, `.github/workflows/ci.yml`, `evals/thresholds.yaml`.
+
+---
+
 ## Not yet started (empty package markers only)
 `src/copilot/dl/`, `src/copilot/nlp/`, `src/copilot/extract/`, `src/copilot/observability/`,
 `src/copilot/ui/` — folders exist with an `__init__.py` so imports work later; no real code yet.
@@ -1375,7 +1442,9 @@ so `test_llm_client.py` and others can test retry/repair/caching logic without a
 without it, every orchestrator test that builds a plain `Orchestrator(...)` with no explicit
 `input_gate` would share one on-disk running total across the whole test session. A second
 autouse fixture (10 Nov 2026) does the same for the Guardian's audit log, so tests never write
-to the real `data/audit/guardian_log.jsonl`.
+to the real `data/audit/guardian_log.jsonl`. A third (10 Nov 2026, `_no_real_anthropic_calls`)
+patches the real SDK's `create`/`stream`/`count_tokens`/`parse` to raise, so no test can ever reach
+the real Anthropic API; `tests/test_no_real_api_guard.py` proves it is in place.
 `tests/test_snapshot_reconciliation.py` (10 Nov 2026) is another cross-cutting file: 22 checks
 on the real snapshot (skipped without it), 23 since the name merge: the seven vendor tables agree
 with each other, the merged spellings never reappear, and the monthly table's known differences
