@@ -163,6 +163,11 @@ def test_ask_vendor_question_reports_a_clean_error_with_no_api_key(con, monkeypa
     # the same falsy-key case `scripts/run_eval_gate.py` already hardens against, not a new
     # pattern invented for this test.
     monkeypatch.setenv("ANTHROPIC_API_KEY", "")
+    # 10 Nov 2026: and clear the settings cache *after* blanking the key. The autouse `gate`
+    # fixture (added 9 Nov) builds an InputGate during setup, which reads get_settings() and
+    # caches the real .env key before this line runs. On a laptop with a real key, the test then
+    # made a real, paid Claude call and saw answered=True. CI has no key, so it never showed.
+    get_settings.cache_clear()
     result = mcp_server.ask_vendor_question("What is the total revenue?")
     assert result["answered"] is False
     assert "error" in result

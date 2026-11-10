@@ -3012,3 +3012,27 @@ COMMANDS: `build_snapshot.py`, then `build_rag_index.py`). Until the snapshot is
 reconciliation tests fail locally, because they expect the merged names. That's them working.
 
 Full suite 637 passed with the snapshot (also with strict msgpack); ruff and mypy clean.
+
+## 2026-11-10 (evening) · No test can reach the real Anthropic API any more
+
+On the laptop, after the steps above, one test failed:
+`test_ask_vendor_question_reports_a_clean_error_with_no_api_key` got `answered: True`. It had
+made a **real, paid Claude call** (about one cent). My mistake, from the MCP fix on 9 Nov
+(ac32cb9):
+- That fix added an autouse `gate` fixture that builds an `InputGate` before each test.
+  `InputGate()` calls `get_settings()`, which is cached, so it cached Settings holding the real
+  key from the laptop's `.env`.
+- The test then blanked the key with `setenv("ANTHROPIC_API_KEY", "")`, but too late: the cached
+  Settings still had the real one, so the LLM client found a key and called Claude.
+- CI has no key at all, so CI was green and could never have shown this.
+  Reproduced here by running the suite with a dummy key set.
+
+Two fixes:
+- **The test:** clear the settings cache straight after blanking the key.
+- **A safety net for every test** (`tests/conftest.py`, `_no_real_anthropic_calls`): the real
+  SDK methods (`create`, `stream`, `count_tokens`, `parse`, sync and async) are patched to raise
+  during tests. Tests already use fake clients, so nothing else changed; a future slip now fails
+  loudly instead of quietly spending money. A new test proves the net is in place.
+
+Full suite 638 passed, also with a dummy `ANTHROPIC_API_KEY` set for the whole run (the
+laptop-with-a-key case) and with strict msgpack; ruff and mypy clean.
