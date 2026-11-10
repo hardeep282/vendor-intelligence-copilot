@@ -1,7 +1,7 @@
 ---
 doc_type: methodology
 vendor: null
-version: 4
+version: 5
 data_class: public
 allowed_roles: [anonymous, viewer, analyst, approver, admin]
 ---
@@ -155,7 +155,10 @@ The snapshot comes from two different source sheets, so it is checked rather tha
 agree. On every test run with the snapshot present, `tests/test_snapshot_reconciliation.py`
 confirms that the seven vendor tables agree on every vendor's revenue, k flag and blended margin,
 and pins the known differences with the monthly demand table: which vendor names differ, the
-$442,768.33 revenue gap and how it splits, and the two meanings of the k flag. If a rebuilt
+$442,768.33 revenue gap and how it splits, and the two meanings of the k flag. The monthly table
+uses the same merged vendor names as the vendor tables (`vw_VendorSalesBase`'s two merges are
+applied when the snapshot is built), so the remaining differences come from the source data,
+not from spelling. If a rebuilt
 snapshot changes any of these, the test fails, so the change is seen and these documents are
 updated instead of the difference going unnoticed.
 

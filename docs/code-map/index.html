@@ -382,7 +382,7 @@ main { flex: 1; min-width: 0; overflow-y: auto; display: flex; flex-direction: c
       <div class="pane-scroll"><div class="pane" id="pane"></div></div>
       <div class="pane-foot">
         Generated from <code>docs/CODE_MAP.md</code> by <code>scripts/build_code_map_page.py</code>
-        (87 entries, built 2026-11-10). The markdown is the source of truth; whenever a file is added or changes
+        (88 entries, built 2026-11-10). The markdown is the source of truth; whenever a file is added or changes
         job, its entry there changes in the same commit and this page is regenerated.
       </div>
     </main>
@@ -487,6 +487,27 @@ const FILES = [
   "gives": "raises <code>LicenceViolation<\/code> if a table looks like row-level/SKU-level data."
  },
  {
+  "id": "src-copilot-data-vendor-names-py",
+  "group": "Data layer",
+  "day": 10,
+  "path": "src/copilot/data/vendor_names.py",
+  "headline": "Added 10 Nov 2026 (RAID R14).",
+  "does": "The analytics project's <code>vw_VendorSalesBase<\/code> gives each vendor number one name: SOUTHERN GLAZERS W&amp;S OF NE is merged into SOUTHERN WINE &amp; SPIRITS NE (vendor 2000), and VINEYARD BRANDS LLC into VINEYARD BRANDS INC (vendor 1587). The raw monthly-demand sheet has no vendor numbers, so this maps those two names, so the monthly table uses the same names as every vendor table.",
+  "talksTo": [
+   {
+    "id": "scripts-build-snapshot-py",
+    "label": "scripts/build_snapshot.py"
+   },
+   {
+    "label": "tests/test_snapshot_reconciliation.py"
+   }
+  ],
+  "sym": "VENDOR_NAME_ALIASES",
+  "takes": "nothing; a constant copied from the view's SQL.",
+  "gives": "a name-to-name mapping.",
+  "isNew": true
+ },
+ {
   "id": "src-copilot-data-units-py",
   "group": "Data layer",
   "day": 10,
@@ -531,6 +552,10 @@ const FILES = [
    {
     "id": "src-copilot-data-store-py",
     "label": "store.py"
+   },
+   {
+    "id": "src-copilot-data-vendor-names-py",
+    "label": "vendor_names.py"
    }
   ],
   "takes": "path to <code>Vendor_Summary.xlsx<\/code> (local only, never committed).",
@@ -2095,7 +2120,7 @@ const FILES = [
   "day": null,
   "path": "Tests",
   "headline": "One test file per module above, named <code>test_&lt;module&gt;.py<\/code> — not documented individually here since they mirror the module list exactly.",
-  "does": "<code>tests/fakes/anthropic_fakes.py<\/code> is a fake Anthropic SDK used so <code>test_llm_client.py<\/code> and others can test retry/repair/caching logic without a real API key. <code>tests/conftest.py<\/code> (Day 7 step 6) is an autouse fixture that points every test's default <code>InputGate<\/code> spend tracking at a throwaway <code>tmp_path<\/code> file instead of the real repo path -- without it, every orchestrator test that builds a plain <code>Orchestrator(...)<\/code> with no explicit <code>input_gate<\/code> would share one on-disk running total across the whole test session. A second autouse fixture (10 Nov 2026) does the same for the Guardian's audit log, so tests never write to the real <code>data/audit/guardian_log.jsonl<\/code>. <code>tests/test_snapshot_reconciliation.py<\/code> (10 Nov 2026) is another cross-cutting file: 22 checks on the real snapshot (skipped without it) that the seven vendor tables agree with each other, and that the monthly table's known differences from them (RAID R6 and R14: vendor names, the $442,768.33 revenue gap and its split, the per-vendor-month k flag) haven't changed. <code>tests/test_privacy_leakage_suite.py<\/code> (Day 7 step 8) is the one exception to \"mirrors the module list\" -- it's a cross-cutting suite, not a per-module test file: 23 named cases (15 role- escalation/poisoned-contract/cross-vendor-draft/prompt-extraction/etc. cases through <code>Guardian<\/code>/ <code>InputGate<\/code>, + 8 SQL red-team cases from <code>docs/specs/text_to_sql_safety.md<\/code> through the validator), each asserting the real outcome a leak attempt gets today, run as ordinary pytest (no separate eval harness) so a regression here fails CI the same way any other test would.",
+  "does": "<code>tests/fakes/anthropic_fakes.py<\/code> is a fake Anthropic SDK used so <code>test_llm_client.py<\/code> and others can test retry/repair/caching logic without a real API key. <code>tests/conftest.py<\/code> (Day 7 step 6) is an autouse fixture that points every test's default <code>InputGate<\/code> spend tracking at a throwaway <code>tmp_path<\/code> file instead of the real repo path -- without it, every orchestrator test that builds a plain <code>Orchestrator(...)<\/code> with no explicit <code>input_gate<\/code> would share one on-disk running total across the whole test session. A second autouse fixture (10 Nov 2026) does the same for the Guardian's audit log, so tests never write to the real <code>data/audit/guardian_log.jsonl<\/code>. <code>tests/test_snapshot_reconciliation.py<\/code> (10 Nov 2026) is another cross-cutting file: 22 checks on the real snapshot (skipped without it), 23 since the name merge: the seven vendor tables agree with each other, the merged spellings never reappear, and the monthly table's known differences from them (RAID R6: three tiny vendors, the $442,768.33 revenue gap and its split, the per-vendor-month k flag) haven't changed. <code>tests/test_privacy_leakage_suite.py<\/code> (Day 7 step 8) is the one exception to \"mirrors the module list\" -- it's a cross-cutting suite, not a per-module test file: 23 named cases (15 role- escalation/poisoned-contract/cross-vendor-draft/prompt-extraction/etc. cases through <code>Guardian<\/code>/ <code>InputGate<\/code>, + 8 SQL red-team cases from <code>docs/specs/text_to_sql_safety.md<\/code> through the validator), each asserting the real outcome a leak attempt gets today, run as ordinary pytest (no separate eval harness) so a regression here fails CI the same way any other test would.",
   "talksTo": []
  }
 ];

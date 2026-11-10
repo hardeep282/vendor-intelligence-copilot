@@ -2978,3 +2978,37 @@ documents changed.
 
 Full suite 636 passed with the snapshot (also with strict msgpack); 582 passed and 54 skipped
 without it, as in CI. ruff and mypy clean.
+
+## 2026-11-10 (later) · The monthly table now uses the merged vendor names (RAID R14 closed)
+
+The name mapping was already public: `dbo.vw_VendorSalesBase` is defined in `SQL Analysis/
+Vendor_analysis.sql` in the analytics project's GitHub repo. It merges exactly two vendor numbers
+that appear under two names each, keeping the name with the most SKU rows:
+- 2000: SOUTHERN GLAZERS W&S OF NE becomes SOUTHERN WINE & SPIRITS NE;
+- 1587: VINEYARD BRANDS LLC becomes VINEYARD BRANDS INC.
+
+The other three names that exist only in the monthly sheet (BERNIKO LLC, EXCLUSIVE WINES &
+SPIRITS, WHYTE & MACKAY, one row each, $104.95 together) are not spellings: those vendors simply
+aren't in the vendor views. So they stay, documented and pinned.
+
+- The monthly sheet has no VendorNumber column, so the merge is by name:
+  `copilot.data.vendor_names.VENDOR_NAME_ALIASES`, applied in `build_snapshot.py` before
+  aggregating.
+- Before changing anything, the snapshot was rebuilt from the repo's copy of
+  `Vendor_Summary.xlsx` with the old code: all 11 tables matched the local MANIFEST's sha256
+  exactly, so it is the same workbook.
+- After the change, only `vendor_monthly_demand` differs: 129 to 127 names, 1,400 to 1,394 rows,
+  hidden-from-viewer rows 428 to 424. Every other table is byte-identical. The revenue gap is
+  unchanged at $442,768.33 (merging moves revenue between names, not in or out); its split is now
+  $104.95 from the three tiny vendors and $442,663.38 from 66 vendors whose totals differ
+  upstream (R6, still open).
+- The one golden question that reads the monthly table (gq-024, Diageo's demand) gives the same
+  rows; no SQL training pair names either merged vendor.
+- Data dictionary v4, methodology v5, RAID R6 updated and R14 closed, a new reconciliation test
+  (the old spellings never reappear), and a CODE_MAP entry.
+
+**Needs doing on the laptop:** `git pull`, then rebuild the snapshot and the search index (see
+COMMANDS: `build_snapshot.py`, then `build_rag_index.py`). Until the snapshot is rebuilt, the
+reconciliation tests fail locally, because they expect the merged names. That's them working.
+
+Full suite 637 passed with the snapshot (also with strict msgpack); ruff and mypy clean.

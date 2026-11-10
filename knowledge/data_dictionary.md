@@ -1,7 +1,7 @@
 ---
 doc_type: data_dictionary
 vendor: null
-version: 3
+version: 4
 data_class: public
 allowed_roles: [anonymous, viewer, analyst, approver, admin]
 ---
@@ -85,30 +85,34 @@ every vendor), so either table gives the same freight total.
 
 ## Demand tables
 
-### vendor_monthly_demand (1,400 rows: vendor x month)
+### vendor_monthly_demand (1,394 rows: vendor x month)
 
 Monthly demand aggregated to the vendor level. Covers 12 months (2024 only — see Methodology:
 Data coverage). Do not mix this table's revenue total with vendor_revenue_summary's total in the
 same answer without noting the ~0.1% gap between the two source tables (RAID item R6).
 
 It is built straight from the `output_monthly_demand` source sheet, not from the Gold vendor
-views, so it differs from the vendor tables in three ways (measured 10 Nov 2026):
+views. That sheet has vendor names but no vendor numbers, so `build_snapshot.py` maps two names
+to the same merged names the Gold views use (`VENDOR_NAME_ALIASES`, copied from
+`vw_VendorSalesBase`: SOUTHERN GLAZERS W&S OF NE becomes SOUTHERN WINE & SPIRITS NE, vendor
+number 2000; VINEYARD BRANDS LLC becomes VINEYARD BRANDS INC, vendor number 1587). Added 10 Nov
+2026. It still differs from the vendor tables in three ways:
 
-- **Vendor names.** 129 names, against 126 in the vendor tables. Five names appear only here,
-  together $44,869.03 of revenue: BERNIKO LLC, EXCLUSIVE WINES & SPIRITS, SOUTHERN GLAZERS W&S
-  OF NE, VINEYARD BRANDS LLC and WHYTE & MACKAY. Some may be other spellings of vendors in the
-  vendor tables (the Gold views merge spellings through `vw_VendorSalesBase`; this sheet doesn't),
-  but that is unconfirmed. Two vendors in the vendor tables have no monthly rows: AAPER ALCOHOL &
-  CHEMICAL CO and LAUREATE IMPORTS CO, both with $0 revenue, so that is expected. A join between
-  this table and a vendor table on VendorName silently drops the five extra names.
+- **Vendor names.** 127 names, against 126 in the vendor tables. Three tiny vendors appear only
+  here, with $104.95 of revenue between them: BERNIKO LLC, EXCLUSIVE WINES & SPIRITS and WHYTE &
+  MACKAY (one row each). They are not other spellings; they are simply absent from the vendor
+  views. Two vendors in the vendor tables have no monthly rows: AAPER ALCOHOL & CHEMICAL CO and
+  LAUREATE IMPORTS CO, both with $0 revenue, so that is expected. A join between this table and
+  a vendor table on VendorName drops those three.
 - **Revenue.** Its total is $452,062,952.02, against $451,620,183.69 in the vendor tables: a
-  $442,768.33 gap. $44,869.03 of it comes from the five extra names; the other $397,899.30 comes
+  $442,768.33 gap. $104.95 of it comes from the three extra vendors; the other $442,663.38 comes
   from 66 vendors whose monthly sum differs from their vendor-table total (largest: EDRINGTON
-  AMERICAS +$108,245.66, MARTIGNETTI COMPANIES +$87,188.48).
+  AMERICAS +$108,245.66, MARTIGNETTI COMPANIES +$87,188.48). The cause is upstream, in the
+  analytics project's two source tables (RAID R6).
 - **MeetsMinK is decided per vendor-month**, not per vendor: True when ActiveSKUs (products sold
   that month) >= 5. So 124 rows belong to vendors a viewer can see in every vendor table, yet
   those months are hidden from the viewer, and a viewer's monthly trend for such a vendor has
-  gaps. 428 of the 1,400 rows are hidden from viewers in total.
+  gaps. 424 of the 1,394 rows are hidden from viewers in total.
 
 ### portfolio_monthly_demand (12 rows: one per month)
 

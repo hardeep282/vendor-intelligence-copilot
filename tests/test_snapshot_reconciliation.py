@@ -6,9 +6,10 @@ vendor tables must agree with each other exactly. The monthly table is known not
 them exactly (RAID R6 and R14), and those known differences are pinned here so that any change
 fails a test and gets written down, instead of drifting silently.
 
-Every number below is documented in knowledge/data_dictionary.md (v3) and knowledge/methodology.md
-(v4). If a rebuilt snapshot legitimately changes one (for example once vendor spellings are merged
-in build_snapshot.py), update those documents, RAID R6/R14 and the pinned value together.
+Every number below is documented in knowledge/data_dictionary.md (v4) and knowledge/methodology.md
+(v5). If a rebuilt snapshot legitimately changes one, update those documents, RAID R6 and the
+pinned value together. (The vendor-spelling merge from vw_VendorSalesBase was applied on 10 Nov
+2026, RAID R14: it took the monthly table from 129 to 127 names and 1,400 to 1,394 rows.)
 
 Needs the local snapshot (`scripts/build_snapshot.py`), so it is skipped where there is none, such
 as in CI.
@@ -22,6 +23,7 @@ import duckdb
 import pytest
 
 from copilot.data import store
+from copilot.data.vendor_names import VENDOR_NAME_ALIASES
 from copilot.settings import get_settings
 
 pytestmark = pytest.mark.skipif(
@@ -40,14 +42,9 @@ OTHER_VENDOR_TABLES = (
 )
 BLENDED_MARGIN_TABLES = ("vendor_tiering", "vendor_pareto", "vendor_rankings")
 
-# Known differences with the monthly table (RAID R14), measured 10 Nov 2026.
-NAMES_ONLY_IN_MONTHLY = {
-    "BERNIKO LLC",
-    "EXCLUSIVE WINES & SPIRITS",
-    "SOUTHERN GLAZERS W&S OF NE",
-    "VINEYARD BRANDS LLC",
-    "WHYTE & MACKAY",
-}
+# Known differences with the monthly table, measured 10 Nov 2026 after the name merge (RAID R14):
+# three tiny vendors absent from the vendor views, one row each, $104.95 between them.
+NAMES_ONLY_IN_MONTHLY = {"BERNIKO LLC", "EXCLUSIVE WINES & SPIRITS", "WHYTE & MACKAY"}
 NAMES_ONLY_IN_VENDOR_TABLES = {"AAPER ALCOHOL & CHEMICAL CO", "LAUREATE IMPORTS CO"}
 
 
@@ -114,9 +111,16 @@ def test_health_mix_vendors_are_all_known_vendors(con) -> None:
 
 def test_monthly_vendor_names_differ_in_known_ways_only(con) -> None:
     monthly, vendors = _names(con, "vendor_monthly_demand"), _names(con, REFERENCE)
-    assert len(monthly) == 129
+    assert len(monthly) == 127
     assert monthly - vendors == NAMES_ONLY_IN_MONTHLY
     assert vendors - monthly == NAMES_ONLY_IN_VENDOR_TABLES
+
+
+def test_merged_vendor_spellings_never_reappear(con) -> None:
+    """vw_VendorSalesBase's two merges are applied to the monthly sheet at build time."""
+    monthly = _names(con, "vendor_monthly_demand")
+    assert not set(VENDOR_NAME_ALIASES) & monthly  # the old spellings are gone
+    assert set(VENDOR_NAME_ALIASES.values()) <= _names(con, REFERENCE)  # merged into real vendors
 
 
 def test_vendors_missing_from_monthly_have_no_revenue(con) -> None:
@@ -127,7 +131,7 @@ def test_vendors_missing_from_monthly_have_no_revenue(con) -> None:
 
 
 def test_revenue_gap_between_the_two_sources_is_pinned(con) -> None:
-    """RAID R6: $442,768.33, split $44,869.03 (names only in the monthly sheet) + $397,899.30
+    """RAID R6: $442,768.33, split $104.95 (vendors only in the monthly sheet) + $442,663.38
     (66 vendors whose monthly sum differs from their vendor-table total)."""
     vendor_total = _one(con, f"SELECT sum(TotalRevenue) FROM {REFERENCE}")  # noqa: S608
     monthly_total = _one(con, "SELECT sum(MonthlyRevenue) FROM vendor_monthly_demand")
@@ -147,8 +151,8 @@ def test_revenue_gap_between_the_two_sources_is_pinned(con) -> None:
     ).fetchone()
     assert split is not None
     only_monthly, matched_diff, vendors_differing = split
-    assert only_monthly == pytest.approx(44_869.03, abs=0.01)
-    assert matched_diff == pytest.approx(397_899.30, abs=0.01)
+    assert only_monthly == pytest.approx(104.95, abs=0.01)
+    assert matched_diff == pytest.approx(442_663.38, abs=0.01)
     assert vendors_differing == 66
 
 
@@ -176,7 +180,7 @@ def test_monthly_k_flag_is_decided_per_vendor_month(con) -> None:
         f"SELECT count(*) FROM vendor_monthly_demand WHERE MeetsMinK <> (ActiveSKUs >= {k})",  # noqa: S608
     )
     assert wrong == 0
-    assert _one(con, "SELECT count(*) FROM vendor_monthly_demand WHERE NOT MeetsMinK") == 428
+    assert _one(con, "SELECT count(*) FROM vendor_monthly_demand WHERE NOT MeetsMinK") == 424
     hidden_months_of_visible_vendors = _one(
         con,
         f"SELECT count(*) FROM vendor_monthly_demand m JOIN {REFERENCE} r "  # noqa: S608

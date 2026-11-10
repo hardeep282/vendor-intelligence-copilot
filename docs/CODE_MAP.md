@@ -64,6 +64,18 @@ Makes "no raw licensed row-level data leaves the machine" a tested rule instead 
 **Talks to:** `scripts/build_snapshot.py` calls this before writing any Parquet table.
 
 
+### `src/copilot/data/vendor_names.py` -- `VENDOR_NAME_ALIASES` *(day: 10, isNew: true)*
+Added 10 Nov 2026 (RAID R14). The analytics project's `vw_VendorSalesBase` gives each vendor
+number one name: SOUTHERN GLAZERS W&S OF NE is merged into SOUTHERN WINE & SPIRITS NE (vendor
+2000), and VINEYARD BRANDS LLC into VINEYARD BRANDS INC (vendor 1587). The raw monthly-demand sheet
+has no vendor numbers, so this maps those two names, so the monthly table uses the same names as
+every vendor table.
+**Takes in:** nothing; a constant copied from the view's SQL.
+**Gives out:** a name-to-name mapping.
+**Talks to:** `scripts/build_snapshot.py` applies it; `tests/test_snapshot_reconciliation.py`
+checks the old spellings never reappear.
+
+
 ### `src/copilot/data/units.py` -- `describe_units()` *(day: 10, isNew: true)*
 Added 30 Oct 2026, after the sprint. What each snapshot column measures: "US dollars", "units
 sold, not dollars", "percent of that vendor's total revenue", and so on. Every percentage label
@@ -92,7 +104,9 @@ Turns the vendor project's Excel workbook into the aggregate-only Parquet tables
 to query. SKU-level sheets are only ever aggregated, never copied as-is.
 **Takes in:** path to `Vendor_Summary.xlsx` (local only, never committed).
 **Gives out:** `data/snapshot/<table>.parquet` + `MANIFEST.json`.
-**Talks to:** `guard.py` (enforces the aggregate-only rule), `store.py` (reads what this builds).
+**Talks to:** `guard.py` (enforces the aggregate-only rule), `store.py` (reads what this builds),
+`vendor_names.py` (since 10 Nov 2026, merges two vendor spellings in the monthly sheet so it uses
+the same names as the vendor views).
 
 ### `scripts/verify_vendor_data.py` *(day: 1)*
 Prints the exact grounding data `InsightService` hands the model for one vendor, with no LLM call —
@@ -1363,9 +1377,10 @@ without it, every orchestrator test that builds a plain `Orchestrator(...)` with
 autouse fixture (10 Nov 2026) does the same for the Guardian's audit log, so tests never write
 to the real `data/audit/guardian_log.jsonl`.
 `tests/test_snapshot_reconciliation.py` (10 Nov 2026) is another cross-cutting file: 22 checks
-on the real snapshot (skipped without it) that the seven vendor tables agree with each other, and
-that the monthly table's known differences from them (RAID R6 and R14: vendor names, the
-$442,768.33 revenue gap and its split, the per-vendor-month k flag) haven't changed.
+on the real snapshot (skipped without it), 23 since the name merge: the seven vendor tables agree
+with each other, the merged spellings never reappear, and the monthly table's known differences
+from them (RAID R6: three tiny vendors, the $442,768.33 revenue gap and its split, the
+per-vendor-month k flag) haven't changed.
 `tests/test_privacy_leakage_suite.py` (Day 7 step 8) is the one exception to "mirrors the module
 list" -- it's a cross-cutting suite, not a per-module test file: 23 named cases (15 role-
 escalation/poisoned-contract/cross-vendor-draft/prompt-extraction/etc. cases through `Guardian`/

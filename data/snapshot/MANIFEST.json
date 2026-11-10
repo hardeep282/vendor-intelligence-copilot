@@ -149,7 +149,7 @@
       "sha256": "c91f4bf63667cb1f5eb1e0f87e35f129659780fe6a247a54cb782a81a2f5d226"
     },
     "vendor_monthly_demand": {
-      "rows": 1400,
+      "rows": 1394,
       "columns": [
         "VendorName",
         "SalesYear",
@@ -159,7 +159,7 @@
         "ActiveSKUs",
         "MeetsMinK"
       ],
-      "sha256": "47a38c6f44285d4b75facd4ce0ea5a3f37be138708e0949561e130e3e5793a5b"
+      "sha256": "b70b64da2a2b433c7522b3ee98dd097571ce399b8fa5a7fd63a2171684f2d823"
     },
     "portfolio_monthly_demand": {
       "rows": 12,

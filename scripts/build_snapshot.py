@@ -18,6 +18,7 @@ import pandas as pd
 
 from copilot.cli import use_utf8_output
 from copilot.data.guard import check_table
+from copilot.data.vendor_names import VENDOR_NAME_ALIASES
 from copilot.settings import get_settings
 
 # Vendor-level views: already one row per vendor (126 rows), safe to copy as they are.
@@ -58,6 +59,8 @@ def build(workbook: Path, out_dir: Path, k: int) -> dict[str, object]:
 
     # SKU-level demand -> vendor x month and portfolio x month aggregates only.
     demand = xls.parse(sheets["output_monthly_demand"])
+    # Same merged vendor names as the vendor views above (copilot.data.vendor_names, RAID R14).
+    demand["VendorName"] = demand["VendorName"].replace(VENDOR_NAME_ALIASES)
     demand["SkuKey"] = demand["Brand"].astype(str) + "|" + demand["Description"].astype(str)
     demand["SkuKey"] += "|" + demand["Size"].astype(str)
     g = demand.groupby(["VendorName", "SalesYear", "SalesMonth"], as_index=False)
