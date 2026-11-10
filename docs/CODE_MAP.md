@@ -1349,14 +1349,14 @@ write a file (spend records, the audit log, checkpoints, logins) goes to a tempo
 `tests/test_learning_scripts.py` runs every script, so a refactor can't quietly break one.
 
 ### `scripts/learn/session1_data_and_sql.py` *(day: 11)*
-Session 1, seven steps: the locked database, attacks it refuses, schema cards per role, worked
+Learning script for session 1, data and SQL. Seven steps: the locked database, attacks it refuses, schema cards per role, worked
 examples, the validator on attacks, a good query, and the k = 5 rule.
 **Needs:** the local snapshot.
 **Talks to:** `copilot.data.store`, `copilot.sql.schema`, `copilot.sql.examples`,
 `copilot.sql.validator`.
 
 ### `scripts/learn/session2_ml_tools.py` *(day: 11, isNew: true)*
-Session 2: the 12-month history, the naive backtest worked by hand (WAPE 0.1153, matching the
+Learning script for session 2, the ML tools. Eight steps: the 12-month history, the naive backtest worked by hand (WAPE 0.1153, matching the
 tool), ETS vs naive, one vendor, safety stock / reorder point / EOQ at three service levels, the
 flat-forecast trap, the leaking risk-model features (synthetic SKUs, real-run numbers printed
 alongside), and the Model Selection Agent's catalogue (printed, not called).
@@ -1365,7 +1365,7 @@ alongside), and the Model Selection Agent's catalogue (printed, not called).
 `copilot.ml.risk_classifier`, `copilot.agents.model_selection`.
 
 ### `scripts/learn/session3_rag.py` *(day: 11, isNew: true)*
-Session 3: load and policy-check the 14 documents, chunk them (132 chunks), BM25 search, RRF by
+Learning script for session 3, RAG. Eight steps: load and policy-check the 14 documents, chunk them (132 chunks), BM25 search, RRF by
 hand, chunks visible per role, and -- if `data/chroma/` exists -- real hybrid search per role and
 a count of stale chunks from older document versions (RAID R15). Then the corrective loop's
 settings. `LEARN_SKIP_EMBEDDINGS=1` skips the two index steps (the test does).
@@ -1374,7 +1374,7 @@ settings. `LEARN_SKIP_EMBEDDINGS=1` skips the two index steps (the test does).
 `copilot.rag.permissions`, `copilot.rag.store`, `copilot.llm.prompts`.
 
 ### `scripts/learn/session4_llm_layer.py` *(day: 11, isNew: true)*
-Session 4: the prompt files and versions, the exact request one structured call sends, cost per
+Learning script for session 4, the LLM layer. Eight steps: the prompt files and versions, the exact request one structured call sends, cost per
 model, which errors are retried, the repair loop, the empty-box schema bug shown with the SDK's
 real `transform_schema`, and recorded token/effort/QLoRA results.
 **Needs:** nothing (no snapshot, no key).
@@ -1382,7 +1382,7 @@ real `transform_schema`, and recorded token/effort/QLoRA results.
 `tests/fakes/anthropic_fakes.py`.
 
 ### `scripts/learn/session5_agents.py` *(day: 11, isNew: true)*
-Session 5: the specialist roster, the compiled graph's edges, the inventory rule over the
+Learning script for session 5, the agents. Eight steps: the specialist roster, the compiled graph's edges, the inventory rule over the
 planner, then one real orchestrator run with scripted planner/writer/verifier replies (the first
 draft is scripted to fail, so the redraft loop shows) and the two real plain-code specialists.
 **Needs:** the local snapshot.
@@ -1390,7 +1390,7 @@ draft is scripted to fail, so the redraft loop shows) and the two real plain-cod
 `copilot.guardrails.input_gate`, `copilot.guardrails.audit_log`.
 
 ### `scripts/learn/session6_guardrails.py` *(day: 11, isNew: true)*
-Session 6: the input gate on five questions, the spend cap, the Guardian on eight cases, worst
+Learning script for session 6, the guardrails. Eight steps: the input gate on five questions, the spend cap, the Guardian on eight cases, worst
 outcome wins, PII detection (and the business figures it must leave alone), a real approval
 pause and resume, the audit log, and trace masking.
 **Needs:** nothing (no snapshot, no key).
@@ -1398,7 +1398,7 @@ pause and resume, the audit log, and trace masking.
 `copilot.guardrails.pii`, `copilot.guardrails.trace_masking`, `copilot.agents.orchestrator`.
 
 ### `scripts/learn/session7_product_and_quality.py` *(day: 11, isNew: true)*
-Session 7: the real FastAPI app in-process (TestClient): routes, health, a 401, invite to key, the
+Learning script for session 7, product and quality. Eight steps: the real FastAPI app in-process (TestClient): routes, health, a 401, invite to key, the
 streamed answer, a 429; then the CI jobs and the eval gate's pass marks, read from their files.
 **Needs:** the local snapshot.
 **Talks to:** `copilot.api.main`, `copilot.api.dependencies`, `copilot.api.auth`,

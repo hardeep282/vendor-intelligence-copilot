@@ -1,72 +1,46 @@
 <meta name="claude:viewport-fit-sides" content="cover">
 <title>Vendor Copilot Code Map</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600&family=IBM+Plex+Sans:wght@400;500;600&display=swap">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,600;12..96,800&family=Figtree:wght@400;500;600&family=JetBrains+Mono:wght@400;500;600&display=swap">
 <style>
 /* Layout concept: a file explorer -- a flat, filterable list of every file in the left rail
    (grouped by layer, but each FILE is the selectable unit, not the layer), and a single-file
    detail pane on the right, the way a code-intelligence panel shows "find references" for
    whatever's selected. Built to be re-generated from docs/CODE_MAP.md every day the repo grows. */
-:root {
-  --bg: #0b0e13;
-  --panel: #11151c;
-  --panel-raised: #161b24;
-  --border: #232a36;
-  --fg: #d9dee6;
-  --fg-dim: #8691a3;
-  --fg-faint: #5b6577;
-  --accent: #5ee6b0;
-  --accent-dim: #1c2b25;
-  --accent-border: #2f5a49;
-  --warn: #e6b65e;
-  --warn-dim: #332a17;
-  --code-bg: #0e1218;
+:root, :root[data-theme="light"], :root[data-theme="dark"] {
+  /* Always black, one colour per layer (set per group as --k by the script below). */
+  --bg: #040507;
+  --panel: #0d0f15;
+  --panel-raised: #141824;
+  --border: #252b3a;
+  --fg: #eef1f7;
+  --fg-dim: #9ca5b8;
+  --fg-faint: #5f6779;
+  --code-bg: #0a0c11;
+  --cyan: #3fd0e0; --blue: #6b95ff; --violet: #a78bfa; --pink: #f472b6;
+  --amber: #fbbf24; --green: #34d399; --red: #f87171; --orange: #fb923c;
+  --k: var(--cyan);
+  --accent: var(--k);
+  --accent-dim: color-mix(in srgb, var(--k) 15%, var(--panel));
+  --accent-border: color-mix(in srgb, var(--k) 55%, var(--border));
+  --warn: var(--amber);
+  --warn-dim: color-mix(in srgb, var(--amber) 15%, var(--panel));
+  --display: "Bricolage Grotesque", "Segoe UI", system-ui, sans-serif;
+  --body: "Figtree", "Segoe UI", system-ui, sans-serif;
+  --mono: "JetBrains Mono", ui-monospace, Consolas, monospace;
   color-scheme: dark;
-}
-@media (prefers-color-scheme: light) {
-  :root:not([data-theme="dark"]) {
-    --bg: #f6f4ee;
-    --panel: #fdfcf9;
-    --panel-raised: #ffffff;
-    --border: #e4e0d4;
-    --fg: #23211c;
-    --fg-dim: #6b6a60;
-    --fg-faint: #9a9890;
-    --accent: #2f7a53;
-    --accent-dim: #eae4d2;
-    --accent-border: #d9cfae;
-    --warn: #8a5a12;
-    --warn-dim: #f2e4c6;
-    --code-bg: #f0ede3;
-    color-scheme: light;
-  }
-}
-:root[data-theme="light"] {
-  --bg: #f6f4ee;
-  --panel: #fdfcf9;
-  --panel-raised: #ffffff;
-  --border: #e4e0d4;
-  --fg: #23211c;
-  --fg-dim: #6b6a60;
-  --fg-faint: #9a9890;
-  --accent: #2f7a53;
-  --accent-dim: #eae4d2;
-  --accent-border: #d9cfae;
-  --warn: #8a5a12;
-  --warn-dim: #f2e4c6;
-  --code-bg: #f0ede3;
-  color-scheme: light;
 }
 
 * { box-sizing: border-box; }
 html, body { background: var(--bg); color: var(--fg); margin: 0; }
 body {
-  font-family: "IBM Plex Sans", system-ui, sans-serif;
+  font-family: var(--body);
   font-size: 14.5px;
   line-height: 1.55;
   -webkit-font-smoothing: antialiased;
 }
-code, .mono, .path { font-family: "IBM Plex Mono", "SFMono-Regular", Consolas, monospace; }
+code, .mono, .path { font-family: var(--mono); }
 a { color: var(--accent); }
 
 button {
@@ -103,7 +77,7 @@ button:focus-visible, input:focus-visible, [tabindex]:focus-visible {
   background: var(--panel);
 }
 .topbar .brand {
-  font-family: "IBM Plex Mono", monospace;
+  font-family: var(--mono);
   font-weight: 600;
   font-size: 15px;
   letter-spacing: 0.01em;
@@ -111,7 +85,7 @@ button:focus-visible, input:focus-visible, [tabindex]:focus-visible {
 .topbar .tagline { color: var(--fg-dim); font-size: 13px; }
 .topbar .spacer { flex: 1 1 auto; }
 .count-pill {
-  font-family: "IBM Plex Mono", monospace;
+  font-family: var(--mono);
   font-size: 12px;
   color: var(--fg-dim);
   background: var(--panel-raised);
@@ -131,7 +105,7 @@ button:focus-visible, input:focus-visible, [tabindex]:focus-visible {
 }
 .searchbar input {
   width: 100%;
-  font-family: "IBM Plex Mono", monospace;
+  font-family: var(--mono);
   font-size: 13.5px;
   background: var(--code-bg);
   border: 1px solid var(--border);
@@ -150,7 +124,7 @@ button:focus-visible, input:focus-visible, [tabindex]:focus-visible {
   background: var(--panel);
 }
 .day-pill {
-  font-family: "IBM Plex Mono", monospace;
+  font-family: var(--mono);
   font-size: 12px;
   color: var(--fg-dim);
   background: var(--panel-raised);
@@ -191,7 +165,7 @@ button:focus-visible, input:focus-visible, [tabindex]:focus-visible {
 }
 .rail-group .arrow { font-size: 9px; transition: transform 0.12s; }
 .rail-group[aria-expanded="false"] .arrow { transform: rotate(-90deg); }
-.rail-group .gcount { margin-left: auto; font-family: "IBM Plex Mono", monospace; }
+.rail-group .gcount { margin-left: auto; font-family: var(--mono); }
 .rail-files { display: block; }
 .rail-files[hidden] { display: none; }
 
@@ -206,11 +180,11 @@ button:focus-visible, input:focus-visible, [tabindex]:focus-visible {
   color: var(--fg-dim);
   font-size: 13px;
   border-radius: 6px;
-  font-family: "IBM Plex Mono", monospace;
+  font-family: var(--mono);
 }
 .rail button.file .sub {
   display: block;
-  font-family: "IBM Plex Sans", sans-serif;
+  font-family: var(--body);
   font-size: 10.5px;
   color: var(--fg-faint);
   margin-top: 2px;
@@ -249,7 +223,7 @@ button:focus-visible, input:focus-visible, [tabindex]:focus-visible {
   white-space: nowrap;
   padding: 7px 12px;
   font-size: 12.5px;
-  font-family: "IBM Plex Mono", monospace;
+  font-family: var(--mono);
   color: var(--fg-dim);
 }
 .rail-mobile button[aria-current="true"] {
@@ -264,7 +238,7 @@ main { flex: 1; min-width: 0; overflow-y: auto; display: flex; flex-direction: c
 .pane { max-width: 680px; margin: 0 auto; }
 
 .pane .crumb {
-  font-family: "IBM Plex Mono", monospace;
+  font-family: var(--mono);
   font-size: 13px;
   color: var(--accent);
   margin-bottom: 10px;
@@ -282,7 +256,7 @@ main { flex: 1; min-width: 0; overflow-y: auto; display: flex; flex-direction: c
   display: inline-flex;
   align-items: center;
   gap: 5px;
-  font-family: "IBM Plex Mono", monospace;
+  font-family: var(--mono);
   font-size: 10.5px;
   letter-spacing: 0.04em;
   text-transform: uppercase;
@@ -313,7 +287,7 @@ main { flex: 1; min-width: 0; overflow-y: auto; display: flex; flex-direction: c
 
 .chip-row { display: flex; flex-wrap: wrap; gap: 8px; }
 .chip {
-  font-family: "IBM Plex Mono", monospace;
+  font-family: var(--mono);
   font-size: 12.5px;
   padding: 5px 11px;
   border-radius: 7px;
@@ -358,11 +332,36 @@ main { flex: 1; min-width: 0; overflow-y: auto; display: flex; flex-direction: c
   .rail-mobile { display: flex; }
   .pane .headline { font-size: 19px; }
 }
+
+/* ---------- colour per layer (10 Nov 2026 restyle) ---------- */
+/* Re-derive the accent on every element, so each one uses its own --k (its layer's colour). */
+* { --accent: var(--k); --accent-dim: color-mix(in srgb, var(--k) 15%, var(--panel)); --accent-border: color-mix(in srgb, var(--k) 55%, var(--border)); }
+.rail button.file { overflow-wrap: anywhere; }
+.topbar .brand { font-family: var(--display); font-weight: 800; font-size: 18px; letter-spacing: 0.01em; color: var(--fg); }
+.topbar .brand .hl { color: var(--cyan); }
+.pane .headline { font-family: var(--display); font-weight: 800; font-size: 23px; }
+.rail-group { color: var(--k); font-weight: 600; border-left: 3px solid var(--k); border-radius: 0; margin-top: 6px; padding-left: 9px; }
+.rail-group .gcount { color: var(--fg-faint); }
+.rail button.file[aria-current="true"] { border-left: 3px solid var(--k); }
+.rail button.file .new-dot { background: var(--k); }
+.pane { border-top: 3px solid var(--k); padding-top: 18px; }
+.pane .crumb { color: var(--k); }
+.field .label { color: var(--k); font-family: var(--mono); font-weight: 600; }
+.field .value code { color: var(--k); }
+.chip.link { border-color: color-mix(in srgb, var(--k) 40%, var(--border)); color: var(--fg); }
+.chip.link:hover { border-color: var(--k); background: color-mix(in srgb, var(--k) 12%, var(--panel-raised)); }
+.day-pill:nth-child(8n+1) { --k: var(--cyan); } .day-pill:nth-child(8n+2) { --k: var(--blue); }
+.day-pill:nth-child(8n+3) { --k: var(--violet); } .day-pill:nth-child(8n+4) { --k: var(--pink); }
+.day-pill:nth-child(8n+5) { --k: var(--amber); } .day-pill:nth-child(8n+6) { --k: var(--green); }
+.day-pill:nth-child(8n+7) { --k: var(--red); } .day-pill:nth-child(8n+8) { --k: var(--orange); }
+.day-pill[aria-pressed="true"] { color: #05070a; background: var(--k); border-color: var(--k); font-weight: 600; }
+.count-pill { color: var(--cyan); border-color: color-mix(in srgb, var(--cyan) 45%, var(--border)); }
+.toast { border-color: var(--cyan); }
 </style>
 
 <div class="shell">
   <div class="topbar">
-    <div class="brand">VENDOR-INTELLIGENCE-COPILOT <span style="color:var(--fg-faint)">// CODE MAP</span></div>
+    <div class="brand">Vendor Intelligence Copilot <span class="hl">Code Map</span></div>
     <div class="tagline">what each file does, and why</div>
     <div class="spacer"></div>
     <span class="count-pill" id="count-pill">-- files</span>
@@ -2101,8 +2100,8 @@ const FILES = [
   "group": "Learning scripts",
   "day": 11,
   "path": "scripts/learn/session1_data_and_sql.py",
-  "headline": "Session 1, seven steps: the locked database, attacks it refuses, schema cards per role, worked examples, the validator on attacks, a good query, and the k = 5 rule.",
-  "does": "<strong>Needs:<\/strong> the local snapshot.",
+  "headline": "Learning script for session 1, data and SQL.",
+  "does": "Seven steps: the locked database, attacks it refuses, schema cards per role, worked examples, the validator on attacks, a good query, and the k = 5 rule. <strong>Needs:<\/strong> the local snapshot.",
   "talksTo": [
    {
     "id": "src-copilot-data-store-py",
@@ -2127,8 +2126,8 @@ const FILES = [
   "group": "Learning scripts",
   "day": 11,
   "path": "scripts/learn/session2_ml_tools.py",
-  "headline": "Session 2: the 12-month history, the naive backtest worked by hand (WAPE 0.1153, matching the tool), ETS vs naive, one vendor, safety stock / reorder …",
-  "does": "Session 2: the 12-month history, the naive backtest worked by hand (WAPE 0.1153, matching the tool), ETS vs naive, one vendor, safety stock / reorder point / EOQ at three service levels, the flat-forecast trap, the leaking risk-model features (synthetic SKUs, real-run numbers printed alongside), and the Model Selection Agent's catalogue (printed, not called). <strong>Needs:<\/strong> the local snapshot.",
+  "headline": "Learning script for session 2, the ML tools.",
+  "does": "Eight steps: the 12-month history, the naive backtest worked by hand (WAPE 0.1153, matching the tool), ETS vs naive, one vendor, safety stock / reorder point / EOQ at three service levels, the flat-forecast trap, the leaking risk-model features (synthetic SKUs, real-run numbers printed alongside), and the Model Selection Agent's catalogue (printed, not called). <strong>Needs:<\/strong> the local snapshot.",
   "talksTo": [
    {
     "id": "src-copilot-ml-forecast-py",
@@ -2158,8 +2157,8 @@ const FILES = [
   "group": "Learning scripts",
   "day": 11,
   "path": "scripts/learn/session3_rag.py",
-  "headline": "Session 3: load and policy-check the 14 documents, chunk them (132 chunks), BM25 search, RRF by hand, chunks visible per role, and -- if …",
-  "does": "Session 3: load and policy-check the 14 documents, chunk them (132 chunks), BM25 search, RRF by hand, chunks visible per role, and -- if <code>data/chroma/<\/code> exists -- real hybrid search per role and a count of stale chunks from older document versions (RAID R15). Then the corrective loop's settings. <code>LEARN_SKIP_EMBEDDINGS=1<\/code> skips the two index steps (the test does). <strong>Needs:<\/strong> nothing for steps 1-5 and 8; the local index and embedding model for steps 6-7.",
+  "headline": "Learning script for session 3, RAG.",
+  "does": "Eight steps: load and policy-check the 14 documents, chunk them (132 chunks), BM25 search, RRF by hand, chunks visible per role, and -- if <code>data/chroma/<\/code> exists -- real hybrid search per role and a count of stale chunks from older document versions (RAID R15). Then the corrective loop's settings. <code>LEARN_SKIP_EMBEDDINGS=1<\/code> skips the two index steps (the test does). <strong>Needs:<\/strong> nothing for steps 1-5 and 8; the local index and embedding model for steps 6-7.",
   "talksTo": [
    {
     "id": "src-copilot-rag-corpus-py",
@@ -2193,8 +2192,8 @@ const FILES = [
   "group": "Learning scripts",
   "day": 11,
   "path": "scripts/learn/session4_llm_layer.py",
-  "headline": "Session 4: the prompt files and versions, the exact request one structured call sends, cost per model, which errors are retried, the repair loop, the …",
-  "does": "Session 4: the prompt files and versions, the exact request one structured call sends, cost per model, which errors are retried, the repair loop, the empty-box schema bug shown with the SDK's real <code>transform_schema<\/code>, and recorded token/effort/QLoRA results. <strong>Needs:<\/strong> nothing (no snapshot, no key).",
+  "headline": "Learning script for session 4, the LLM layer.",
+  "does": "Eight steps: the prompt files and versions, the exact request one structured call sends, cost per model, which errors are retried, the repair loop, the empty-box schema bug shown with the SDK's real <code>transform_schema<\/code>, and recorded token/effort/QLoRA results. <strong>Needs:<\/strong> nothing (no snapshot, no key).",
   "talksTo": [
    {
     "id": "src-copilot-llm-client-py",
@@ -2219,8 +2218,8 @@ const FILES = [
   "group": "Learning scripts",
   "day": 11,
   "path": "scripts/learn/session5_agents.py",
-  "headline": "Session 5: the specialist roster, the compiled graph's edges, the inventory rule over the planner, then one real orchestrator run with scripted …",
-  "does": "Session 5: the specialist roster, the compiled graph's edges, the inventory rule over the planner, then one real orchestrator run with scripted planner/writer/verifier replies (the first draft is scripted to fail, so the redraft loop shows) and the two real plain-code specialists. <strong>Needs:<\/strong> the local snapshot.",
+  "headline": "Learning script for session 5, the agents.",
+  "does": "Eight steps: the specialist roster, the compiled graph's edges, the inventory rule over the planner, then one real orchestrator run with scripted planner/writer/verifier replies (the first draft is scripted to fail, so the redraft loop shows) and the two real plain-code specialists. <strong>Needs:<\/strong> the local snapshot.",
   "talksTo": [
    {
     "id": "src-copilot-agents-orchestrator-py",
@@ -2246,8 +2245,8 @@ const FILES = [
   "group": "Learning scripts",
   "day": 11,
   "path": "scripts/learn/session6_guardrails.py",
-  "headline": "Session 6: the input gate on five questions, the spend cap, the Guardian on eight cases, worst outcome wins, PII detection (and the business figures …",
-  "does": "Session 6: the input gate on five questions, the spend cap, the Guardian on eight cases, worst outcome wins, PII detection (and the business figures it must leave alone), a real approval pause and resume, the audit log, and trace masking. <strong>Needs:<\/strong> nothing (no snapshot, no key).",
+  "headline": "Learning script for session 6, the guardrails.",
+  "does": "Eight steps: the input gate on five questions, the spend cap, the Guardian on eight cases, worst outcome wins, PII detection (and the business figures it must leave alone), a real approval pause and resume, the audit log, and trace masking. <strong>Needs:<\/strong> nothing (no snapshot, no key).",
   "talksTo": [
    {
     "id": "src-copilot-guardrails-input-gate-py",
@@ -2277,8 +2276,8 @@ const FILES = [
   "group": "Learning scripts",
   "day": 11,
   "path": "scripts/learn/session7_product_and_quality.py",
-  "headline": "Session 7: the real FastAPI app in-process (TestClient): routes, health, a 401, invite to key, the streamed answer, a 429; then the CI jobs and the eval gate's pass marks, read from their files.",
-  "does": "<strong>Needs:<\/strong> the local snapshot.",
+  "headline": "Learning script for session 7, product and quality.",
+  "does": "Eight steps: the real FastAPI app in-process (TestClient): routes, health, a 401, invite to key, the streamed answer, a 429; then the CI jobs and the eval gate's pass marks, read from their files. <strong>Needs:<\/strong> the local snapshot.",
   "talksTo": [
    {
     "id": "src-copilot-api-main-py",
@@ -2346,6 +2345,11 @@ const countPill = document.getElementById("count-pill");
 const daybar = document.getElementById("daybar");
 
 const byId = new Map(FILES.map((f) => [f.id, f]));
+const GROUP_COLOURS = ["--cyan", "--blue", "--violet", "--pink", "--amber", "--green", "--red", "--orange"];
+function groupColour(group) {
+  const i = groupOrder().indexOf(group);
+  return `var(${GROUP_COLOURS[(i < 0 ? 0 : i) % GROUP_COLOURS.length]})`;
+}
 
 /* ---------------------------------------------------------------------------------------
    DAY FILTER -- default view is the latest day only, not every day's files piled up at
@@ -2414,6 +2418,7 @@ function buildRail(query) {
     const header = document.createElement("button");
     header.type = "button";
     header.className = "rail-group";
+    header.style.setProperty("--k", groupColour(group));
     const collapsed = collapsedGroups.has(group) && !query;
     header.setAttribute("aria-expanded", String(!collapsed));
     header.innerHTML = `<span class="arrow">▾</span><span>${group}</span><span class="gcount">${groupFiles.length}</span>`;
@@ -2449,6 +2454,7 @@ function makeFileButton(file, flat) {
   const btn = document.createElement("button");
   btn.type = "button";
   btn.className = "file";
+  btn.style.setProperty("--k", groupColour(file.group));
   btn.dataset.id = file.id;
   btn.setAttribute("aria-current", "false");
   const sub = (file.badges && file.badges.length) ? file.badges.map((b) => b.text).join(" · ") : "";
@@ -2459,6 +2465,7 @@ function makeFileButton(file, flat) {
 }
 
 function renderPane(file) {
+  pane.style.setProperty("--k", groupColour(file.group));
   const badges = (file.badges || []).map(
     (b) => `<span class="pill ${b.warn ? "warn" : ""}">${b.text}</span>`
   ).join("");
