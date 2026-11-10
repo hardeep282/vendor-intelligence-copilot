@@ -3079,3 +3079,26 @@ effectively never runs in CI (now stated on the Session 7 page).
 Full suite 644 passed with the snapshot, also with a dummy key set for the whole run; ruff clean.
 CODE_MAP has a new "Learning scripts" section (all seven) and the no-real-API fixture; the page
 is regenerated.
+
+## 2026-11-10 (late) · RAID R15 fixed: the index build deletes stale chunks
+
+**Covered:** the fix for R15, after the go-ahead. `ChunkStore.upsert()` takes a new
+`prune=True` flag meaning "this list is the whole corpus": after the usual embed-what-changed
+step, it deletes every stored id that isn't in the list (chunks from an older version of a
+document, or from a deleted one). `scripts/build_rag_index.py` passes it and now prints
+"N stale removed". The default stays `prune=False`, so tests and anything else that upserts a
+partial list can't delete by accident. An empty list with `prune=True` raises instead of
+deleting everything, so a corpus that failed to load can't wipe the index. Deletes go in
+batches of 5,000 (under Chroma's per-call limit). `UpsertReport` gained a `deleted` count and the
+store a `stored_ids()` helper, which the session 3 script's step 7 now uses.
+
+**Checked:** 4 new tests (old version deleted; without prune nothing is deleted; unchanged chunks
+kept and not re-embedded; empty list refused). Replayed on the real 14-document corpus with 112
+planted stale ids: 244 in the collection before, 132 after, 0 re-embedded, the same numbers your
+laptop showed. Session 3 script step line numbers unchanged. Full suite 648 passed; ruff and
+mypy strict clean.
+
+**On your machine:** run `uv run python scripts/build_rag_index.py` once. It should say
+"112 stale removed" and "Collection now has 132 chunks." The search results themselves don't
+change in what they show (stale chunks were always dropped), but the 20-candidate shortlist is
+now all current chunks.

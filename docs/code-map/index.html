@@ -1281,7 +1281,7 @@ const FILES = [
   "day": 1,
   "path": "src/copilot/rag/store.py",
   "headline": "<code>ChunkStore<\/code> wraps one Chroma collection (<code>PersistentClient<\/code>, <code>data/chroma/<\/code> — gitignored, same never-commit-derived-data rule as the Parquet snapshot).",
-  "does": "<code>upsert()<\/code> is keyed by each chunk's <code>content_hash<\/code>, not its <code>chunk_id<\/code>, so a full corpus rebuild skips every chunk whose text hasn't actually changed. <code>query()<\/code> is plain vector search, now with an optional <code>where<\/code> metadata filter (Day 4 step 5: <code>copilot.rag.permissions.PermissionedRetriever<\/code> passes <code>{&quot;data_class&quot;: {&quot;$in&quot;: [...]}}<\/code> so ineligible chunks are excluded inside the ANN search itself, not dropped from an already-fixed-size result afterwards — <code>None<\/code>, the default, is what <code>copilot.rag.retrieval.HybridRetriever<\/code> (step 4) still uses, unrestricted).",
+  "does": "<code>upsert()<\/code> is keyed by each chunk's <code>content_hash<\/code>, not its <code>chunk_id<\/code>, so a full corpus rebuild skips every chunk whose text hasn't actually changed. With <code>prune=True<\/code> (what the index build uses) it also deletes stored ids that aren't in the current chunk set, so chunks from older document versions don't pile up (RAID R15, fixed 10 Nov); an empty list with prune is refused. <code>query()<\/code> is plain vector search, now with an optional <code>where<\/code> metadata filter (Day 4 step 5: <code>copilot.rag.permissions.PermissionedRetriever<\/code> passes <code>{&quot;data_class&quot;: {&quot;$in&quot;: [...]}}<\/code> so ineligible chunks are excluded inside the ANN search itself, not dropped from an already-fixed-size result afterwards — <code>None<\/code>, the default, is what <code>copilot.rag.retrieval.HybridRetriever<\/code> (step 4) still uses, unrestricted).",
   "talksTo": [
    {
     "id": "src-copilot-rag-embeddings-py",
@@ -1301,7 +1301,7 @@ const FILES = [
    }
   ],
   "takes": "<code>list[Chunk]<\/code> + an <code>Embedder<\/code> (for <code>upsert<\/code>); a query vector + optional <code>where<\/code> filter (for <code>query<\/code>).",
-  "gives": "an <code>UpsertReport<\/code> (embedded vs. already-current counts); nearest-chunk tuples."
+  "gives": "an <code>UpsertReport<\/code> (embedded, already-current and stale-deleted counts); nearest-chunk tuples."
  },
  {
   "id": "src-copilot-rag-retrieval-py",
@@ -1396,8 +1396,8 @@ const FILES = [
   "group": "RAG / Knowledge layer",
   "day": 4,
   "path": "scripts/build_rag_index.py",
-  "headline": "Loads the corpus, checks it against the live disclosure policy, chunks it, embeds with the real local model, and upserts into <code>data/chroma/<\/code> — prints …",
-  "does": "Loads the corpus, checks it against the live disclosure policy, chunks it, embeds with the real local model, and upserts into <code>data/chroma/<\/code> — prints how many chunks were actually (re-)embedded vs. already up to date. <strong>Needs:<\/strong> nothing but normal internet access (no API key — the model is local and free to run).",
+  "headline": "Loads the corpus, checks it against the live disclosure policy, chunks it, embeds with the real local model, and upserts into <code>data/chroma/<\/code> with …",
+  "does": "Loads the corpus, checks it against the live disclosure policy, chunks it, embeds with the real local model, and upserts into <code>data/chroma/<\/code> with stale-chunk pruning on — prints how many chunks were actually (re-)embedded, already up to date, and deleted as stale. <strong>Needs:<\/strong> nothing but normal internet access (no API key — the model is local and free to run).",
   "talksTo": [
    {
     "label": "copilot.rag.*"
@@ -2158,7 +2158,7 @@ const FILES = [
   "day": 11,
   "path": "scripts/learn/session3_rag.py",
   "headline": "Learning script for session 3, RAG.",
-  "does": "Eight steps: load and policy-check the 14 documents, chunk them (132 chunks), BM25 search, RRF by hand, chunks visible per role, and -- if <code>data/chroma/<\/code> exists -- real hybrid search per role and a count of stale chunks from older document versions (RAID R15). Then the corrective loop's settings. <code>LEARN_SKIP_EMBEDDINGS=1<\/code> skips the two index steps (the test does). <strong>Needs:<\/strong> nothing for steps 1-5 and 8; the local index and embedding model for steps 6-7.",
+  "does": "Eight steps: load and policy-check the 14 documents, chunk them (132 chunks), BM25 search, RRF by hand, chunks visible per role, and -- if <code>data/chroma/<\/code> exists -- real hybrid search per role and a count of stale chunks from older document versions (RAID R15; zero after an index build since the 10 Nov fix). Then the corrective loop's settings. <code>LEARN_SKIP_EMBEDDINGS=1<\/code> skips the two index steps (the test does). <strong>Needs:<\/strong> nothing for steps 1-5 and 8; the local index and embedding model for steps 6-7.",
   "talksTo": [
    {
     "id": "src-copilot-rag-corpus-py",

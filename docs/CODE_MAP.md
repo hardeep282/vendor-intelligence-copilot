@@ -668,14 +668,16 @@ sandbox's proxy blocks, so the real embedding run is `scripts/build_rag_index.py
 `ChunkStore` wraps one Chroma collection (`PersistentClient`, `data/chroma/` — gitignored, same
 never-commit-derived-data rule as the Parquet snapshot). `upsert()` is keyed by each chunk's
 `content_hash`, not its `chunk_id`, so a full corpus rebuild skips every chunk whose text hasn't
-actually changed. `query()` is plain vector search, now with an optional `where` metadata filter
+actually changed. With `prune=True` (what the index build uses) it also deletes stored ids that
+aren't in the current chunk set, so chunks from older document versions don't pile up (RAID R15,
+fixed 10 Nov); an empty list with prune is refused. `query()` is plain vector search, now with an optional `where` metadata filter
 (Day 4 step 5: `copilot.rag.permissions.PermissionedRetriever` passes
 `{"data_class": {"$in": [...]}}` so ineligible chunks are excluded inside the ANN search itself,
 not dropped from an already-fixed-size result afterwards — `None`, the default, is what
 `copilot.rag.retrieval.HybridRetriever` (step 4) still uses, unrestricted).
 **Takes in:** `list[Chunk]` + an `Embedder` (for `upsert`); a query vector + optional `where`
 filter (for `query`).
-**Gives out:** an `UpsertReport` (embedded vs. already-current counts); nearest-chunk tuples.
+**Gives out:** an `UpsertReport` (embedded, already-current and stale-deleted counts); nearest-chunk tuples.
 **Talks to:** `copilot.rag.embeddings` for vectors; `copilot.guardrails.policy`'s `DataClass`/`Role`
 types for the metadata it stores and reads back; `copilot.rag.retrieval` and
 `copilot.rag.permissions` both call `query()`.
@@ -742,8 +744,8 @@ an explicit abstention + reason, plus cost/latency/call accounting (same shape a
 
 ### `scripts/build_rag_index.py` *(day: 4)*
 Loads the corpus, checks it against the live disclosure policy, chunks it, embeds with the real
-local model, and upserts into `data/chroma/` — prints how many chunks were actually (re-)embedded
-vs. already up to date.
+local model, and upserts into `data/chroma/` with stale-chunk pruning on — prints how many chunks
+were actually (re-)embedded, already up to date, and deleted as stale.
 **Needs:** nothing but normal internet access (no API key — the model is local and free to run).
 **Talks to:** every `copilot.rag.*` module above, in pipeline order.
 
@@ -1367,7 +1369,8 @@ alongside), and the Model Selection Agent's catalogue (printed, not called).
 ### `scripts/learn/session3_rag.py` *(day: 11, isNew: true)*
 Learning script for session 3, RAG. Eight steps: load and policy-check the 14 documents, chunk them (132 chunks), BM25 search, RRF by
 hand, chunks visible per role, and -- if `data/chroma/` exists -- real hybrid search per role and
-a count of stale chunks from older document versions (RAID R15). Then the corrective loop's
+a count of stale chunks from older document versions (RAID R15; zero after an index build since
+the 10 Nov fix). Then the corrective loop's
 settings. `LEARN_SKIP_EMBEDDINGS=1` skips the two index steps (the test does).
 **Needs:** nothing for steps 1-5 and 8; the local index and embedding model for steps 6-7.
 **Talks to:** `copilot.rag.corpus`, `copilot.rag.chunking`, `copilot.rag.retrieval`,

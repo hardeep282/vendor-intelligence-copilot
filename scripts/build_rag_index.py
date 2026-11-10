@@ -3,7 +3,8 @@
 Purpose : load the knowledge corpus, chunk it, embed every chunk with the real local
           sentence-transformers model, and upsert into a persistent Chroma collection at
           data/chroma/ -- idempotently, so re-running this after editing one knowledge doc only
-          re-embeds the chunks that actually changed.
+          re-embeds the chunks that actually changed. Chunks left over from older document
+          versions (or deleted documents) are removed in the same run (RAID R15).
 Run     : uv run python scripts/build_rag_index.py
           (first run downloads the model, ~90MB, from the Hugging Face Hub -- this build
           sandbox's proxy blocks huggingface.co, so this script is one of the "run on your
@@ -42,12 +43,13 @@ def main() -> None:
 
     print("Embedding and upserting ...")
     start = time.monotonic()
-    report = store.upsert(chunks, embedder)
+    report = store.upsert(chunks, embedder, prune=True)
     elapsed = time.monotonic() - start
 
     print(
         f"Done in {elapsed:.1f}s: {report.upserted} embedded and written, "
-        f"{report.unchanged} already up to date, {report.total} total chunks. "
+        f"{report.unchanged} already up to date, {report.deleted} stale removed, "
+        f"{report.total} total chunks. "
         f"Collection now has {store.count()} chunks."
     )
 

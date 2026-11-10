@@ -17,6 +17,13 @@ embedder, wasted money); keying on content_hash means an unchanged chunk is skip
 whole corpus is rebuilt from scratch, while a chunk whose *text* changed under the same chunk_id
 (an edited doc, same version number -- shouldn't happen here, but) is correctly re-embedded
 rather than silently treated as unchanged.
+
+Stale chunks (RAID R15, fixed 10 Nov 2026): chunk ids include the document version
+(`doc_type:vendor:vN:index`), so bumping a doc's version gives all its chunks new ids and the
+old ones would otherwise stay in the collection forever. They were never shown to a user
+(retrieval drops any id that isn't in the current chunk set), but they took slots in the
+vector candidate pool. `upsert(..., prune=True)` -- what the index build uses -- deletes every
+stored id that isn't in the chunk list it was given.
 """
 
 from __future__ import annotations
@@ -39,12 +46,14 @@ DEFAULT_CHROMA_DIR = REPO_ROOT / "data" / "chroma"
 DEFAULT_COLLECTION_NAME = "knowledge"
 _HEADING_SEP = " > "  # heading_path join separator; chosen not to collide with real headings
 _ROLE_SEP = "|"
+_DELETE_BATCH = 5000  # below Chroma's per-call batch limit
 
 
 class UpsertReport(BaseModel):
     total: int
     upserted: int  # new, or content_hash changed
     unchanged: int  # already stored under this chunk_id with the same content_hash
+    deleted: int = 0  # stored ids not in this chunk list, removed because prune=True
 
 
 def get_chroma_client(path: Path = DEFAULT_CHROMA_DIR) -> ClientAPI:
@@ -98,11 +107,24 @@ class ChunkStore:
     def count(self) -> int:
         return self._collection.count()
 
-    def upsert(self, chunks: list[Chunk], embedder: Embedder) -> UpsertReport:
+    def stored_ids(self) -> set[str]:
+        """Every chunk id currently in the collection."""
+        return set(self._collection.get(include=[])["ids"])
+
+    def upsert(
+        self, chunks: list[Chunk], embedder: Embedder, *, prune: bool = False
+    ) -> UpsertReport:
         """Embed and store every chunk whose content_hash isn't already stored under its
         chunk_id; skip the rest. Returns a report of what happened, for the build script to
         print.
+
+        prune=True means "this list is the whole corpus": any stored id not in it (chunks from
+        an older version of a document, or from a deleted document) is deleted afterwards.
+        Only pass it with the full chunk set. An empty list with prune=True is refused rather
+        than treated as "delete everything", so a broken corpus load can't wipe the index.
         """
+        if prune and not chunks:
+            raise ValueError("prune=True with no chunks would delete the whole index; refusing")
         if not chunks:
             return UpsertReport(total=0, upserted=0, unchanged=0)
 
@@ -123,8 +145,17 @@ class ChunkStore:
                 documents=[c.text for c in to_write],
                 metadatas=[_to_metadata(c) for c in to_write],
             )
+        deleted = 0
+        if prune:
+            stale = sorted(self.stored_ids() - set(ids))
+            for start in range(0, len(stale), _DELETE_BATCH):
+                self._collection.delete(ids=stale[start : start + _DELETE_BATCH])
+            deleted = len(stale)
         return UpsertReport(
-            total=len(chunks), upserted=len(to_write), unchanged=len(chunks) - len(to_write)
+            total=len(chunks),
+            upserted=len(to_write),
+            unchanged=len(chunks) - len(to_write),
+            deleted=deleted,
         )
 
     def query(

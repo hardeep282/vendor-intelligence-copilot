@@ -7,7 +7,7 @@ records. Built on my [Beverage Distribution analytics
 project](https://github.com/hardeep282/Commercial-Analytics---Beverage-Distribution-Project---Vendor-and-Stock-Analysis)
 (SQL medallion, forecasting, ML, Power BI).
 
-**644 automated tests · 23/23 privacy attacks blocked · SKU risk model F1 0.92 · hybrid retrieval
+**648 automated tests · 23/23 privacy attacks blocked · SKU risk model F1 0.92 · hybrid retrieval
 recall@5 0.80 · CI evaluation gate**
 
 **Case study:** [interactive agent graph, measured results, and the bugs I found before trusting
@@ -103,7 +103,7 @@ explicitly marked as not done — nothing below is invented. Full detail: `docs/
 
 | Area | Result |
 |---|---|
-| Test suite | **644 passed, 0 failed** (`uv run pytest -q`, re-verified 10 Nov 2026), ruff/mypy strict clean. 58 of these need the local snapshot and skip without it: build it with `scripts/build_snapshot.py` + `copilot.data.store.build_database()` |
+| Test suite | **648 passed, 0 failed** (`uv run pytest -q`, re-verified 10 Nov 2026), ruff/mypy strict clean. 58 of these need the local snapshot and skip without it: build it with `scripts/build_snapshot.py` + `copilot.data.store.build_database()` |
 | Real SQL Server snapshot | 126 vendors, $451.62M revenue (all rows) / $450.9M (cleaned base), spot-checked against two canonical figures (DIAGEO $68,739,834.97 revenue; Martignetti 31.98% blended margin) |
 | Golden evaluation set | 46 questions (27 dev / 16 test / 3 adversarial); golden v2 adds 6 text-to-SQL trap questions (semantic traps, coverage gaps) |
 | SQL validator | 29/29 unit tests, 0 false positives across 33 real golden queries; catches AVG-over-margin, fan-out joins, cross-vendor count additions, unbounded cross joins (DoS) |
@@ -120,11 +120,11 @@ explicitly marked as not done — nothing below is invented. Full detail: `docs/
 | Multi-agent orchestrator, 11 multi-hop questions (real API, 2 Nov 2026) | planned the right specialists 11/11, Verifier passed 10/11, ranking question named the right top vendors 1/1; **$0.48 total** (1.6-7.8 cents per question), median 17 s per question (10-52 s). The one escalation (freight) was correct: the answer invented a link the docs didn't support, and the fix was in the docs. A follow-up run of the 3 questions touched by the last fix: 3/3 verified, $0.14 |
 | Model Selection Agent (real API, 8 scenarios) | task type 8/8, model family 8/8, reasoning grounded 0.875 (and 0.750 in the gate run an hour later: the LLM judge's own run-to-run spread) |
 | RAG answer quality (real API, 20 questions) | context recall 1.000; faithfulness 0.875 over the 16 answered. All 4 abstentions and both unfaithful answers are lookups in the 10 **synthetic** vendor contracts; methodology and definition questions scored 1.0 |
-| CI eval gate | deterministic layer PASS in every environment (644 tests); `llm_judged` layer correctly SKIPs without a key rather than fabricating a pass; verified to also fail (exit 1) on an injected regression. Real run on my machine, 2 Nov 2026: text-to-SQL execution accuracy 0.913 (min 0.85), leakage-free 1.000, RAG faithfulness 0.889 / context recall 0.889, model selection 1.000 / 0.750 (min 0.75: on the line). The orchestrator layer didn't run: the API account ran out of credit mid-gate, so its numbers come from the separate run above |
+| CI eval gate | deterministic layer PASS in every environment (648 tests); `llm_judged` layer correctly SKIPs without a key rather than fabricating a pass; verified to also fail (exit 1) on an injected regression. Real run on my machine, 2 Nov 2026: text-to-SQL execution accuracy 0.913 (min 0.85), leakage-free 1.000, RAG faithfulness 0.889 / context recall 0.889, model selection 1.000 / 0.750 (min 0.75: on the line). The orchestrator layer didn't run: the API account ran out of credit mid-gate, so its numbers come from the separate run above |
 
 **Cost per query:** one real end-to-end `InsightService` call cost **$0.01127** (7.31s, 1
 attempt). The fine-tuning benchmark's 180 held-out generations cost under $1 total. Every
-deterministic layer (Guardian, input gate, SQL validator, trace masking, the 644-test suite)
+deterministic layer (Guardian, input gate, SQL validator, trace masking, the 648-test suite)
 costs $0 — no LLM call in any of it. A full multi-agent question (Orchestrator + specialists +
 Verifier) cost 1.6-7.8 cents in the real 11-question run, $0.48 for all 11.
 

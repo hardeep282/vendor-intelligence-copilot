@@ -166,3 +166,42 @@ def test_two_stores_on_separate_collections_do_not_interfere() -> None:
     store_a.upsert([_chunk("c1", "alpha")], FakeEmbedder())
     assert store_a.count() == 1
     assert store_b.count() == 0
+
+
+# --- RAID R15: stale chunks from older document versions ------------------------------------
+
+
+def test_prune_deletes_chunks_from_an_older_document_version(store: ChunkStore) -> None:
+    # v1 of a doc has two chunks; v2 replaces them under new ids (the version is in the id).
+    store.upsert(
+        [_chunk("vendor_profile:ACME:v1:0", "old a"), _chunk("vendor_profile:ACME:v1:1", "old b")],
+        FakeEmbedder(),
+    )
+    v2 = [_chunk("vendor_profile:ACME:v2:0", "new a", version=2)]
+    report = store.upsert(v2, FakeEmbedder(), prune=True)
+    assert report.deleted == 2
+    assert store.stored_ids() == {"vendor_profile:ACME:v2:0"}
+    assert store.count() == 1
+
+
+def test_without_prune_old_versions_stay(store: ChunkStore) -> None:
+    # The default keeps the old behaviour, so callers that upsert a partial list (tests, the
+    # retrieval fixtures) can't delete anything by accident.
+    store.upsert([_chunk("doc:v1:0", "old")], FakeEmbedder())
+    report = store.upsert([_chunk("doc:v2:0", "new", version=2)], FakeEmbedder())
+    assert report.deleted == 0
+    assert store.stored_ids() == {"doc:v1:0", "doc:v2:0"}
+
+
+def test_prune_keeps_unchanged_chunks_and_does_not_re_embed_them(store: ChunkStore) -> None:
+    store.upsert([_chunk("keep", "same"), _chunk("gone", "old")], FakeEmbedder())
+    report = store.upsert([_chunk("keep", "same")], FakeEmbedder(), prune=True)
+    assert (report.upserted, report.unchanged, report.deleted) == (0, 1, 1)
+    assert store.stored_ids() == {"keep"}
+
+
+def test_prune_with_an_empty_chunk_list_is_refused(store: ChunkStore) -> None:
+    store.upsert([_chunk("c1", "alpha")], FakeEmbedder())
+    with pytest.raises(ValueError, match="delete the whole index"):
+        store.upsert([], FakeEmbedder(), prune=True)
+    assert store.count() == 1  # nothing was deleted

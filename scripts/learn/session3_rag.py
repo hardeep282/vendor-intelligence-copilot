@@ -145,7 +145,7 @@ def step_7_stale_chunks_in_the_index(chunks: list[Chunk]) -> None:
     from copilot.rag.store import ChunkStore, get_chroma_client
 
     store = ChunkStore(get_chroma_client())
-    stored = set(store._collection.get(include=[])["ids"])
+    stored = store.stored_ids()
     current = {c.chunk_id for c in chunks}
     stale = sorted(stored - current)
     print(f"  stored in the index: {len(stored)}   current chunks: {len(current)}")
@@ -153,10 +153,10 @@ def step_7_stale_chunks_in_the_index(chunks: list[Chunk]) -> None:
     for key, n in Counter(s.rsplit(":", 1)[0] for s in stale).most_common(6):
         print(f"    {key:<40} {n:>3}")
     if stale:
-        pool = DEFAULT_CANDIDATE_POOL
-        print(f"\n  Each search asks the index for {pool} candidates. Stale ones are thrown")
-        print("  away afterwards (they're not current chunks), so they can crowd out real")
-        print("  ones. Logged as RAID R15 (10 Nov).")
+        print(f"\n  They can crowd the {DEFAULT_CANDIDATE_POOL}-candidate search pool. Rebuild the")
+        print("  index (scripts/build_rag_index.py) and they're deleted: RAID R15, fixed 10 Nov.")
+    else:
+        print("  None. The index build deletes them now (RAID R15, fixed 10 Nov).")
 
 
 def step_8_the_corrective_loop() -> None:
